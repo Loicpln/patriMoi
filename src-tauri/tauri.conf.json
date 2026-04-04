@@ -1,0 +1,30 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/schema.json",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devPath": "http://localhost:5173",
+    "distDir": "../dist",
+    "withGlobalTauri": false
+  },
+  "package": { "productName": "Patrimo", "version": "0.1.0" },
+  "tauri": {
+    "allowlist": {
+      "all": false,
+      "shell": { "all": false, "open": true, "execute": true, "scope": [{ "name": "open", "cmd": "open", "args": true }, { "name": "osascript", "cmd": "osascript", "args": true }] },
+      "fs": { "all": true, "scope": ["$APPDATA/*", "$DOCUMENT/*", "$DOWNLOAD/*", "$HOME/*"] },
+      "dialog": { "all": true },
+      "http": { "all": true, "scope": ["https://query1.finance.yahoo.com/**", "https://query2.finance.yahoo.com/**"] }
+    },
+    "bundle": {
+      "active": true,
+      "category": "Finance",
+      "icon": ["icons/32x32.png","icons/128x128.png","icons/128x128@2x.png","icons/icon.icns","icons/icon.ico"],
+      "identifier": "com.patrimo.app",
+      "macOS": { "entitlements": null, "frameworks": [], "signingIdentity": null }
+    },
+    "security": { "csp": null },
+    "updater": { "active": false },
+    "windows": [{ "fullscreen": false, "height": 820, "resizable": true, "title": "Patrimo", "width": 1300, "minWidth": 1000, "minHeight": 650 }]
+  }
+}

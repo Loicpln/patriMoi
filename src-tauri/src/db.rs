@@ -1,0 +1,133 @@
+use rusqlite::{Connection, Result};
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
+use tauri::api::path::app_data_dir;
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Depense {
+    pub id: Option<i64>, pub date: String, pub categorie: String,
+    pub sous_categorie: String, pub libelle: String, pub montant: f64, pub notes: Option<String>,
+}
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Salaire {
+    pub id: Option<i64>, pub date: String, pub salaire_brut: f64, pub salaire_net: f64,
+    pub primes: Option<f64>, pub employeur: String, pub pdf_path: Option<String>, pub notes: Option<String>,
+}
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Livret {
+    pub id: Option<i64>, pub poche: String, pub montant: f64, pub taux: f64,
+    pub date: String, pub notes: Option<String>,
+}
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Position {
+    pub id: Option<i64>, pub poche: String, pub ticker: String, pub nom: String,
+    pub sous_categorie: Option<String>, pub quantite: f64, pub prix_achat: f64,
+    pub date_achat: String, pub notes: Option<String>,
+}
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Vente {
+    pub id: Option<i64>, pub poche: String, pub ticker: String, pub nom: String,
+    pub quantite: f64, pub prix_achat: f64, pub prix_vente: f64,
+    pub date_vente: String, pub pnl: f64, pub notes: Option<String>,
+}
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Dividende {
+    pub id: Option<i64>, pub position_id: Option<i64>, pub ticker: String,
+    pub poche: String, pub montant: f64, pub date: String, pub notes: Option<String>,
+}
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Versement {
+    pub id: Option<i64>, pub poche: String, pub montant: f64,
+    pub date: String, pub notes: Option<String>,
+}
+#[allow(dead_code)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Parametre { pub cle: String, pub valeur: String }
+
+pub fn get_db_path(app_handle: &tauri::AppHandle) -> PathBuf {
+    let config = app_handle.config();
+    let mut path = app_data_dir(&config).unwrap_or_else(|| PathBuf::from("."));
+    path.push("patrimoine.db");
+    path
+}
+
+pub fn init_db(conn: &Connection) -> Result<()> {
+    conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+
+    if version < 1 {
+        conn.execute_batch("
+            CREATE TABLE IF NOT EXISTS depenses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT NOT NULL,
+                categorie TEXT NOT NULL, sous_categorie TEXT NOT NULL,
+                libelle TEXT NOT NULL, montant REAL NOT NULL, notes TEXT,
+                created_at TEXT DEFAULT (datetime('now'))
+            );
+            CREATE TABLE IF NOT EXISTS salaires (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT NOT NULL,
+                salaire_brut REAL NOT NULL, salaire_net REAL NOT NULL,
+                primes REAL DEFAULT 0, employeur TEXT NOT NULL,
+                pdf_path TEXT, notes TEXT, created_at TEXT DEFAULT (datetime('now'))
+            );
+            CREATE TABLE IF NOT EXISTS livrets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, poche TEXT NOT NULL,
+                montant REAL NOT NULL, taux REAL NOT NULL DEFAULT 0,
+                date TEXT NOT NULL, notes TEXT, created_at TEXT DEFAULT (datetime('now'))
+            );
+            CREATE TABLE IF NOT EXISTS positions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, poche TEXT NOT NULL,
+                ticker TEXT NOT NULL, nom TEXT NOT NULL, sous_categorie TEXT,
+                quantite REAL NOT NULL, prix_achat REAL NOT NULL,
+                date_achat TEXT NOT NULL, notes TEXT,
+                created_at TEXT DEFAULT (datetime('now'))
+            );
+            CREATE TABLE IF NOT EXISTS parametres (
+                cle TEXT PRIMARY KEY, valeur TEXT NOT NULL
+            );
+            INSERT OR IGNORE INTO parametres (cle, valeur) VALUES
+                ('pdf_folder',''),('devise','EUR'),('taux_change','1.0');
+            PRAGMA user_version = 1;
+        ")?;
+    }
+    if version < 2 {
+        conn.execute_batch("
+            CREATE TABLE IF NOT EXISTS ventes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, poche TEXT NOT NULL,
+                ticker TEXT NOT NULL, nom TEXT NOT NULL, quantite REAL NOT NULL,
+                prix_achat REAL NOT NULL, prix_vente REAL NOT NULL,
+                date_vente TEXT NOT NULL, pnl REAL NOT NULL, notes TEXT,
+                created_at TEXT DEFAULT (datetime('now'))
+            );
+            PRAGMA user_version = 2;
+        ")?;
+    }
+    if version < 3 {
+        conn.execute_batch("
+            CREATE TABLE IF NOT EXISTS dividendes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, position_id INTEGER,
+                ticker TEXT NOT NULL, poche TEXT NOT NULL, montant REAL NOT NULL,
+                date TEXT NOT NULL, notes TEXT, created_at TEXT DEFAULT (datetime('now'))
+            );
+            PRAGMA user_version = 3;
+        ")?;
+    }
+    if version < 4 {
+        let _ = conn.execute_batch("ALTER TABLE positions ADD COLUMN notes TEXT;");
+        let _ = conn.execute_batch("INSERT OR IGNORE INTO parametres (cle,valeur) VALUES ('taux_change','1.0');");
+        conn.execute_batch("PRAGMA user_version = 4;")?;
+    }
+    if version < 5 {
+        // Add sous_categorie to positions if missing
+        let _ = conn.execute_batch("ALTER TABLE positions ADD COLUMN sous_categorie TEXT;");
+        // Add versements table
+        conn.execute_batch("
+            CREATE TABLE IF NOT EXISTS versements (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, poche TEXT NOT NULL,
+                montant REAL NOT NULL, date TEXT NOT NULL, notes TEXT,
+                created_at TEXT DEFAULT (datetime('now'))
+            );
+            PRAGMA user_version = 5;
+        ")?;
+    }
+    Ok(())
+}
