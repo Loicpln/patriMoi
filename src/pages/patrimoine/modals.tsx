@@ -151,14 +151,14 @@ export function VersementModal({poche,mois=curMonth,onClose,onSave}:{poche:strin
 }
 
 // ── Sell Modal — prix TOTAL de vente ──────────────────────────────────────────
-export function SellModal({poche,ticker,nom,maxQty,pru,onClose,onSave}:{
-  poche:string;ticker:string;nom:string;maxQty:number;pru:number;
+export function SellModal({poche,ticker,nom,maxQty,pru,mois=curMonth,onClose,onSave}:{
+  poche:string;ticker:string;nom:string;maxQty:number;pru:number;mois?:string;
   onClose:()=>void;onSave:()=>void;
 }) {
   const {fmt}=useDevise();
   const [qty,setQty]=useState(maxQty);
   const [totalVente,setTotalVente]=useState(parseFloat((pru*maxQty).toFixed(2)));
-  const [date,setDate]=useState(defaultDateForMonth(curMonth));
+  const [date,setDate]=useState(defaultDateForMonth(mois));
   const [notes,setNotes]=useState("");
   const [err,setErr]=useState("");
 

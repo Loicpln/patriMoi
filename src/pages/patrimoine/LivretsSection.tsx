@@ -48,12 +48,12 @@ export function LivretsSection({livrets,mois,onRefresh}:{livrets:Livret[];mois:s
   // History entries for selected month (non-intérêts)
   const histMois=livrets.filter(l=>!isInteret(l)&&(l.date??"").slice(0,7)===mois);
 
-  const pieNode=(h:number)=>inner.length===0?<div className="empty">Aucune donnée</div>:(
+  const pieNode=(h:number,_isExp?:boolean)=>inner.length===0?<div className="empty">Aucune donnée</div>:(
     <NestedPie inner={inner} outer={outer} total={totalLivrets} fmt={fmt} h={h}
       toggleLabel="Capital" onToggle={()=>{}}/>
   );
 
-  const stackNode=(h:number)=>evoData.length===0?<div className="empty">Aucune donnée</div>:(
+  const stackNode=(h:number,_isExp?:boolean)=>evoData.length===0?<div className="empty">Aucune donnée</div>:(
     <ResponsiveContainer width="100%" height={h}>
       <AreaChart data={evoData}>
         <defs>{LIVRETS_DEF.map(l=>(
@@ -65,8 +65,7 @@ export function LivretsSection({livrets,mois,onRefresh}:{livrets:Livret[];mois:s
         <XAxis dataKey="mois" tick={{fontSize:8,fontFamily:"JetBrains Mono"}} interval={Math.max(0,Math.floor(evoData.length/7)-1)}/>
         <YAxis tick={{fontSize:8,fontFamily:"JetBrains Mono"}} tickFormatter={v=>v>=1000?`${(v/1000).toFixed(0)}k€`:`${v}€`} width={45}/>
         <Tooltip {...TTP} formatter={(v:number,n:string)=>[fmt(v),n]}/>
-        <ReferenceLine x={mois} stroke="var(--gold)" strokeDasharray="4 2"
-          label={{value:"◀",position:"insideTopRight",fill:"var(--gold)",fontSize:9}}/>
+        <ReferenceLine x={mois} stroke="var(--gold)" strokeDasharray="4 2"/>
         {LIVRETS_DEF.map(l=><Area key={l.key} type="monotone" dataKey={l.label} stackId="a"
           stroke={l.color} strokeWidth={1.5} fill={`url(#gl_${l.key})`}/>)}
       </AreaChart>

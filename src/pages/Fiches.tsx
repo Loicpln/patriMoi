@@ -39,7 +39,64 @@ function calcStreak(salaires: Salaire[]): number {
 }
 
 
-const PRIME_TYPES = ["Bourse", "Prime d\'activité", "Prime de Noël", "Aide au logement", "Allocation familiale", "Autre aide"];
+const PRIME_TYPES = ["Bourse", "Prime d'activité", "Prime de Noël", "Aide au logement", "Allocation familiale",
+  "Prime vacances", "Aides aux activités sportives", "Remboursement impôts", "Prime de parainnage", "Autre aide"];
+
+// ── Sélecteur d'année horizontal (style MonthSelector) ────────────────────
+function YearSelector({ value, onChange, years }: { value: number; onChange: (y: number) => void; years: number[] }) {
+  const curYear = new Date().getFullYear();
+
+  // Visible = ±3 autour de la valeur sélectionnée, parmi les années avec données
+  // L'année en cours est toujours épinglée à droite (exclue du strip)
+  const visible = useMemo(() => {
+    const set = new Set(years);
+    const out: number[] = [];
+    for (let y = value - 3; y <= value + 3; y++) {
+      if (y === curYear) continue; // épinglée séparément
+      if (set.has(y) || y === value) out.push(y);
+    }
+    return out;
+  }, [value, years, curYear]);
+
+  const btnStyle = (y: number): React.CSSProperties => {
+    const isSel = y === value;
+    const isCur = y === curYear;
+    return {
+      flex: 1, minWidth: 0, padding: "6px 8px",
+      borderRadius: 6,
+      border: isSel ? "1px solid var(--gold)" : isCur ? "1px solid var(--border-l)" : "1px solid transparent",
+      cursor: "pointer", fontFamily: "var(--mono)", fontSize: 12, lineHeight: 1.3,
+      background: isSel ? "var(--gold)" : isCur ? "var(--bg-3)" : "transparent",
+      color: isSel ? "var(--bg-0)" : isCur ? "var(--text-0)" : "var(--text-1)",
+      fontWeight: isSel ? 600 : 400,
+    };
+  };
+
+  return (
+    <div style={{
+      background: "var(--bg-1)", border: "1px solid var(--border)", borderRadius: "var(--r)",
+      padding: "4px 6px", display: "flex", alignItems: "center", gap: 2,
+    }}>
+      {/* Strip scrollable sans l'année en cours */}
+      <div style={{ display: "flex", gap: 2, flex: 1 }}>
+        {visible.map(y => (
+          <button key={y} style={btnStyle(y)} onClick={() => onChange(y)}>{y}</button>
+        ))}
+      </div>
+      {/* Année en cours — toujours épinglée à droite */}
+      <button style={{ ...btnStyle(curYear), flex: "none", flexShrink: 0 }} onClick={() => onChange(curYear)}>
+        {curYear}
+      </button>
+    </div>
+  );
+}
+
+// ── Date par défaut selon l'année sélectionnée ────────────────────────────
+function defaultDateForYear(year: number): string {
+  const curYear = new Date().getFullYear();
+  if (year >= curYear) return new Date().toISOString().slice(0, 10);
+  return `${year}-01-01`;
+}
 
 function PrimeModal({ onClose, onSave, defaultDate }: { onClose: ()=>void; onSave: ()=>void; defaultDate: string }) {
   const [type, setType] = useState(PRIME_TYPES[0]);
@@ -277,8 +334,7 @@ export default function Fiches() {
 
   const streak = useMemo(() => calcStreak(salaires), [salaires]);
 
-  const today = new Date().toISOString().slice(0, 10);
-  const emptySalaire: Salaire = { date: today, salaire_brut: 0, salaire_net: 0, employeur: "", primes: 0 };
+  const emptySalaire: Salaire = { date: defaultDateForYear(year), salaire_brut: 0, salaire_net: 0, employeur: "", primes: 0 };
 
   return (
     <div>
@@ -320,12 +376,11 @@ export default function Fiches() {
         </div>
       </div>
 
-      <div className="month-bar">
-        <label style={{ color: "var(--text-2)", fontSize: 10, letterSpacing: ".1em", textTransform: "uppercase" }}>Année</label>
-        <select value={year} onChange={e => setYear(parseInt(e.target.value))}>
-          {years.map(y => <option key={y} value={y}>{y}</option>)}
-        </select>
-        <button className="btn btn-ghost" style={{ marginLeft: "auto" }} onClick={() => setPrimeModal(true)}>+ Prime / Aide</button>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+        <div style={{ flex: 1 }}>
+          <YearSelector value={year} onChange={setYear} years={years}/>
+        </div>
+        <button className="btn btn-ghost" onClick={() => setPrimeModal(true)}>+ Prime / Aide</button>
         <button className="btn btn-primary" onClick={() => setAddModal(true)}>+ Fiche</button>
       </div>
 
@@ -419,7 +474,7 @@ export default function Fiches() {
       )}
       {primeModal && (
         <PrimeModal
-          defaultDate={new Date().toISOString().slice(0, 10)}
+          defaultDate={defaultDateForYear(year)}
           onClose={() => setPrimeModal(false)}
           onSave={() => { setPrimeModal(false); load(); }}
         />

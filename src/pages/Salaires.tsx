@@ -76,19 +76,27 @@ export default function Salaires() {
 
   const deleteSalaire = async (id: number) => { await invoke("delete_salaire", { id }); load(); };
 
-  // Chart data — last 12 months
-  const chartData = [...salaires]
-    .sort((a, b) => a.date.localeCompare(b.date))
-    .slice(-12)
-    .map((s) => ({
-      mois: s.date.slice(0, 7),
-      net: s.salaire_net,
-      brut: s.salaire_brut,
-      primes: s.primes ?? 0,
-    }));
+  // Chart data — last 12 months, primes stacked per month
+  const chartData = (() => {
+    const byMonth: Record<string, { net: number; brut: number; primes: number }> = {};
+    salaires.forEach(s => {
+      const m = s.date.slice(0, 7);
+      if (!byMonth[m]) byMonth[m] = { net: 0, brut: 0, primes: 0 };
+      if (s.employeur !== "_PRIME") {
+        byMonth[m].net  += s.salaire_net;
+        byMonth[m].brut += s.salaire_brut;
+      }
+      if (s.primes && s.primes > 0) byMonth[m].primes += s.primes;
+    });
+    return Object.entries(byMonth)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .slice(-12)
+      .map(([mois, v]) => ({ mois, ...v }));
+  })();
 
-  const avgNet = salaires.length
-    ? salaires.reduce((s, x) => s + x.salaire_net, 0) / salaires.length
+  const normalSalaires = salaires.filter(s => s.employeur !== "_PRIME");
+  const avgNet = normalSalaires.length
+    ? normalSalaires.reduce((s, x) => s + x.salaire_net, 0) / normalSalaires.length
     : 0;
 
   const totalPrimes = salaires.reduce((s, x) => s + (x.primes ?? 0), 0);

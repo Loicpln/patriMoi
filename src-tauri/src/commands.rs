@@ -162,24 +162,59 @@ pub fn get_ventes(poche: Option<String>, state: State<DbState>) -> Result<Vec<Ve
 #[tauri::command]
 pub fn sell_position(poche: String, ticker: String, nom: String, quantite_vendue: f64, prix_vente: f64, date_vente: String, notes: Option<String>, state: State<DbState>) -> Result<f64, String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
-    let mut stmt = conn.prepare("SELECT id,quantite,prix_achat FROM positions WHERE poche=?1 AND ticker=?2 ORDER BY date_achat ASC").map_err(|e| e.to_string())?;
-    let rows: Vec<(i64,f64,f64)> = stmt.query_map(params![poche,ticker], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?)))
+
+    // ── Fetch all buy lots ────────────────────────────────────────────────────
+    let mut stmt = conn.prepare(
+        "SELECT quantite,prix_achat,date_achat FROM positions \
+         WHERE poche=?1 AND ticker=?2 ORDER BY date_achat ASC"
+    ).map_err(|e| e.to_string())?;
+    let buy_rows: Vec<(f64,f64,String)> = stmt
+        .query_map(params![poche,ticker], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?)))
         .map_err(|e| e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e| e.to_string())?;
-    let total_qty: f64 = rows.iter().map(|r| r.1).sum();
-    // Compute already-sold quantity from ventes table to check available quantity
-    let sold_qty: f64 = conn.query_row(
-        "SELECT COALESCE(SUM(quantite),0.0) FROM ventes WHERE poche=?1 AND ticker=?2",
-        params![poche, ticker],
-        |r| r.get(0),
-    ).unwrap_or(0.0);
-    let available_qty = (total_qty - sold_qty).max(0.0);
-    if quantite_vendue > available_qty + 1e-9 {
-        return Err(format!("Quantité vendue ({:.4}) > disponible ({:.4})", quantite_vendue, available_qty));
+
+    // ── Fetch all previous sells for this ticker ──────────────────────────────
+    let mut stmt2 = conn.prepare(
+        "SELECT quantite,date_vente FROM ventes \
+         WHERE poche=?1 AND ticker=?2 ORDER BY date_vente ASC"
+    ).map_err(|e| e.to_string())?;
+    let sell_rows: Vec<(f64,String)> = stmt2
+        .query_map(params![poche,ticker], |r| Ok((r.get(0)?,r.get(1)?)))
+        .map_err(|e| e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e| e.to_string())?;
+
+    // ── Replay buys and sells chronologically to obtain current PRU ───────────
+    // Each event: (date, is_buy, qty, unit_price)
+    let mut events: Vec<(String, bool, f64, f64)> = Vec::new();
+    for (qty, price, date) in &buy_rows  { events.push((date.clone(), true,  *qty, *price)); }
+    for (qty, date)         in &sell_rows { events.push((date.clone(), false, *qty, 0.0)); }
+    events.sort_by(|a, b| a.0.cmp(&b.0));
+
+    let mut cur_q: f64   = 0.0;
+    let mut cur_inv: f64 = 0.0;
+    for (_, is_buy, qty, price) in &events {
+        if *is_buy {
+            cur_q   += qty;
+            cur_inv += qty * price;
+        } else {
+            let pru_at_sell = if cur_q > 1e-12 { cur_inv / cur_q } else { 0.0 };
+            cur_q   = (cur_q   - qty).max(0.0);
+            cur_inv = (cur_inv - qty * pru_at_sell).max(0.0);
+        }
     }
-    let pru: f64 = if total_qty > 0.0 { rows.iter().map(|r| r.1*r.2).sum::<f64>() / total_qty } else { 0.0 };
+
+    // cur_q is the quantity still available after all previous sells
+    if quantite_vendue > cur_q + 1e-9 {
+        return Err(format!("Quantité vendue ({:.4}) > disponible ({:.4})", quantite_vendue, cur_q));
+    }
+
+    // PRU of the remaining (currently held) shares
+    let pru: f64 = if cur_q > 1e-12 { cur_inv / cur_q } else { 0.0 };
     let pnl = (prix_vente - pru) * quantite_vendue;
-    conn.execute("INSERT INTO ventes (poche,ticker,nom,quantite,prix_achat,prix_vente,date_vente,pnl,notes) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
-        params![poche,ticker,nom,quantite_vendue,pru,prix_vente,date_vente,pnl,notes]).map_err(|e| e.to_string())?;
+
+    conn.execute(
+        "INSERT INTO ventes (poche,ticker,nom,quantite,prix_achat,prix_vente,date_vente,pnl,notes) \
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
+        params![poche,ticker,nom,quantite_vendue,pru,prix_vente,date_vente,pnl,notes]
+    ).map_err(|e| e.to_string())?;
     // Positions are kept intact for historical tracking.
     // The frontend aggregates positions and deducts ventes for the selected month.
     Ok(pnl)

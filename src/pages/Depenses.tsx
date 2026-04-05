@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
-  AreaChart, Area, XAxis, YAxis, CartesianGrid,
+  AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid,
 } from "recharts";
 import { useDevise, curMonth } from "../context/DeviseContext";
 import { DEPENSE_CATEGORIES, TOOLTIP_STYLE, depenseSubColor, defaultDateForMonth } from "../constants";
@@ -22,7 +22,7 @@ const CAT_COLOR: Record<string, string> = Object.fromEntries(
 const CAT_KEYS = Object.keys(DEPENSE_CATEGORIES);
 
 // ── Chart grid (same as Patrimoine) ──────────────────────────────────────────
-function ChartGrid({charts}:{charts:{key:string;title:string;node:(h:number)=>React.ReactNode}[]}) {
+function ChartGrid({charts}:{charts:{key:string;title:string;node:(h:number,isExp:boolean)=>React.ReactNode}[]}) {
   const [exp,setExp]=useState<string|null>(null);
   return(
     <div style={{display:"grid",gridTemplateColumns:exp?"1fr":"repeat(auto-fit,minmax(280px,1fr))",gap:16,marginBottom:24}}>
@@ -39,7 +39,7 @@ function ChartGrid({charts}:{charts:{key:string;title:string;node:(h:number)=>Re
                 {isExp?"⊟ Réduire":"⊞ Agrandir"}
               </button>
             </div>
-            <div style={{height:h}}>{c.node(h)}</div>
+            <div style={{height:h}}>{c.node(h,isExp)}</div>
           </div>
         );
       })}
@@ -107,11 +107,12 @@ function Modal({ initial, libelles, onClose, onSave, title }: {
 
 export default function Depenses() {
   const { fmt } = useDevise();
-  const [depenses, setDepenses] = useState<Depense[]>([]);
-  const [mois, setMois]         = useState(curMonth);
-  const [modal, setModal]       = useState(false);
-  const [editing, setEditing]   = useState<Depense | null>(null);
-  const [loading, setLoading]   = useState(false);
+  const [depenses, setDepenses]     = useState<Depense[]>([]);
+  const [mois, setMois]             = useState(curMonth);
+  const [modal, setModal]           = useState(false);
+  const [editing, setEditing]       = useState<Depense | null>(null);
+  const [loading, setLoading]       = useState(false);
+  const [firstMonth, setFirstMonth] = useState<string | undefined>(undefined);
 
   const load = useCallback(async (m: string) => {
     setLoading(true);
@@ -119,6 +120,14 @@ export default function Depenses() {
     catch { setDepenses([]); } finally { setLoading(false); }
   }, []);
   useEffect(() => { load(mois); }, [mois, load]);
+
+  // Fetch earliest depense date once on mount
+  useEffect(() => {
+    invoke<Depense[]>("get_depenses", { mois: null }).then(all => {
+      const dates = all.map(d => d.date.slice(0, 7)).filter(Boolean).sort();
+      if (dates[0]) setFirstMonth(dates[0]);
+    }).catch(() => {});
+  }, []);
 
   const libelles = useMemo<Record<string, string[]>>(() => {
     const map: Record<string, Set<string>> = {};
@@ -209,7 +218,7 @@ export default function Depenses() {
     categorie: CAT_KEYS[0], sous_categorie: CATEGORIES[CAT_KEYS[0]]?.[0] ?? "Autre", libelle: "", montant: 0,
   };
 
-  const pieNode = (h: number) => pieInner.length === 0
+  const pieNode = (h: number, _isExp?: boolean) => pieInner.length === 0
     ? <div className="empty">Aucune dépense ce mois.</div>
     : (
       <div style={{ position: "relative", height: h }}>
@@ -219,7 +228,7 @@ export default function Depenses() {
               paddingAngle={0} dataKey="value">
               {pieInner.map((e,i) => <Cell key={i} fill={e.color} stroke="var(--bg-1)" strokeWidth={2}/>)}
             </Pie>
-            <Pie data={pieOuter} cx="50%" cy="50%" innerRadius={h*0.35} outerRadius={h*0.42}
+            <Pie data={pieOuter} cx="50%" cy="50%" innerRadius={h*0.33} outerRadius={h*0.42}
               paddingAngle={0} dataKey="value">
               {pieOuter.map((e,i) => <Cell key={i} fill={e.color} stroke="var(--bg-1)" strokeWidth={1}/>)}
             </Pie>
@@ -237,7 +246,7 @@ export default function Depenses() {
       </div>
     );
 
-  const barNode = (h: number) => (
+  const barNode = (h: number, _isExp?: boolean) => (
     <ResponsiveContainer width="100%" height={h}>
       <BarChart data={dailyData} margin={{ left: -10 }}>
         <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
@@ -285,7 +294,7 @@ export default function Depenses() {
     });
   }, [depenses, mois]);
 
-  const stackedBarNode = (h: number) => (
+  const stackedBarNode = (h: number, _isExp?: boolean) => (
     <ResponsiveContainer width="100%" height={h}>
       <AreaChart data={dailyByCat} margin={{ left: -10 }}>
         <defs>
@@ -321,7 +330,7 @@ export default function Depenses() {
         <p className="page-sub">Suivi mensuel par catégorie</p>
       </div>
 
-      <MonthSelector value={mois} onChange={setMois}/>
+      <MonthSelector value={mois} onChange={setMois} firstMonth={firstMonth}/>
 
       <div style={{ display:"flex", alignItems:"center", justifyContent:"flex-end", marginBottom:16, gap:8 }}>
         {loading && <span className="spinner"/>}

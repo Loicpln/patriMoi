@@ -29,7 +29,7 @@ export const TTP = {
 };
 
 // ── Chart grid: expand hides others, expands active ───────────────────────────
-export function ChartGrid({charts}:{charts:{key:string;title:string;node:(h:number)=>ReactNode}[]}) {
+export function ChartGrid({charts}:{charts:{key:string;title:string;node:(h:number,isExp:boolean)=>ReactNode}[]}) {
   const [exp,setExp]=useState<string|null>(null);
   return(
     <div style={{display:"grid",gridTemplateColumns:exp?"1fr":"repeat(auto-fit,minmax(280px,1fr))",gap:16,padding:20}}>
@@ -46,7 +46,7 @@ export function ChartGrid({charts}:{charts:{key:string;title:string;node:(h:numb
                 {isExp?"⊟ Réduire":"⊞ Agrandir"}
               </button>
             </div>
-            <div style={{height:h}}>{c.node(h)}</div>
+            <div style={{height:h}}>{c.node(h,isExp)}</div>
           </div>
         );
       })}
@@ -71,7 +71,7 @@ export function NestedPie({inner,outer,total,fmt,toggleLabel,onToggle,h=260}:{
       </div>
     );
   };
-  const ir=Math.round(h*0.21), or1=Math.round(h*0.32), ir2=Math.round(h*0.34), or2=Math.round(h*0.42);
+  const ir=Math.round(h*0.21), or1=Math.round(h*0.32), ir2=or1, or2=Math.round(h*0.42);
   return(
     <div style={{position:"relative",height:h}}>
       <button className="btn btn-ghost btn-sm" style={{position:"absolute",top:0,right:0,zIndex:10,fontSize:10}}

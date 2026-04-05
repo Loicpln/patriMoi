@@ -11,14 +11,17 @@ export interface Quote {
   isHistorical: boolean;
 }
 
-// Weekly close price for each month: { "2024-01": 182.5, "2024-02": 185.1, ... }
+// Last weekly close for each month: { "2024-01": 182.5, ... }
 export type MonthlyPriceMap = Record<string, number>;
+
+// Weekly close keyed by week-start date: { "2024-01-01": 180.2, ... }
+export type WeeklyPriceMap = Record<string, number>;
 
 // ── Cache ──────────────────────────────────────────────────────────────────────
 const LIVE_CACHE:  Record<string, { q: Quote; ts: number }> = {};
-const HIST_CACHE:  Record<string, { map: MonthlyPriceMap; ts: number }> = {};
+const HIST_CACHE:  Record<string, { monthly: MonthlyPriceMap; weekly: WeeklyPriceMap; ts: number }> = {};
 const LIVE_TTL  = 60_000;
-const HIST_TTL  = 6 * 3600_000; // 6h pour l'historique
+const HIST_TTL  = 6 * 3600_000;
 
 async function rustFetch(url: string): Promise<any> {
   return invoke<any>("fetch_url", { url });
@@ -47,17 +50,19 @@ export async function fetchLiveQuote(ticker: string): Promise<Quote | null> {
   } catch { return null; }
 }
 
-// ── Weekly history → monthly close map ────────────────────────────────────────
-// Fetches weekly candles from `from` (YYYY-MM) to today and returns
-// the last weekly close for each month.
-export async function fetchMonthlyPriceMap(
+// ── Fetch weekly candles → build monthly map AND weekly map ───────────────────
+// monthly: last weekly close per month (YYYY-MM → price)
+// weekly:  close for each weekly candle (YYYY-MM-DD → price, keyed by week-start)
+export async function fetchPriceMaps(
   ticker: string,
   fromMonth: string
-): Promise<MonthlyPriceMap> {
+): Promise<{ monthly: MonthlyPriceMap; weekly: WeeklyPriceMap }> {
   const key = `hist_${ticker}_${fromMonth}`;
   if (HIST_CACHE[key] && Date.now() - HIST_CACHE[key].ts < HIST_TTL)
-    return HIST_CACHE[key].map;
+    return { monthly: HIST_CACHE[key].monthly, weekly: HIST_CACHE[key].weekly };
 
+  const monthly: MonthlyPriceMap = {};
+  const weekly:  WeeklyPriceMap  = {};
   try {
     const [fy, fm] = fromMonth.split("-").map(Number);
     const period1 = Math.floor(new Date(fy, fm - 1, 1).getTime() / 1000);
@@ -65,28 +70,32 @@ export async function fetchMonthlyPriceMap(
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1wk&period1=${period1}&period2=${period2}`;
     const json = await rustFetch(url);
     const result = json?.chart?.result?.[0];
-    if (!result) return {};
+    if (result) {
+      const timestamps: number[] = result.timestamps ?? result.timestamp ?? [];
+      const closes: (number | null)[] = result.indicators?.quote?.[0]?.close ?? [];
+      timestamps.forEach((ts, i) => {
+        const c = closes[i];
+        if (!c || c <= 0) return;
+        const d = new Date(ts * 1000);
+        const dateStr = `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,"0")}-${String(d.getUTCDate()).padStart(2,"0")}`;
+        const mKey   = dateStr.slice(0, 7);
+        monthly[mKey] = c; // last write wins → last weekly close of month
+        weekly[dateStr] = c;
+      });
+    }
+  } catch { /* return empty maps */ }
 
-    const timestamps: number[] = result.timestamps ?? result.timestamp ?? [];
-    const closes: (number|null)[] = result.indicators?.quote?.[0]?.close ?? [];
-
-    // Build map: for each week, record its close under its YYYY-MM key
-    // Later week in same month overwrites earlier → last weekly close of month
-    const map: MonthlyPriceMap = {};
-    timestamps.forEach((ts, i) => {
-      const c = closes[i];
-      if (!c || c <= 0) return;
-      const d = new Date(ts * 1000);
-      const mKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      map[mKey] = c; // last write wins → last weekly close of the month
-    });
-
-    HIST_CACHE[key] = { map, ts: Date.now() };
-    return map;
-  } catch { return {}; }
+  HIST_CACHE[key] = { monthly, weekly, ts: Date.now() };
+  return { monthly, weekly };
 }
 
-// ── Current-month price from live or historical map ────────────────────────────
+// Backward compat
+export async function fetchMonthlyPriceMap(ticker: string, fromMonth: string): Promise<MonthlyPriceMap> {
+  const { monthly } = await fetchPriceMaps(ticker, fromMonth);
+  return monthly;
+}
+
+// ── Price helpers ──────────────────────────────────────────────────────────────
 export function priceForMonth(
   ticker: string,
   month: string,
@@ -97,40 +106,67 @@ export function priceForMonth(
   const curMonth = new Date().toISOString().slice(0, 7);
   if (month >= curMonth && liveQuote) return liveQuote.price;
   if (histMap[month]) return histMap[month];
-  // fallback: find nearest previous month in map
   const keys = Object.keys(histMap).filter(k => k <= month).sort();
   if (keys.length) return histMap[keys[keys.length - 1]];
   return pru;
 }
 
+// Return the weekly close price at or just before `dateStr` (YYYY-MM-DD).
+function priceForDate(
+  dateStr: string,
+  weeklyMap: WeeklyPriceMap,
+  monthlyMap: MonthlyPriceMap,
+  liveQuote: Quote | null,
+  pru: number
+): number {
+  const today = new Date().toISOString().slice(0, 10);
+  if (dateStr >= today && liveQuote) return liveQuote.price;
+
+  // Exact hit in weekly map
+  if (weeklyMap[dateStr]) return weeklyMap[dateStr];
+
+  // Most recent weekly candle at or before dateStr
+  const wKeys = Object.keys(weeklyMap).filter(k => k <= dateStr).sort();
+  if (wKeys.length) return weeklyMap[wKeys[wKeys.length - 1]];
+
+  // Fall back to monthly
+  return priceForMonth("", dateStr.slice(0, 7), monthlyMap, liveQuote, pru);
+}
+
 // ── Hook: live quotes + full history for a set of tickers ─────────────────────
 export function useQuotes(tickers: string[], fromMonth: string) {
-  const [liveQuotes, setLiveQuotes] = useState<Record<string, Quote>>({});
-  const [histMaps,   setHistMaps]   = useState<Record<string, MonthlyPriceMap>>({});
-  const [loading,    setLoading]    = useState(false);
-  const key    = [...tickers].sort().join(",");
-  const timer  = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [liveQuotes,    setLiveQuotes]    = useState<Record<string, Quote>>({});
+  const [histMaps,      setHistMaps]      = useState<Record<string, MonthlyPriceMap>>({});
+  const [histWeekMaps,  setHistWeekMaps]  = useState<Record<string, WeeklyPriceMap>>({});
+  const [loading,       setLoading]       = useState(false);
+  const key   = [...tickers].sort().join(",");
+  const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const refresh = useCallback(async () => {
-    if (!tickers.length) { setLiveQuotes({}); setHistMaps({}); return; }
+    if (!tickers.length) { setLiveQuotes({}); setHistMaps({}); setHistWeekMaps({}); return; }
     setLoading(true);
     try {
-      const [lives, hists] = await Promise.all([
-        // Live quotes (always)
+      const [lives, maps] = await Promise.all([
         Promise.allSettled(tickers.map(t => fetchLiveQuote(t))).then(rs => {
           const out: Record<string, Quote> = {};
           rs.forEach((r, i) => { if (r.status === "fulfilled" && r.value) out[tickers[i]] = r.value; });
           return out;
         }),
-        // Historical weekly maps (from first purchase)
-        Promise.allSettled(tickers.map(t => fetchMonthlyPriceMap(t, fromMonth))).then(rs => {
-          const out: Record<string, MonthlyPriceMap> = {};
-          rs.forEach((r, i) => { if (r.status === "fulfilled") out[tickers[i]] = r.value; });
-          return out;
+        Promise.allSettled(tickers.map(t => fetchPriceMaps(t, fromMonth))).then(rs => {
+          const monthly: Record<string, MonthlyPriceMap> = {};
+          const weekly:  Record<string, WeeklyPriceMap>  = {};
+          rs.forEach((r, i) => {
+            if (r.status === "fulfilled") {
+              monthly[tickers[i]] = r.value.monthly;
+              weekly[tickers[i]]  = r.value.weekly;
+            }
+          });
+          return { monthly, weekly };
         }),
       ]);
       setLiveQuotes(lives);
-      setHistMaps(hists);
+      setHistMaps(maps.monthly);
+      setHistWeekMaps(maps.weekly);
     } catch {}
     setLoading(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -142,15 +178,24 @@ export function useQuotes(tickers: string[], fromMonth: string) {
     return () => { if (timer.current) clearInterval(timer.current); };
   }, [refresh]);
 
-  // Convenience: get the right price for any month
+  // getPrice: price for a given YYYY-MM (backward compat)
   const getPrice = useCallback((ticker: string, month: string, pru = 0): number => {
     const curMonth = new Date().toISOString().slice(0, 7);
     if (month >= curMonth) return liveQuotes[ticker]?.price ?? pru;
     return priceForMonth(ticker, month, histMaps[ticker] ?? {}, liveQuotes[ticker] ?? null, pru);
   }, [liveQuotes, histMaps]);
 
-  // quotes = live quotes (for display in table header)
-  const quotes = liveQuotes;
+  // getPriceForDate: price at (or just before) a YYYY-MM-DD date — uses weekly candles
+  const getPriceForDate = useCallback((ticker: string, dateStr: string, pru = 0): number => {
+    return priceForDate(
+      dateStr,
+      histWeekMaps[ticker] ?? {},
+      histMaps[ticker] ?? {},
+      liveQuotes[ticker] ?? null,
+      pru,
+    );
+  }, [liveQuotes, histMaps, histWeekMaps]);
 
-  return { quotes, histMaps, liveQuotes, getPrice, loading, refresh };
+  const quotes = liveQuotes;
+  return { quotes, histMaps, histWeekMaps, liveQuotes, getPrice, getPriceForDate, loading, refresh };
 }
