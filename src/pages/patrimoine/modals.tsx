@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/tauri";
 import { LIVRETS_DEF, POCHES, INVEST_SUBCATS, defaultDateForMonth } from "../../constants";
 import { curMonth } from "../../context/DeviseContext";
 import { useDevise } from "../../context/DeviseContext";
-import type { Livret, Position, Vente, Dividende, Versement } from "./types";
+import type { Livret, Position, Vente, Dividende, Versement, ScpiValuation } from "./types";
 
 // ── Livret Modal ───────────────────────────────────────────────────────────────
 export function LivretModal({mois,onClose,onSave}:{mois:string;onClose:()=>void;onSave:()=>void}) {
@@ -204,14 +204,15 @@ export function DividendeModal({poche,positions,mois=curMonth,onClose,onSave}:{
   poche:string;positions:Position[];mois?:string;onClose:()=>void;onSave:()=>void;
 }) {
   const tickers=[...new Set(positions.map(p=>p.ticker))];
-  const [form,setForm]=useState<Dividende>({ticker:tickers[0]??"",poche,montant:0,date:defaultDateForMonth(mois)});
+  const allOptions=[...tickers,"_INTERETS_"];
+  const [form,setForm]=useState<Dividende>({ticker:tickers[0]??"_INTERETS_",poche,montant:0,date:defaultDateForMonth(mois)});
   const s=(k:keyof Dividende,v:string|number)=>setForm(f=>({...f,[k]:v}));
   return(<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
-    <div className="modal-title">Ajouter un dividende</div>
+    <div className="modal-title">Ajouter un dividende / intérêt</div>
     <div className="form-grid">
       <div className="field"><label>Position</label>
         <select value={form.ticker} onChange={e=>s("ticker",e.target.value)}>
-          {tickers.map(t=><option key={t} value={t}>{t}</option>)}
+          {allOptions.map(t=><option key={t} value={t}>{t==="_INTERETS_"?"Intérêts":t}</option>)}
         </select></div>
       <div className="field"><label>Montant (€)</label><input type="number" step="0.01" value={form.montant} onChange={e=>s("montant",parseFloat(e.target.value)||0)}/></div>
       <div className="field"><label>Date</label><input type="date" value={form.date} onChange={e=>s("date",e.target.value)}/></div>
@@ -220,6 +221,49 @@ export function DividendeModal({poche,positions,mois=curMonth,onClose,onSave}:{
     <div className="form-actions">
       <button className="btn btn-ghost" onClick={onClose}>Annuler</button>
       <button className="btn btn-primary" onClick={async()=>{await invoke("add_dividende",{dividende:form});onSave();}}>Enregistrer</button>
+    </div>
+  </div></div>);
+}
+
+// ── SCPI Valuation Modal ───────────────────────────────────────────────────────
+export function ScpiValuationModal({poche,scpiTickers,mois=curMonth,valuations,onClose,onSave}:{
+  poche:string;scpiTickers:string[];mois?:string;valuations:ScpiValuation[];onClose:()=>void;onSave:()=>void;
+}) {
+  const [ticker,setTicker]=useState(scpiTickers[0]??"");
+  const [month,setMonth]=useState(mois);
+  const [valeur,setValeur]=useState(0);
+  return(<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
+    <div className="modal-title">Valorisation SCPI · {POCHES.find(p=>p.key===poche)?.label}</div>
+    <div className="form-grid">
+      <div className="field"><label>Ticker SCPI</label>
+        <select value={ticker} onChange={e=>setTicker(e.target.value)}>
+          {scpiTickers.map(t=><option key={t} value={t}>{t}</option>)}
+        </select></div>
+      <div className="field"><label>Mois (YYYY-MM)</label>
+        <input type="month" value={month} onChange={e=>setMonth(e.target.value)}/></div>
+      <div className="field"><label>Valeur unitaire (€)</label>
+        <input type="number" step="0.01" value={valeur} onChange={e=>setValeur(parseFloat(e.target.value)||0)}/></div>
+    </div>
+    {valuations.filter(v=>v.ticker===ticker).length>0&&(
+      <div style={{marginBottom:16}}>
+        <div style={{fontSize:10,color:"var(--text-2)",marginBottom:6,textTransform:"uppercase",letterSpacing:".08em"}}>Historique {ticker}</div>
+        <div style={{display:"flex",flexDirection:"column",gap:4,maxHeight:160,overflowY:"auto"}}>
+          {valuations.filter(v=>v.ticker===ticker).sort((a,b)=>b.mois.localeCompare(a.mois)).map(v=>(
+            <div key={v.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",
+              padding:"4px 10px",background:"var(--bg-2)",borderRadius:6,fontSize:11}}>
+              <span style={{color:"var(--text-1)"}}>{v.mois}</span>
+              <span style={{color:"var(--gold)",fontWeight:500}}>{v.valeur_unit.toFixed(2)} €</span>
+              <button className="btn btn-ghost btn-sm" style={{fontSize:10,padding:"2px 8px",color:"var(--rose)"}}
+                onClick={async()=>{await invoke("delete_scpi_valuation",{id:v.id});onSave();}}>✕</button>
+            </div>
+          ))}
+        </div>
+      </div>
+    )}
+    <div className="form-actions">
+      <button className="btn btn-ghost" onClick={onClose}>Fermer</button>
+      <button className="btn btn-primary" disabled={!ticker||valeur<=0}
+        onClick={async()=>{await invoke("add_scpi_valuation",{val:{poche,ticker,mois:month,valeur_unit:valeur}});onSave();}}>Enregistrer</button>
     </div>
   </div></div>);
 }

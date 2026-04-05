@@ -40,6 +40,11 @@ pub struct Versement {
     pub id: Option<i64>, pub poche: String, pub montant: f64,
     pub date: String, pub notes: Option<String>,
 }
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ScpiValuation {
+    pub id: Option<i64>, pub poche: String, pub ticker: String,
+    pub mois: String, pub valeur_unit: f64,
+}
 #[allow(dead_code)]
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Parametre { pub cle: String, pub valeur: String }
@@ -127,6 +132,16 @@ pub fn init_db(conn: &Connection) -> Result<()> {
                 created_at TEXT DEFAULT (datetime('now'))
             );
             PRAGMA user_version = 5;
+        ")?;
+    }
+    if version < 6 {
+        conn.execute_batch("
+            CREATE TABLE IF NOT EXISTS scpi_valuations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, poche TEXT NOT NULL,
+                ticker TEXT NOT NULL, mois TEXT NOT NULL, valeur_unit REAL NOT NULL,
+                UNIQUE(poche, ticker, mois)
+            );
+            PRAGMA user_version = 6;
         ")?;
     }
     Ok(())

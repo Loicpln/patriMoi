@@ -50,24 +50,26 @@ export async function fetchLiveQuote(ticker: string): Promise<Quote | null> {
   } catch { return null; }
 }
 
-// ── Fetch weekly candles → build monthly map AND weekly map ───────────────────
-// monthly: last weekly close per month (YYYY-MM → price)
-// weekly:  close for each weekly candle (YYYY-MM-DD → price, keyed by week-start)
+// ── Fetch daily candles → build monthly map AND daily map ────────────────────
+// monthly: last daily close per month (YYYY-MM → price)
+// weekly:  daily close keyed by date (YYYY-MM-DD → price)
+//          (field kept as "weekly" for backward-compat with existing consumers)
 export async function fetchPriceMaps(
   ticker: string,
   fromMonth: string
 ): Promise<{ monthly: MonthlyPriceMap; weekly: WeeklyPriceMap }> {
-  const key = `hist_${ticker}_${fromMonth}`;
+  // "daily" prefix distinguishes from old weekly-interval cache entries
+  const key = `hist_daily_${ticker}_${fromMonth}`;
   if (HIST_CACHE[key] && Date.now() - HIST_CACHE[key].ts < HIST_TTL)
     return { monthly: HIST_CACHE[key].monthly, weekly: HIST_CACHE[key].weekly };
 
   const monthly: MonthlyPriceMap = {};
-  const weekly:  WeeklyPriceMap  = {};
+  const daily:   WeeklyPriceMap  = {};
   try {
     const [fy, fm] = fromMonth.split("-").map(Number);
     const period1 = Math.floor(new Date(fy, fm - 1, 1).getTime() / 1000);
     const period2 = Math.floor(Date.now() / 1000);
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1wk&period1=${period1}&period2=${period2}`;
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&period1=${period1}&period2=${period2}`;
     const json = await rustFetch(url);
     const result = json?.chart?.result?.[0];
     if (result) {
@@ -79,14 +81,14 @@ export async function fetchPriceMaps(
         const d = new Date(ts * 1000);
         const dateStr = `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,"0")}-${String(d.getUTCDate()).padStart(2,"0")}`;
         const mKey   = dateStr.slice(0, 7);
-        monthly[mKey] = c; // last write wins → last weekly close of month
-        weekly[dateStr] = c;
+        monthly[mKey] = c; // last write wins → last daily close of month
+        daily[dateStr] = c;
       });
     }
   } catch { /* return empty maps */ }
 
-  HIST_CACHE[key] = { monthly, weekly, ts: Date.now() };
-  return { monthly, weekly };
+  HIST_CACHE[key] = { monthly, weekly: daily, ts: Date.now() };
+  return { monthly, weekly: daily };
 }
 
 // Backward compat

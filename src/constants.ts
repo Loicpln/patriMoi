@@ -36,7 +36,7 @@ export const POCHE_COLOR: Record<string, string> = Object.fromEntries(
 export const INVEST_SUBCATS = [
   { key: "actions",        label: "Actions",          color: "#3a7bd5" },
   { key: "etf",            label: "ETF",              color: "#5fa89e" },
-  { key: "etc",            label: "ETC (mat. prem.)", color: "#7c6fd4" },
+  { key: "etc",            label: "ETC",              color: "#7c6fd4" },
   { key: "private_equity", label: "Private Equity",   color: "#2196a8" },
   { key: "fond",           label: "Fond",             color: "#1e7a8a" },
   { key: "scp",            label: "SCPI",             color: "#4a90d9" },

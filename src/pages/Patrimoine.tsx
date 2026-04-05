@@ -9,7 +9,7 @@ import { useEffect, useState, useMemo, useCallback, Component, ReactNode } from 
 import { invoke } from "@tauri-apps/api/tauri";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, ReferenceLine,
-  ResponsiveContainer, Tooltip,
+  ResponsiveContainer, Tooltip, ComposedChart, Line, Customized,
 } from "recharts";
 import { useDevise, MONTHS, curMonth } from "../context/DeviseContext";
 import { useQuotes } from "../hooks/useQuotes";
@@ -23,19 +23,35 @@ import { LivretsSection } from "./patrimoine/LivretsSection";
 import { PocheSection } from "./patrimoine/PocheSection";
 import type { Livret, Position, Vente, Dividende, Versement } from "./patrimoine/types";
 
+// Robust XAxis pixel lookup (handles both point/band and linear scales)
+function xPixel(scale: any, value: string): number | null {
+  if (!scale) return null;
+  const direct = scale(value);
+  if (direct != null && !isNaN(direct)) return direct as number;
+  const domain: string[] = scale.domain ? (scale.domain() as string[]) : [];
+  const idx = domain.indexOf(value);
+  if (idx < 0) return null;
+  const range: number[] = scale.range ? (scale.range() as number[]) : [0, 0];
+  if (domain.length <= 1) return range[0];
+  return range[0] + (idx / (domain.length - 1)) * (range[1] - range[0]);
+}
+
 // ── Recap Investissement ───────────────────────────────────────────────────────
-function RecapInvestissement({positions,ventes,mois}:{positions:Position[];ventes:Vente[];mois:string}) {
+function RecapInvestissement({positions,ventes,dividendes,versements,mois}:{positions:Position[];ventes:Vente[];dividendes:Dividende[];versements:Versement[];mois:string}) {
   const {fmt}=useDevise();
+  const MN_SHORT=["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
   const [pieToggle,setPieToggle]=useState<"capital"|"valeur">("capital");
   const tickers=useMemo(()=>[...new Set(positions.map(p=>p.ticker))],[positions]);
   const fromMonth=useMemo(()=>{
     const d=positions.map(p=>(p.date_achat??"").slice(0,7)).filter(Boolean).sort();
     return d[0]??curMonth;
   },[positions]);
-  const {quotes,getPrice}=useQuotes(tickers,fromMonth);
+  const {quotes,getPrice,getPriceForDate}=useQuotes(tickers,fromMonth);
 
+  // ── Pie data ──────────────────────────────────────────────────────────────
+  // outer ring: grouped by poche+subcat so CTO Actions ≠ PEA Actions
   const pocheMap:Record<string,{value:number;color:string}>={};
-  const subcatMap:Record<string,{value:number;color:string}>={};
+  const outerMap:Record<string,{value:number;color:string}>={};
   POCHES.forEach(p=>{
     const byT:Record<string,{q:number;inv:number;subcat:string}>={};
     positions.filter(pos=>pos.poche===p.key&&(pos.date_achat??"").slice(0,7)<=mois).forEach(pos=>{
@@ -43,41 +59,109 @@ function RecapInvestissement({positions,ventes,mois}:{positions:Position[];vente
       byT[pos.ticker].q+=pos.quantite;byT[pos.ticker].inv+=pos.quantite*pos.prix_achat;
     });
     ventes.filter(v=>v.poche===p.key&&(v.date_vente??"").slice(0,7)<=mois).forEach(v=>{
-      if(byT[v.ticker]){byT[v.ticker].q=Math.max(0,byT[v.ticker].q-v.quantite);}
+      if(byT[v.ticker]){const pru2=byT[v.ticker].q>0?byT[v.ticker].inv/byT[v.ticker].q:0;byT[v.ticker].q=Math.max(0,byT[v.ticker].q-v.quantite);byT[v.ticker].inv=Math.max(0,byT[v.ticker].inv-v.quantite*pru2);}
     });
+    let pocheCost=0;
     Object.entries(byT).forEach(([ticker,d])=>{
       if(d.q<=1e-9)return;
       const pru=d.q>0?d.inv/d.q:0;
       const val=pieToggle==="capital"?d.inv:(d.q*(getPrice(ticker,mois,pru)));
       if(!pocheMap[p.key])pocheMap[p.key]={value:0,color:p.color};
       pocheMap[p.key].value+=val;
-      if(!subcatMap[d.subcat])subcatMap[d.subcat]={value:0,color:INVEST_SUBCAT_COLOR[d.subcat]??p.color};
-      subcatMap[d.subcat].value+=val;
+      pocheCost+=d.inv;
+      const outKey=`${p.key}||${d.subcat}`;
+      if(!outerMap[outKey])outerMap[outKey]={value:0,color:p.color+"cc"};
+      outerMap[outKey].value+=val;
     });
+    // Espèces per poche
+    const versTotal=versements.filter(v=>v.poche===p.key&&(v.date??"").slice(0,7)<=mois).reduce((s,v)=>s+v.montant,0);
+    const pnlReal=ventes.filter(v=>v.poche===p.key&&(v.date_vente??"").slice(0,7)<=mois).reduce((s,v)=>s+v.pnl,0);
+    const divTotal=dividendes.filter(d=>d.poche===p.key&&(d.date??"").slice(0,7)<=mois).reduce((s,d)=>s+d.montant,0);
+    const esp=Math.max(0,versTotal+pnlReal+divTotal-pocheCost);
+    if(esp>0){
+      if(!pocheMap[p.key])pocheMap[p.key]={value:0,color:p.color};
+      pocheMap[p.key].value+=esp;
+      const cashKey=`${p.key}||especes`;
+      if(!outerMap[cashKey])outerMap[cashKey]={value:0,color:(INVEST_SUBCAT_COLOR["especes"]??"#78909c")+"cc"};
+      outerMap[cashKey].value+=esp;
+    }
   });
-  const inner=Object.entries(pocheMap).map(([k,v])=>({name:POCHES.find(p=>p.key===k)?.label??k,...v}));
-  const outer=Object.entries(subcatMap).map(([k,v])=>({name:INVEST_SUBCATS.find(s=>s.key===k)?.label??k,...v}));
+  const inner=Object.entries(pocheMap).map(([k,v])=>({name:POCHES.find(p=>p.key===k)?.label??k,...v})).filter(e=>e.value>0);
+  const outer=Object.entries(outerMap).map(([k,v])=>{
+    const [pk,...rest]=k.split("||");const sk=rest.join("||");
+    const pocheName=POCHES.find(p=>p.key===pk)?.label??pk;
+    const subcatName=sk==="especes"?"Espèces":(INVEST_SUBCATS.find(s=>s.key===sk)?.label??sk);
+    return{name:`${subcatName} (${pocheName})`,...v};
+  }).filter(e=>e.value>0);
   const grandTotal=Object.values(pocheMap).reduce((s,v)=>s+v.value,0);
 
-  const allDates=positions.map(p=>(p.date_achat??"").slice(0,7)).filter(Boolean).sort();
-  const firstMonth=allDates[0]??curMonth;
-  const stackMonths=useMemo(()=>monthsBetween(firstMonth,curMonth),[firstMonth]);
-  const stackedData=useMemo(()=>stackMonths.map(m=>{
-    const entry:any={mois:m};
-    POCHES.forEach(p=>{
-      const byT:Record<string,{q:number;inv:number}>={};
-      positions.filter(pos=>pos.poche===p.key&&(pos.date_achat??"").slice(0,7)<=m).forEach(pos=>{
-        if(!byT[pos.ticker])byT[pos.ticker]={q:0,inv:0};
-        byT[pos.ticker].q+=pos.quantite;byT[pos.ticker].inv+=pos.quantite*pos.prix_achat;
+  // ── Daily stacked data (all poches, with cumulative versements + espèces) ───
+  const stackedData=useMemo(()=>{
+    if(!positions.length)return[];
+    const firstDay=positions.map(p=>p.date_achat??"").filter(Boolean).sort()[0];
+    const dayDates:string[]=[];
+    const cur=new Date(firstDay.slice(0,7)+"-01");
+    const now=new Date();now.setHours(23,59,59,999);
+    while(cur<=now){dayDates.push(cur.toISOString().slice(0,10));cur.setDate(cur.getDate()+1);}
+
+    type Ev={date:string;type:"buy"|"sell";poche:string;ticker:string;qty:number;price:number};
+    const allEv:Ev[]=[
+      ...positions.map(p=>({date:p.date_achat??"",type:"buy" as const,poche:p.poche,ticker:p.ticker,qty:p.quantite,price:p.prix_achat})),
+      ...ventes.map(v=>({date:v.date_vente??"",type:"sell" as const,poche:v.poche,ticker:v.ticker,qty:v.quantite,price:0})),
+    ].sort((a,b)=>a.date.localeCompare(b.date));
+
+    const sortedVers=[...versements].sort((a,b)=>(a.date??"").localeCompare(b.date??""));
+    const sortedVent=[...ventes].sort((a,b)=>(a.date_vente??"").localeCompare(b.date_vente??""));
+    const sortedDivs=[...dividendes].sort((a,b)=>(a.date??"").localeCompare(b.date??""));
+    const byPoche:Record<string,Record<string,{q:number;inv:number}>>={};
+    POCHES.forEach(p=>{byPoche[p.key]={};});
+
+    let evIdx=0,viC=0,piC=0,diC=0,cumVers=0,cumPnl=0,cumDivs=0;
+    return dayDates.map(dateStr=>{
+      while(evIdx<allEv.length&&allEv[evIdx].date<=dateStr){
+        const ev=allEv[evIdx++];
+        const map=byPoche[ev.poche];if(!map)continue;
+        if(ev.type==="buy"){
+          if(!map[ev.ticker])map[ev.ticker]={q:0,inv:0};
+          map[ev.ticker].q+=ev.qty;map[ev.ticker].inv+=ev.qty*ev.price;
+        }else if(map[ev.ticker]){
+          const pru=map[ev.ticker].q>0?map[ev.ticker].inv/map[ev.ticker].q:0;
+          map[ev.ticker].q=Math.max(0,map[ev.ticker].q-ev.qty);
+          map[ev.ticker].inv=Math.max(0,map[ev.ticker].inv-ev.qty*pru);
+          if(map[ev.ticker].q<=1e-9)delete map[ev.ticker];
+        }
+      }
+      while(viC<sortedVers.length&&(sortedVers[viC].date??"")<= dateStr)cumVers+=sortedVers[viC++].montant;
+      while(piC<sortedVent.length&&(sortedVent[piC].date_vente??"")<= dateStr)cumPnl+=sortedVent[piC++].pnl;
+      while(diC<sortedDivs.length&&(sortedDivs[diC].date??"")<= dateStr)cumDivs+=sortedDivs[diC++].montant;
+      const totalInvest=POCHES.reduce((s,p)=>s+Object.values(byPoche[p.key]).reduce((ss,d)=>ss+d.inv,0),0);
+      const especes=Math.max(0,cumVers+cumPnl+cumDivs-totalInvest);
+      const row:any={date:dateStr,month:dateStr.slice(0,7),_versTotal:cumVers,_especes:especes};
+      POCHES.forEach(p=>{
+        row[p.label]=Object.entries(byPoche[p.key]).reduce((s,[t,d])=>{
+          const pru=d.q>0?d.inv/d.q:0;
+          return s+d.q*getPriceForDate(t,dateStr,pru);
+        },0);
       });
-      ventes.filter(v=>v.poche===p.key&&(v.date_vente??"").slice(0,7)<=m).forEach(v=>{
-        if(byT[v.ticker]){const pru=byT[v.ticker].q>0?byT[v.ticker].inv/byT[v.ticker].q:0;byT[v.ticker].q=Math.max(0,byT[v.ticker].q-v.quantite);byT[v.ticker].inv=Math.max(0,byT[v.ticker].inv-v.quantite*pru);}
-      });
-      entry[p.label]=Object.entries(byT).reduce((s,[t,d])=>s+d.q*getPrice(t,m,d.q>0?d.inv/d.q:0),0);
+      return row;
     });
-    return entry;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }),[stackMonths,positions,ventes,getPrice]);
+  },[positions,ventes,dividendes,versements,getPriceForDate]);
+
+  // XAxis tick dates (first date of each month, ≤8 labels)
+  const xTicks=useMemo(()=>{
+    const seen=new Set<string>();const firsts:string[]=[];
+    stackedData.forEach((d:any)=>{const m=(d.date as string).slice(0,7);if(!seen.has(m)){seen.add(m);firsts.push(d.date as string);}});
+    const step=Math.max(1,Math.ceil(firsts.length/8));
+    return firsts.filter((_,i)=>i%step===0);
+  },[stackedData]);
+
+  // Selected-month range for gold highlight
+  const monthRange=useMemo(()=>{
+    const inM=stackedData.filter((d:any)=>d.month===mois);
+    if(!inM.length)return null;
+    return{x1:inM[0].date as string,x2:inM[inM.length-1].date as string};
+  },[stackedData,mois]);
 
   const pieNode=(h:number,_isExp?:boolean)=>inner.length===0?<div className="empty">Aucune donnée</div>:(
     <NestedPie inner={inner} outer={outer} total={grandTotal} fmt={fmt} h={h}
@@ -86,22 +170,46 @@ function RecapInvestissement({positions,ventes,mois}:{positions:Position[];vente
   );
   const stackNode=(h:number,_isExp?:boolean)=>stackedData.length===0?<div className="empty">Aucune donnée</div>:(
     <ResponsiveContainer width="100%" height={h}>
-      <AreaChart data={stackedData} margin={{left:-20}}>
-        <defs>{POCHES.map(p=>(<linearGradient key={p.key} id={`gr_${p.key}`} x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={p.color} stopOpacity={.7}/><stop offset="95%" stopColor={p.color} stopOpacity={.05}/></linearGradient>))}</defs>
+      <ComposedChart data={stackedData} margin={{left:0,right:5,top:5,bottom:0}}>
+        <defs>
+          <linearGradient id="gr_especes_recap" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor={INVEST_SUBCAT_COLOR["especes"]??"#78909c"} stopOpacity={.7}/>
+            <stop offset="95%" stopColor={INVEST_SUBCAT_COLOR["especes"]??"#78909c"} stopOpacity={.05}/>
+          </linearGradient>
+          {POCHES.map(p=>(<linearGradient key={p.key} id={`gr_${p.key}`} x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={p.color} stopOpacity={.7}/><stop offset="95%" stopColor={p.color} stopOpacity={.05}/></linearGradient>))}
+        </defs>
         <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
-        <XAxis dataKey="mois" tick={{fontSize:8,fontFamily:"JetBrains Mono"}} interval={Math.max(0,Math.floor(stackedData.length/6)-1)}/>
-        <YAxis tick={{fontSize:8,fontFamily:"JetBrains Mono"}} tickFormatter={v=>v>=1000?`${(v/1000).toFixed(0)}k€`:`${v}€`} width={45}/>
-        <Tooltip {...TTP} formatter={(v:number,n:string)=>[fmt(v),n]}/>
-        <ReferenceLine x={mois} stroke="var(--gold)" strokeDasharray="4 2" />
+        <XAxis dataKey="date" ticks={xTicks} tick={{fontSize:8,fontFamily:"JetBrains Mono"}}
+          tickFormatter={d=>{const mo=parseInt(d.slice(5,7));return MN_SHORT[mo-1];}}/>
+        <YAxis tick={{fontSize:8,fontFamily:"JetBrains Mono"}} tickFormatter={v=>v>=1000?`${(v/1000).toFixed(0)}k€`:`${v}€`} width={45} domain={[0,"auto"]}/>
+        <Tooltip {...TTP} formatter={(v:number,n:string)=>n==="_versTotal"?[fmt(v),"Versements"]:n==="_especes"?[fmt(v),"Espèces"]:[fmt(v),n]}/>
+        {/* Espèces — bottom layer */}
+        <Area type="monotone" dataKey="_especes" stackId="r" name="Espèces"
+          stroke={INVEST_SUBCAT_COLOR["especes"]??"#78909c"} strokeWidth={1} fill="url(#gr_especes_recap)"/>
         {POCHES.map(p=><Area key={p.key} type="monotone" dataKey={p.label} stackId="r" stroke={p.color} strokeWidth={1.5} fill={`url(#gr_${p.key})`}/>)}
-      </AreaChart>
+        <Line type="monotone" dataKey="_versTotal" name="Versements"
+          stroke="#e63946" strokeWidth={1.5} dot={false} strokeDasharray="4 3" legendType="none"/>
+        {monthRange&&(
+          <Customized component={(p:any)=>{
+            const xAxis=Object.values(p.xAxisMap??{})[0] as any;
+            if(!xAxis?.scale)return null;
+            const bw=xAxis.scale.bandwidth?.()??0;
+            const rx1=xPixel(xAxis.scale,monthRange.x1);
+            const rx2=xPixel(xAxis.scale,monthRange.x2);
+            if(rx1==null||rx2==null)return null;
+            return<g><rect x={rx1} y={p.offset.top} width={Math.max(0,rx2-rx1+bw)} height={p.offset.height}
+              fill="var(--gold)" fillOpacity={0.18} stroke="var(--gold)" strokeOpacity={0.6}
+              strokeDasharray="4 2" strokeWidth={1} pointerEvents="none"/></g>;
+          }}/>
+        )}
+      </ComposedChart>
     </ResponsiveContainer>
   );
   return(<div>
     <div className="section-sep"><span className="section-sep-label">Récap. investissements</span><div className="section-sep-line"/></div>
     <ChartGrid charts={[
       {key:"recap_pie",   title:`Poche / Sous-catégorie · ${mois}`, node:pieNode},
-      {key:"recap_stack", title:"Valeur par poche / mois",           node:stackNode},
+      {key:"recap_stack", title:"Valeur par poche / jour",           node:stackNode},
     ]}/>
   </div>);
 }
@@ -293,7 +401,7 @@ function PatrimoineInner() {
     </div>
     {tab==="global"&&<GlobalRecap livrets={livrets} positions={positions} ventes={ventes} versements={versements} mois={mois}/>}
     {tab==="livrets"&&<LivretsSection livrets={livrets} mois={mois} onRefresh={load}/>}
-    {tab==="recap"&&<RecapInvestissement positions={positions} ventes={ventes} mois={mois}/>}
+    {tab==="recap"&&<RecapInvestissement positions={positions} ventes={ventes} dividendes={dividendes} versements={versements} mois={mois}/>}
     {tab==="investissement"&&POCHES.map((p: typeof POCHES[number])=>(
       <Boundary key={p.key} label={p.label}>
         <PocheSection poche={p} allPositions={positions} allVentes={ventes}

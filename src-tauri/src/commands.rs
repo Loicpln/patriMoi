@@ -284,6 +284,36 @@ pub fn delete_versement(id: i64, state: State<DbState>) -> Result<(), String> {
     Ok(())
 }
 
+// ═══ SCPI VALUATIONS ═════════════════════════════════════════════════════════
+#[tauri::command]
+pub fn get_scpi_valuations(poche: Option<String>, state: State<DbState>) -> Result<Vec<ScpiValuation>, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let (sql, filtered) = match &poche {
+        Some(_) => ("SELECT id,poche,ticker,mois,valeur_unit FROM scpi_valuations WHERE poche=?1 ORDER BY mois DESC", true),
+        None    => ("SELECT id,poche,ticker,mois,valeur_unit FROM scpi_valuations ORDER BY mois DESC", false),
+    };
+    let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
+    let map = |r: &rusqlite::Row| Ok(ScpiValuation{id:r.get(0)?,poche:r.get(1)?,ticker:r.get(2)?,mois:r.get(3)?,valeur_unit:r.get(4)?});
+    let items = if filtered { stmt.query_map(params![poche.unwrap()], map) } else { stmt.query_map([], map) }
+        .map_err(|e| e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e| e.to_string())?;
+    Ok(items)
+}
+#[tauri::command]
+pub fn add_scpi_valuation(val: ScpiValuation, state: State<DbState>) -> Result<i64, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    conn.execute(
+        "INSERT INTO scpi_valuations (poche,ticker,mois,valeur_unit) VALUES (?1,?2,?3,?4) ON CONFLICT(poche,ticker,mois) DO UPDATE SET valeur_unit=excluded.valeur_unit",
+        params![val.poche,val.ticker,val.mois,val.valeur_unit])
+        .map_err(|e| e.to_string())?;
+    Ok(conn.last_insert_rowid())
+}
+#[tauri::command]
+pub fn delete_scpi_valuation(id: i64, state: State<DbState>) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM scpi_valuations WHERE id=?1", params![id]).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 // ═══ PARAMÈTRES ══════════════════════════════════════════════════════════════
 #[tauri::command]
 pub fn get_parametre(cle: String, state: State<DbState>) -> Result<String, String> {

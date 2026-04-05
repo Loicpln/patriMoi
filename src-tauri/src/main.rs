@@ -24,6 +24,7 @@ fn main() {
             commands::get_versements, commands::add_versement, commands::delete_versement,
             commands::get_parametre, commands::set_parametre, commands::choose_folder,
             commands::fetch_url,
+            commands::get_scpi_valuations, commands::add_scpi_valuation, commands::delete_scpi_valuation,
         ])
         .run(tauri::generate_context!())
         .expect("Tauri error");

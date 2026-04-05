@@ -1,15 +1,15 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, ReferenceLine, ReferenceArea,
-  ResponsiveContainer, Tooltip, ComposedChart, Bar, Line,
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, ReferenceLine,
+  ResponsiveContainer, Tooltip, ComposedChart, Bar, Line, Brush, Customized,
 } from "recharts";
 import { useDevise, curMonth } from "../../context/DeviseContext";
 import { POCHES, INVEST_SUBCATS, INVEST_SUBCAT_COLOR, monthsBetween, tickerColor, tickerColorDim, TOOLTIP_STYLE } from "../../constants";
 import { useQuotes } from "../../hooks/useQuotes";
 import { ChartGrid, NestedPie, AccordionSection } from "./shared";
-import { PositionModal, VersementModal, SellModal, DividendeModal, DeletePositionModal } from "./modals";
-import type { Position, Vente, Dividende, Versement } from "./types";
+import { PositionModal, VersementModal, SellModal, DividendeModal, DeletePositionModal, ScpiValuationModal } from "./modals";
+import type { Position, Vente, Dividende, Versement, ScpiValuation } from "./types";
 import { SUBCAT_ORDER } from "./types";
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -68,21 +68,21 @@ function aggregateByTicker(
   }));
 }
 
-// Generate weekly dates starting from firstMonth-01, step 7 days, up to today
-function genWeekDates(firstMonth: string): string[] {
+// Generate daily dates starting from firstMonth-01 up to today
+function genDailyDates(firstMonth: string): string[] {
   const dates: string[] = [];
   const cur = new Date(firstMonth + "-01");
   const now = new Date();
   now.setHours(23, 59, 59, 999);
   while (cur <= now) {
     dates.push(cur.toISOString().slice(0, 10));
-    cur.setDate(cur.getDate() + 7);
+    cur.setDate(cur.getDate() + 1);
   }
   return dates;
 }
 
-// For each event date, find which weekly-point bucket it belongs to
-// (latest weekDate <= eventDate)
+// For each event date, find which daily-point bucket it belongs to
+// (latest dayDate <= eventDate)
 function assignToWeek(weekDates: string[], eventDate: string): string | null {
   if (!eventDate) return null;
   let lo = 0, hi = weekDates.length - 1, found = -1;
@@ -94,151 +94,161 @@ function assignToWeek(weekDates: string[], eventDate: string): string | null {
   return found >= 0 ? weekDates[found] : null;
 }
 
-// Build weekly data using actual per-week prices
+// Build daily data using actual per-day prices
 function buildWeeklyData(
   positions: Position[],
   ventes: Vente[],
   dividendes: Dividende[],
   versements: Versement[],
   getPriceForDate: (ticker: string, dateStr: string, pru?: number) => number,
-  allTickers: string[]
+  allTickers: string[],
+  scpiPrices: Record<string, Record<string, number>> = {}
 ): { date: string; month: string; [k: string]: number | string }[] {
   if (!positions.length) return [];
 
   const allDates = positions.map(p => (p.date_achat ?? "").slice(0, 7)).filter(Boolean).sort();
   const firstMonth = allDates[0];
+  const dayDates   = genDailyDates(firstMonth);
 
-  // Pre-compute month-level position snapshots — events processed chronologically
-  // so buy→sell→rebuy yields the correct PRU for each leg independently.
-  const months = monthsBetween(firstMonth, curMonth);
-  const monthSnap: Record<string, Record<string, { q: number; inv: number }>> = {};
-  {
-    type Ev =
-      | { date: string; type: "buy"; ticker: string; nom: string; subcat: string; qty: number; price: number }
-      | { date: string; type: "sell"; ticker: string; qty: number };
-    const allEvents: Ev[] = [
-      ...positions.map(p => ({ date: p.date_achat ?? "", type: "buy" as const, ticker: p.ticker, nom: p.nom, subcat: p.sous_categorie ?? "actions", qty: p.quantite, price: p.prix_achat })),
-      ...ventes.map(v    => ({ date: v.date_vente ?? "",  type: "sell" as const, ticker: v.ticker, qty: v.quantite })),
-    ].sort((a, b) => a.date.localeCompare(b.date));
+  // ── Pre-sort all events chronologically ────────────────────────────────────
+  type Ev =
+    | { date: string; type: "buy"; ticker: string; nom: string; subcat: string; qty: number; price: number }
+    | { date: string; type: "sell"; ticker: string; qty: number };
+  const allEvents: Ev[] = [
+    ...positions.map(p => ({ date: p.date_achat ?? "", type: "buy"  as const, ticker: p.ticker, nom: p.nom, subcat: p.sous_categorie ?? "actions", qty: p.quantite, price: p.prix_achat })),
+    ...ventes.map(v    => ({ date: v.date_vente  ?? "", type: "sell" as const, ticker: v.ticker, qty: v.quantite })),
+  ].sort((a, b) => a.date.localeCompare(b.date));
 
-    const byT: PortfolioMap = {};
-    let evIdx = 0;
-    months.forEach(m => {
-      while (evIdx < allEvents.length && allEvents[evIdx].date.slice(0, 7) <= m) {
-        const ev = allEvents[evIdx++];
-        if (ev.type === "buy") applyBuy(byT, ev.ticker, ev.nom, ev.subcat, ev.qty, ev.price);
-        else                   applySell(byT, ev.ticker, ev.qty);
-      }
-      // Deep-copy so future mutations don't retroactively change past snapshots
-      monthSnap[m] = Object.fromEntries(Object.entries(byT).map(([k, v]) => [k, { ...v }]));
-    });
-  }
+  // Pre-sort sparse event lists for O(n) cumulative scans
+  const sortedVers  = [...versements].sort((a, b) => (a.date         ?? "").localeCompare(b.date         ?? ""));
+  const sortedVentC = [...ventes]    .sort((a, b) => (a.date_vente   ?? "").localeCompare(b.date_vente   ?? ""));
+  const sortedDivC  = [...dividendes].sort((a, b) => (a.date         ?? "").localeCompare(b.date         ?? ""));
 
-  const weekDates = genWeekDates(firstMonth);
+  // ── Incremental state ──────────────────────────────────────────────────────
+  const byT: PortfolioMap = {};
+  let evIdx = 0;
 
-  // Pre-assign per-ticker dividends to weeks
-  const divsByWeek: Record<string, Record<string, number>> = {};
+  // Per-day event maps (dividends + realized PnL on their exact date)
+  const divsByDay:  Record<string, Record<string, number>> = {};
+  const realByDay:  Record<string, Record<string, number>> = {};
   dividendes.forEach(d => {
-    const wk = assignToWeek(weekDates, d.date ?? "");
-    if (!wk) return;
-    if (!divsByWeek[wk]) divsByWeek[wk] = {};
-    divsByWeek[wk][d.ticker] = (divsByWeek[wk][d.ticker] ?? 0) + d.montant;
+    const dk = d.date ?? ""; if (!dk) return;
+    if (!divsByDay[dk])  divsByDay[dk]  = {};
+    divsByDay[dk][d.ticker] = (divsByDay[dk][d.ticker] ?? 0) + d.montant;
   });
-
-  // Pre-assign per-ticker realized PnL to weeks
-  const realByWeek: Record<string, Record<string, number>> = {};
   ventes.forEach(v => {
-    const wk = assignToWeek(weekDates, v.date_vente ?? "");
-    if (!wk) return;
-    if (!realByWeek[wk]) realByWeek[wk] = {};
-    realByWeek[wk][v.ticker] = (realByWeek[wk][v.ticker] ?? 0) + v.pnl;
+    const vk = v.date_vente ?? ""; if (!vk) return;
+    if (!realByDay[vk]) realByDay[vk] = {};
+    realByDay[vk][v.ticker] = (realByDay[vk][v.ticker] ?? 0) + v.pnl;
   });
 
-  // Cumulative scans: versements, realized PnL, dividends — all O(n) via sorted pass
-  const sortedVers = [...versements].sort((a, b) => (a.date ?? "").localeCompare(b.date ?? ""));
-  const sortedVentesChron = [...ventes].sort((a, b) => (a.date_vente ?? "").localeCompare(b.date_vente ?? ""));
-  const sortedDivsChron  = [...dividendes].sort((a, b) => (a.date ?? "").localeCompare(b.date ?? ""));
+  // Cumulative running totals
+  let cumVers = 0, viC = 0;
+  let cumPnl  = 0, piC = 0;
+  let cumDivs = 0, diC = 0;
 
-  const cumVersByWeek: Record<string, number> = {};
-  const cumPnlByWeek:  Record<string, number> = {};
-  const cumDivsByWeek: Record<string, number> = {};
-  let cumVers = 0, vIdx = 0;
-  let cumPnl  = 0, peIdx = 0;
-  let cumDivs = 0, dIdx  = 0;
+  // ── Main loop — one entry per calendar day ─────────────────────────────────
+  const result: { date: string; month: string; [k: string]: number | string }[] = [];
 
-  weekDates.forEach(wd => {
-    while (vIdx  < sortedVers.length        && (sortedVers[vIdx].date           ?? "") <= wd) cumVers += sortedVers[vIdx++].montant;
-    while (peIdx < sortedVentesChron.length && (sortedVentesChron[peIdx].date_vente ?? "") <= wd) cumPnl  += sortedVentesChron[peIdx++].pnl;
-    while (dIdx  < sortedDivsChron.length   && (sortedDivsChron[dIdx].date      ?? "") <= wd) cumDivs += sortedDivsChron[dIdx++].montant;
-    cumVersByWeek[wd] = cumVers;
-    cumPnlByWeek[wd]  = cumPnl;
-    cumDivsByWeek[wd] = cumDivs;
-  });
+  for (const dateStr of dayDates) {
+    // Apply portfolio events up to and including this day
+    while (evIdx < allEvents.length && allEvents[evIdx].date <= dateStr) {
+      const ev = allEvents[evIdx++];
+      if (ev.type === "buy") applyBuy(byT, ev.ticker, ev.nom, ev.subcat, ev.qty, ev.price);
+      else                   applySell(byT, ev.ticker, ev.qty);
+    }
 
-  return weekDates.map(dateStr => {
-    const m = dateStr.slice(0, 7);
-    const byT: Record<string, { q: number; inv: number }> = monthSnap[m] ?? {};
+    // Advance cumulative counters
+    while (viC < sortedVers.length  && (sortedVers[viC].date        ?? "") <= dateStr) cumVers += sortedVers[viC++].montant;
+    while (piC < sortedVentC.length && (sortedVentC[piC].date_vente ?? "") <= dateStr) cumPnl  += sortedVentC[piC++].pnl;
+    while (diC < sortedDivC.length  && (sortedDivC[diC].date        ?? "") <= dateStr) cumDivs += sortedDivC[diC++].montant;
 
-    // Portfolio value using actual weekly close price
+    // Portfolio value at this day's close price
     const snap: Record<string, number> = {};
     let totalValue = 0, totalInvest = 0;
-    Object.entries(byT).forEach(([ticker, d]) => {
+    for (const [ticker, d] of Object.entries(byT)) {
       const pru = d.q > 0 ? d.inv / d.q : 0;
-      const val = d.q * getPriceForDate(ticker, dateStr, pru);
-      snap[ticker] = val;
-      totalValue  += val;
-      totalInvest += d.inv;
-    });
+      let unitPrice: number;
+      if (d.subcat === "fond") {
+        unitPrice = 1.0;
+      } else if (d.subcat === "scp") {
+        const mm = scpiPrices[ticker] ?? {};
+        const keys = Object.keys(mm).filter(k => k <= dateStr.slice(0, 7)).sort();
+        unitPrice = keys.length ? mm[keys[keys.length - 1]] : pru;
+      } else {
+        unitPrice = getPriceForDate(ticker, dateStr, pru);
+      }
+      const val = d.q * unitPrice;
+      snap[ticker]  = val;
+      totalValue   += val;
+      totalInvest  += d.inv;
+    }
 
     const pnlLatent = totalValue - totalInvest;
-
-    // Per-ticker PnL latent
     const perTickerPnlLat: Record<string, number> = {};
-    Object.entries(byT).forEach(([ticker, d]) => {
+    for (const [ticker, d] of Object.entries(byT))
       perTickerPnlLat[ticker] = (snap[ticker] ?? 0) - d.inv;
-    });
 
-    const weekDivsMap  = divsByWeek[dateStr]  ?? {};
-    const weekRealMap  = realByWeek[dateStr]  ?? {};
-    const totalDivs    = Object.values(weekDivsMap).reduce((s, v) => s + v, 0);
-    const totalReal    = Object.values(weekRealMap).reduce((s, v) => s + v, 0);
+    const dayDivsMap = divsByDay[dateStr]  ?? {};
+    const dayRealMap = realByDay[dateStr]  ?? {};
+    const totalDivs  = Object.values(dayDivsMap).reduce((s, v) => s + v, 0);
+    const totalReal  = Object.values(dayRealMap).reduce((s, v) => s + v, 0);
 
-    const versTotal  = cumVersByWeek[dateStr] ?? 0;
-    const especes    = Math.max(0, versTotal + (cumPnlByWeek[dateStr] ?? 0) + (cumDivsByWeek[dateStr] ?? 0) - totalInvest);
-    const lossArea   = Math.max(0, versTotal - (totalValue + especes));
-    const pnlTotal   = totalValue + especes - versTotal;
+    const especes  = Math.max(0, cumVers + cumPnl + cumDivs - totalInvest);
+    const lossArea = Math.max(0, cumVers - (totalValue + especes));
+    const pnlTotal = (totalValue - totalInvest) + cumPnl + cumDivs;
 
     const row: { date: string; month: string; [k: string]: number | string } = {
-      date: dateStr, month: m,
-      _especes:    especes,
+      date: dateStr, month: dateStr.slice(0, 7),
+      _especes:   especes,
       ...snap,
-      _pnlLatent:  pnlLatent,
-      _pnlReal:    totalReal,
-      _divs:       totalDivs,
-      _versTotal:  versTotal,
-      _lossArea:   lossArea,
-      _pnlTotal:   pnlTotal,
+      _pnlLatent: pnlLatent,
+      _pnlReal:   totalReal,
+      _divs:      totalDivs,
+      _versTotal: cumVers,
+      _lossArea:  lossArea,
+      _pnlTotal:  pnlTotal,
     };
     allTickers.forEach(ticker => {
       row[`_pnlLat_${ticker}`]  = perTickerPnlLat[ticker] ?? 0;
-      row[`_pnlReal_${ticker}`] = weekRealMap[ticker]     ?? 0;
-      row[`_divs_${ticker}`]    = weekDivsMap[ticker]     ?? 0;
+      row[`_pnlReal_${ticker}`] = dayRealMap[ticker]      ?? 0;
+      row[`_divs_${ticker}`]    = dayDivsMap[ticker]      ?? 0;
     });
-    return row;
-  });
+    // Special: intérêts not linked to a position
+    row[`_divs__INTERETS_`] = dayDivsMap["_INTERETS_"] ?? 0;
+    result.push(row);
+  }
+  return result;
+}
+
+// ── Robust XAxis pixel lookup ──────────────────────────────────────────────────
+// Works for point/band scales (direct) AND for linear scales (index interpolation).
+// Recharts with Brush rebuilds the scale only over the visible window, so direct
+// lookup can return undefined for dates that exist in the full dataset but are
+// mapped by index in a linear scale.
+function xPixel(scale: any, value: string): number | null {
+  if (!scale) return null;
+  const direct = scale(value);
+  if (direct != null && !isNaN(direct)) return direct as number;
+  // Fallback: find the value's index in the domain, then interpolate in range
+  const domain: string[] = scale.domain ? (scale.domain() as string[]) : [];
+  const idx = domain.indexOf(value);
+  if (idx < 0) return null;
+  const range: number[] = scale.range ? (scale.range() as number[]) : [0, 0];
+  if (domain.length <= 1) return range[0];
+  return range[0] + (idx / (domain.length - 1)) * (range[1] - range[0]);
 }
 
 // ── Custom colored tooltip ─────────────────────────────────────────────────────
-const HIDDEN_KEYS = new Set(["_lossArea", "_pnlTotal"]);
+const HIDDEN_KEYS = new Set(["_lossArea"]);
 
 function ColoredTooltip({ active, payload, fmt: fmtFn, label }: any) {
   if (!active || !payload?.length) return null;
   const visible = payload.filter((p: any) => p.value !== 0 && p.value != null && !HIDDEN_KEYS.has(p.dataKey));
   if (!visible.length) return null;
 
-  // Find pnlTotal from hidden payload entry (same data row, just not rendered)
-  const pnlEntry = payload.find((p: any) => p.dataKey === "_pnlTotal");
-  const pnlTotal: number | null = pnlEntry?.value ?? null;
+  // Read pnlTotal directly from the raw data row
+  const pnlTotal: number | null = payload[0]?.payload?._pnlTotal ?? null;
 
   return (
     <div style={{ ...TOOLTIP_STYLE, padding: "8px 12px", maxWidth: 280 }}>
@@ -246,8 +256,9 @@ function ColoredTooltip({ active, payload, fmt: fmtFn, label }: any) {
       {visible.map((p: any, i: number) => {
         const isVers = p.dataKey === "_versTotal";
         const pnlColor = pnlTotal != null ? (pnlTotal >= 0 ? "var(--teal)" : "var(--rose)") : undefined;
+        const baseColor = p.color ?? p.stroke ?? p.fill ?? "var(--text-0)";
         return (
-          <div key={i} style={{ color: p.color ?? p.stroke ?? "var(--text-0)", fontSize: 11, marginBottom: 2, display: "flex", gap: 8, alignItems: "baseline" }}>
+          <div key={i} style={{ color: baseColor, fontSize: 11, marginBottom: 2, display: "flex", gap: 8, alignItems: "baseline" }}>
             <span><span style={{ fontWeight: 500 }}>{p.name}</span>: {fmtFn(p.value)}</span>
             {isVers && pnlTotal != null && (
               <span style={{ color: pnlColor, fontSize: 10 }}>
@@ -275,6 +286,9 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
   const [deleteTarget, setDeleteTarget] = useState<{ ticker: string; rows: Position[] } | null>(null);
   const [pieToggle, setPieToggle] = useState<"capital" | "valeur">("capital");
   const [pnlMode, setPnlMode]     = useState<"latent" | "realise" | "divs">("latent");
+  const [brushIdx, setBrushIdx] = useState<{ start: number; end: number } | null>(null);
+  const [scpiModal, setScpiModal] = useState(false);
+  const [scpiValuations, setScpiValuations] = useState<ScpiValuation[]>([]);
 
   const positions  = useMemo(() => allPositions.filter(p => p.poche === poche.key),  [allPositions, poche.key]);
   const ventes     = useMemo(() => allVentes.filter(v => v.poche === poche.key),      [allVentes, poche.key]);
@@ -293,7 +307,38 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
   [positions]);
 
   const tickers = useMemo(() => allTickers.map(t => t.ticker), [allTickers]);
-  const { quotes, getPrice, getPriceForDate, loading, refresh } = useQuotes(tickers, fromMonth);
+  // Fond (1€ fixed) and SCPI (manual) don't need Yahoo Finance quotes
+  const tickersForYahoo = useMemo(() => tickers.filter(t => {
+    const sub = positions.find(p => p.ticker === t)?.sous_categorie ?? "";
+    return sub !== "fond" && sub !== "scp";
+  }), [tickers, positions]);
+  const { quotes, getPrice: _getPrice, getPriceForDate, loading, refresh } = useQuotes(tickersForYahoo, fromMonth);
+  // Override getPrice: fond=1€, scp=manual valuation, else yahoo
+  const scpiPriceMap = useMemo(() => {
+    const m: Record<string, Record<string, number>> = {};
+    scpiValuations.forEach(v => {
+      if (!m[v.ticker]) m[v.ticker] = {};
+      m[v.ticker][v.mois] = v.valeur_unit;
+    });
+    return m;
+  }, [scpiValuations]);
+  const getPrice = useCallback((ticker: string, month: string, pru = 0): number => {
+    const sub = positions.find(p => p.ticker === ticker)?.sous_categorie ?? "";
+    if (sub === "fond") return 1.0;
+    if (sub === "scp") {
+      const mm = scpiPriceMap[ticker] ?? {};
+      const keys = Object.keys(mm).filter(k => k <= month).sort();
+      if (keys.length) return mm[keys[keys.length - 1]];
+      return pru;
+    }
+    return _getPrice(ticker, month, pru);
+  }, [_getPrice, positions, scpiPriceMap]);
+
+  // Load SCPI valuations for this poche
+  useEffect(() => {
+    invoke<ScpiValuation[]>("get_scpi_valuations", { poche: poche.key })
+      .then(setScpiValuations).catch(() => {});
+  }, [poche.key]);
 
   const byTicker = useMemo(() => aggregateByTicker(positions, ventes, mois), [positions, ventes, mois]);
 
@@ -315,9 +360,9 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
   const totalVers    = versements.filter(v => (v.date ?? "").slice(0, 7) <= mois).reduce((s, v) => s + v.montant, 0);
   const especes      = Math.max(0, totalVers + totalPnlReal + totalDivs - totalInvest);
 
-  const chartData = useMemo(() => buildWeeklyData(positions, ventes, dividendes, versements, getPriceForDate, tickers),
+  const chartData = useMemo(() => buildWeeklyData(positions, ventes, dividendes, versements, getPriceForDate, tickers, scpiPriceMap),
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  [positions, ventes, dividendes, getPriceForDate, tickers]);
+  [positions, ventes, dividendes, versements, getPriceForDate, tickers, scpiPriceMap]);
 
   const sortedTickers = useMemo(() => [...allTickers].sort((a, b) => {
     const sa = positions.find(p => p.ticker === a.ticker)?.sous_categorie ?? "";
@@ -325,24 +370,92 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
     return subcatIdx(sa) - subcatIdx(sb);
   }), [allTickers, positions]);
 
-  // First date of each month in chartData (for XAxis ticks)
+  // Visible slice driven by Brush indices (used for xTicks + month highlight)
+  const visibleData = useMemo(() =>
+    brushIdx ? chartData.slice(brushIdx.start, brushIdx.end + 1) : chartData,
+  [chartData, brushIdx]);
+
+  // First date of each visible month (XAxis tick marks — ≤ 8 labels)
   const xTicks = useMemo(() => {
     const seen = new Set<string>();
     const firsts: string[] = [];
-    chartData.forEach((d: any) => {
+    visibleData.forEach((d: any) => {
       const m = (d.date as string).slice(0, 7);
       if (!seen.has(m)) { seen.add(m); firsts.push(d.date as string); }
     });
     const step = Math.max(1, Math.ceil(firsts.length / 8));
     return firsts.filter((_, i) => i % step === 0);
-  }, [chartData]);
+  }, [visibleData]);
 
-  // Week-dates inside the selected month (for ReferenceArea highlighting)
+  // Day-dates inside the selected month (gold ReferenceArea)
   const monthWeekRange = useMemo(() => {
-    const inMonth = chartData.filter((d: any) => d.month === mois);
+    const inMonth = visibleData.filter((d: any) => d.month === mois);
     if (!inMonth.length) return null;
     return { x1: inMonth[0].date as string, x2: inMonth[inMonth.length - 1].date as string };
-  }, [chartData, mois]);
+  }, [visibleData, mois]);
+
+  // Brush onChange for the portfolio (stack) chart
+  const onBrushChange = (range: any) => {
+    const { startIndex: s, endIndex: e } = range ?? {};
+    if (s === undefined || e === undefined) return;
+    const isFullRange = s === 0 && e === chartData.length - 1;
+    setBrushIdx(isFullRange ? null : { start: s, end: e });
+  };
+
+  // Weekly aggregation of PnL/divs: sum per ISO week so bars are readable
+  const weeklyPnlData = useMemo(() => {
+    if (!chartData.length) return [];
+    const weeks = new Map<string, any>();
+    (chartData as any[]).forEach(row => {
+      // Parse date components locally (avoids UTC-midnight timezone shift)
+      const [y, mo, dy] = (row.date as string).split("-").map(Number);
+      const d = new Date(y, mo - 1, dy);
+      const dow = d.getDay(); // 0=Sun
+      const diff = dow === 0 ? -6 : 1 - dow; // days back to Monday
+      const mon = new Date(y, mo - 1, dy + diff);
+      const wk = `${mon.getFullYear()}-${String(mon.getMonth()+1).padStart(2,"0")}-${String(mon.getDate()).padStart(2,"0")}`;
+      if (!weeks.has(wk)) {
+        const base: any = { date: wk, month: wk.slice(0, 7) };
+        tickers.forEach(t => { base[`_pnlReal_${t}`] = 0; base[`_divs_${t}`] = 0; base[`_pnlLat_${t}`] = 0; });
+        base[`_divs__INTERETS_`] = 0;
+        weeks.set(wk, base);
+      }
+      const w = weeks.get(wk);
+      tickers.forEach(t => {
+        w[`_pnlReal_${t}`] += (row[`_pnlReal_${t}`] as number) ?? 0;
+        w[`_divs_${t}`]    += (row[`_divs_${t}`]    as number) ?? 0;
+        w[`_pnlLat_${t}`]  = (row[`_pnlLat_${t}`]  as number) ?? 0; // last day of week
+      });
+      w[`_divs__INTERETS_`] += (row[`_divs__INTERETS_`] as number) ?? 0;
+    });
+    return [...weeks.values()].sort((a, b) => (a.date as string).localeCompare(b.date as string));
+  }, [chartData, tickers]);
+
+  // Independent brush state for the PnL/divs chart
+  const [pnlBrushIdx, setPnlBrushIdx] = useState<{ start: number; end: number } | null>(null);
+  const pnlVisibleData = useMemo(() =>
+    pnlBrushIdx ? weeklyPnlData.slice(pnlBrushIdx.start, pnlBrushIdx.end + 1) : weeklyPnlData,
+  [weeklyPnlData, pnlBrushIdx]);
+
+  const pnlXTicks = useMemo(() => {
+    const seen = new Set<string>(); const firsts: string[] = [];
+    pnlVisibleData.forEach((d: any) => { const m = (d.date as string).slice(0, 7); if (!seen.has(m)) { seen.add(m); firsts.push(d.date as string); } });
+    const step = Math.max(1, Math.ceil(firsts.length / 8));
+    return firsts.filter((_, i) => i % step === 0);
+  }, [pnlVisibleData]);
+
+  const pnlMonthRange = useMemo(() => {
+    const inM = pnlVisibleData.filter((d: any) => d.month === mois);
+    if (!inM.length) return null;
+    return { x1: inM[0].date as string, x2: inM[inM.length - 1].date as string };
+  }, [pnlVisibleData, mois]);
+
+  const onPnlBrushChange = (range: any) => {
+    const { startIndex: s, endIndex: e } = range ?? {};
+    if (s === undefined || e === undefined) return;
+    const isFullRange = s === 0 && e === weeklyPnlData.length - 1;
+    setPnlBrushIdx(isFullRange ? null : { start: s, end: e });
+  };
 
   // ── Pie data ──────────────────────────────────────────────────────────────────
   const pieInner = useMemo(() => {
@@ -370,7 +483,7 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
     ...(especes > 0 ? [{ name: "Espèces", value: especes, color: (INVEST_SUBCAT_COLOR["especes"] ?? "#78909c") + "99" }] : []),
   ].filter(p => p.value > 0), [enriched, pieToggle, especes]);
 
-  const pieTotal = pieToggle === "capital" ? totalInvest : totalValue;
+  const pieTotal = (pieToggle === "capital" ? totalInvest : totalValue) + especes;
 
   const summary = [
     { label: "Versements",     value: fmt(totalVers),    color: "var(--text-1)" },
@@ -389,13 +502,13 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
         toggleLabel={pieToggle === "capital" ? "→ Valeur" : "→ Capital"}
         onToggle={() => setPieToggle(v => v === "capital" ? "valeur" : "capital")}/>;
 
-  // Stacked area: value per ticker per week (actual weekly close prices)
+  // Stacked area: value per ticker per day (actual daily close prices)
   // + red line/fill for cumulative versements (shows loss zone when portfolio < versements)
   const stackNode = (h: number, isExp: boolean) => chartData.length === 0
     ? <div className="empty">Aucune donnée</div>
     : (
       <ResponsiveContainer width="100%" height={h}>
-        <ComposedChart data={chartData} margin={{ left: -20 }}>
+        <ComposedChart data={chartData} margin={{ left: 0, right: 5, top: 5, bottom: isExp ? 28 : 0 }}>
           <defs>
             {sortedTickers.map(t => (
               <linearGradient key={t.ticker} id={`gs_${poche.key}_${t.ticker.replace(/\W/g, "_")}`} x1="0" y1="0" x2="0" y2="1">
@@ -416,14 +529,11 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
           <XAxis dataKey="date" tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
             ticks={xTicks}
             tickFormatter={d => { const mo = parseInt(d.slice(5, 7)); return MN_SHORT[mo - 1]; }}/>
+          {/* Y-axis clamped to [0, auto] — portfolio value can't be negative */}
           <YAxis tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
-            tickFormatter={v => v >= 1000 ? `${(v / 1000).toFixed(0)}k€` : `${v}€`} width={45}/>
+            tickFormatter={v => v >= 1000 ? `${(v / 1000).toFixed(0)}k€` : `${v}€`} width={45}
+            domain={[0, "auto"]}/>
           {isExp && <Tooltip content={<ColoredTooltip fmt={fmt}/>}/>}
-          {monthWeekRange && (
-            <ReferenceArea x1={monthWeekRange.x1} x2={monthWeekRange.x2}
-              fill="var(--gold)" fillOpacity={0.1}
-              stroke="var(--gold)" strokeOpacity={0.5} strokeDasharray="4 2"/>
-          )}
           {/* Espèces — bottom of stack */}
           <Area type="monotone" dataKey="_especes" stackId="v" name="Espèces"
             stroke={INVEST_SUBCAT_COLOR["especes"] ?? "#78909c"} strokeWidth={1}
@@ -441,9 +551,27 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
           {/* Versements cumulative line (not stacked — absolute value) */}
           <Line type="monotone" dataKey="_versTotal" name="Versements"
             stroke="#e63946" strokeWidth={1.5} dot={false} strokeDasharray="4 3" legendType="none"/>
-          {/* Hidden line to carry _pnlTotal into tooltip payload without visual rendering */}
-          <Line type="monotone" dataKey="_pnlTotal" name="_pnlTotal"
-            stroke="none" strokeWidth={0} dot={false} legendType="none"/>
+          {/* Gold month highlight — rendered AFTER data series so it appears on top */}
+          {monthWeekRange && (
+            <Customized component={(p: any) => {
+              const xAxis = Object.values(p.xAxisMap ?? {})[0] as any;
+              if (!xAxis?.scale) return null;
+              const bw = xAxis.scale.bandwidth?.() ?? 0;
+              const rx1 = xPixel(xAxis.scale, monthWeekRange.x1);
+              const rx2 = xPixel(xAxis.scale, monthWeekRange.x2);
+              if (rx1 == null || rx2 == null) return null;
+              return <g><rect x={rx1} y={p.offset.top} width={Math.max(0, rx2 - rx1 + bw)} height={p.offset.height}
+                fill="var(--gold)" fillOpacity={0.18} stroke="var(--gold)" strokeOpacity={0.6}
+                strokeDasharray="4 2" strokeWidth={1} pointerEvents="none"/></g>;
+            }}/>
+          )}
+          {/* Range slider for zoom — only in expanded view */}
+          {isExp && <Brush dataKey="date" height={22} travellerWidth={6}
+            stroke="var(--border)" fill="var(--bg-2)"
+            startIndex={brushIdx?.start ?? 0}
+            endIndex={brushIdx?.end ?? chartData.length - 1}
+            onChange={onBrushChange}
+            tickFormatter={() => ""}/>}
         </ComposedChart>
       </ResponsiveContainer>
     );
@@ -460,11 +588,11 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
           ))}
         </div>
         <div style={{ flex: 1 }}>
-          <ResponsiveContainer width="100%" height={h - 40}>
-            <ComposedChart data={chartData} margin={{ left: pnlMode === "divs" ? 5 : -20 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart data={weeklyPnlData} stackOffset="sign" margin={{ left: 0, right: 5, top: 5, bottom: isExp ? 28 : 0 }}>
               <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
               <XAxis dataKey="date" tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
-                ticks={xTicks}
+                ticks={pnlXTicks}
                 tickFormatter={d => { const mo = parseInt(d.slice(5, 7)); return MN_SHORT[mo - 1]; }}/>
               {pnlMode !== "divs" ? (
                 <YAxis tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
@@ -475,11 +603,6 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
               )}
               {isExp && <Tooltip content={<ColoredTooltip fmt={fmt}/>}/>}
               <ReferenceLine y={0} stroke="var(--border-l)"/>
-              {monthWeekRange && (
-                <ReferenceArea x1={monthWeekRange.x1} x2={monthWeekRange.x2}
-                  fill="var(--gold)" fillOpacity={0.08}
-                  stroke="var(--gold)" strokeOpacity={0.4} strokeDasharray="4 2"/>
-              )}
               {pnlMode === "latent" && sortedTickers.map(t => (
                 <Line key={t.ticker} type="monotone" dataKey={`_pnlLat_${t.ticker}`} name={t.nom}
                   stroke={t.color} strokeWidth={1.5} dot={false}/>
@@ -492,6 +615,32 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
                 <Bar key={t.ticker} dataKey={`_divs_${t.ticker}`} name={t.nom}
                   stackId="d" fill={t.color} radius={[0, 0, 0, 0]}/>
               ))}
+              {/* Intérêts espèces — shown in divs mode, espèces color */}
+              {pnlMode === "divs" && (
+                <Bar dataKey="_divs__INTERETS_" name="Intérêts"
+                  stackId="d" fill={INVEST_SUBCAT_COLOR["especes"] ?? "#78909c"} radius={[0, 0, 0, 0]}/>
+              )}
+              {/* Gold month highlight */}
+              {pnlMonthRange && (
+                <Customized component={(p: any) => {
+                  const xAxis = Object.values(p.xAxisMap ?? {})[0] as any;
+                  if (!xAxis?.scale) return null;
+                  const bw = xAxis.scale.bandwidth?.() ?? 0;
+                  const rx1 = xPixel(xAxis.scale, pnlMonthRange.x1);
+                  const rx2 = xPixel(xAxis.scale, pnlMonthRange.x2);
+                  if (rx1 == null || rx2 == null) return null;
+                  return <g><rect x={rx1} y={p.offset.top} width={Math.max(0, rx2 - rx1 + bw)} height={p.offset.height}
+                    fill="var(--gold)" fillOpacity={0.18} stroke="var(--gold)" strokeOpacity={0.6}
+                    strokeDasharray="4 2" strokeWidth={1} pointerEvents="none"/></g>;
+                }}/>
+              )}
+              {/* Range slider — independent from portfolio chart, only in expanded view */}
+              {isExp && <Brush dataKey="date" height={22} travellerWidth={6}
+                stroke="var(--border)" fill="var(--bg-2)"
+                startIndex={pnlBrushIdx?.start ?? 0}
+                endIndex={pnlBrushIdx?.end ?? weeklyPnlData.length - 1}
+                onChange={onPnlBrushChange}
+                tickFormatter={() => ""}/>}
             </ComposedChart>
           </ResponsiveContainer>
         </div>
@@ -513,6 +662,9 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
           <button className="btn btn-ghost btn-sm" onClick={refresh}>↻</button>
           <button className="btn btn-ghost btn-sm" onClick={() => setVerModal(true)}>+ Versement</button>
           {positions.length > 0 && <button className="btn btn-teal btn-sm" onClick={() => setDivModal(true)}>+ Dividende</button>}
+          {positions.some(p => p.sous_categorie === "scp") && (
+            <button className="btn btn-sm btn-ghost" onClick={() => setScpiModal(true)} style={{ fontSize: 10 }}>📊 SCPI</button>
+          )}
           <button className="btn btn-primary btn-sm" onClick={() => setPosModal(true)}>+ Position</button>
         </div>
       </div>
@@ -530,7 +682,7 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
 
           <ChartGrid charts={[
             { key: `pie_${poche.key}`,    title: `Répartition · ${mois}`,          node: pieNode    },
-            { key: `stack_${poche.key}`,  title: "Valeur portefeuille / semaine",   node: stackNode  },
+            { key: `stack_${poche.key}`,  title: "Valeur portefeuille / jour",      node: stackNode  },
             { key: `pnldiv_${poche.key}`, title: "PnL + Dividendes",                node: pnlDivNode },
           ]}/>
 
@@ -635,6 +787,13 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
 
       {posModal    && <PositionModal poche={poche.key} existing={positions} mois={mois} onClose={() => setPosModal(false)}    onSave={() => { setPosModal(false);    onRefresh(); }}/>}
       {divModal    && <DividendeModal poche={poche.key} positions={positions} mois={mois} onClose={() => setDivModal(false)}  onSave={() => { setDivModal(false);    onRefresh(); }}/>}
+      {scpiModal && <ScpiValuationModal
+        poche={poche.key}
+        scpiTickers={[...new Set(positions.filter(p => p.sous_categorie === "scp").map(p => p.ticker))]}
+        mois={mois}
+        valuations={scpiValuations}
+        onClose={() => setScpiModal(false)}
+        onSave={() => { invoke<ScpiValuation[]>("get_scpi_valuations", { poche: poche.key }).then(setScpiValuations); }}/>}
       {verModal    && <VersementModal poche={poche.key} mois={mois} onClose={() => setVerModal(false)}                        onSave={() => { setVerModal(false);    onRefresh(); }}/>}
       {sellTarget  && <SellModal poche={poche.key} {...sellTarget} mois={mois} onClose={() => setSellTarget(null)}                        onSave={() => { setSellTarget(null);   onRefresh(); }}/>}
       {deleteTarget && <DeletePositionModal {...deleteTarget} onClose={() => setDeleteTarget(null)}                           onSave={() => { setDeleteTarget(null); onRefresh(); }}/>}
