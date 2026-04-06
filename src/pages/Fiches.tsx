@@ -1,6 +1,8 @@
 import { useEffect, useState, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
 import { useDevise } from "../context/DeviseContext";
+import { ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { TOOLTIP_STYLE, tickerColor } from "../constants";
 
 interface Salaire {
   id?: number; date: string; salaire_brut: number; salaire_net: number;
@@ -40,7 +42,7 @@ function calcStreak(salaires: Salaire[]): number {
 
 
 const PRIME_TYPES = ["Bourse", "Prime d'activité", "Prime de Noël", "Aide au logement", "Allocation familiale",
-  "Prime vacances", "Aides aux activités sportives", "Remboursement impôts", "Prime de parainnage", "Autre aide"];
+  "Prime vacances", "Aides aux activités sportives", "Remboursement impôts", "Prime de parainnage", "Cours particuliers", "Autre aide"];
 
 // ── Sélecteur d'année horizontal (style MonthSelector) ────────────────────
 function YearSelector({ value, onChange, years }: { value: number; onChange: (y: number) => void; years: number[] }) {
@@ -310,8 +312,41 @@ export default function Fiches() {
   const employeurs = useMemo(() => [...new Set(salaires.map(s => s.employeur))], [salaires]);
 
   // Sépare les fiches normales des primes/aides
-  const primes = salaires.filter(s => s.employeur === "_PRIME");
-  const fichesNormales = salaires.filter(s => s.employeur !== "_PRIME");
+  const primes = useMemo(() => salaires.filter(s => s.employeur === "_PRIME"), [salaires]);
+  const fichesNormales = useMemo(() => salaires.filter(s => s.employeur !== "_PRIME"), [salaires]);
+
+  const activePrimeTypes = useMemo(() => {
+    const types = new Set<string>();
+    primes.forEach(p => {
+      const t = (p.notes ?? "").replace(/\[PRIME:([^\]]+)\].*/, "$1").trim();
+      if (t) types.add(t);
+    });
+    return [...types];
+  }, [primes]);
+
+  const primeChartData = useMemo(() => {
+    if (!primes.length) return [];
+    const byMonth: Record<string, Record<string, number>> = {};
+    primes.forEach(p => {
+      const m = p.date.slice(0, 7);
+      const t = (p.notes ?? "").replace(/\[PRIME:([^\]]+)\].*/, "$1").trim();
+      if (!t) return;
+      if (!byMonth[m]) byMonth[m] = {};
+      byMonth[m][t] = (byMonth[m][t] ?? 0) + (p.primes ?? 0);
+    });
+    const months = Object.keys(byMonth).sort();
+    const cumByType: Record<string, number> = {};
+    activePrimeTypes.forEach(t => { cumByType[t] = 0; });
+    return months.map(m => {
+      const entry: any = { mois: m };
+      activePrimeTypes.forEach(type => {
+        const monthly = byMonth[m][type] ?? 0;
+        if (monthly > 0) { cumByType[type] += monthly; entry[type] = monthly; }
+        entry[`_cum_${type}`] = cumByType[type];
+      });
+      return entry;
+    });
+  }, [primes, activePrimeTypes]);
 
   // Map YYYY-MM → Salaire
   const byMonth: Record<string, Salaire[]> = {};
@@ -335,6 +370,30 @@ export default function Fiches() {
   const streak = useMemo(() => calcStreak(salaires), [salaires]);
 
   const emptySalaire: Salaire = { date: defaultDateForYear(year), salaire_brut: 0, salaire_net: 0, employeur: "", primes: 0 };
+
+  const PrimeTooltip = ({ active, payload, label }: any) => {
+    if (!active || !payload?.length) return null;
+    const row = payload[0]?.payload;
+    const items = payload.filter((p: any) => p.value != null && p.value > 0);
+    if (!items.length) return null;
+    return (
+      <div style={{ ...TOOLTIP_STYLE, padding: "10px 14px", minWidth: 210 }}>
+        {label && <div style={{ color: "var(--text-2)", fontSize: 9, marginBottom: 8, letterSpacing: ".05em" }}>{label}</div>}
+        {items.map((p: any, i: number) => {
+          const cum = row?.[`_cum_${p.name}`] ?? 0;
+          return (
+            <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 2 }}>
+              <span style={{ color: p.stroke ?? p.color ?? "var(--text-1)", fontSize: 10 }}>{p.name}</span>
+              <span style={{ display: "flex", gap: 5, alignItems: "baseline" }}>
+                <span style={{ color: "var(--text-0)", fontSize: 10 }}>{fmt(p.value)}</span>
+                <span style={{ color: "var(--text-2)", fontSize: 9 }}>({fmt(cum)})</span>
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
 
   return (
     <div>
@@ -390,26 +449,52 @@ export default function Fiches() {
           const key = `${year}-${String(i+1).padStart(2,"0")}`;
           const fiches = byMonth[key] ?? [];
           const hasPdf = fiches.some(f => f.pdf_path);
+          const monthPrimes = primes.filter(p => p.date.slice(0, 7) === key);
+          const isEmpty = fiches.length === 0 && monthPrimes.length === 0;
           return (
-            <div
-              key={key}
-              className={`cal-month ${hasPdf ? "has-pdf" : ""}`}
-              onClick={() => fiches.length > 0 && setSelected(fiches[0])}
-              style={{ opacity: fiches.length === 0 ? 0.45 : 1, cursor: fiches.length > 0 ? "pointer" : "default" }}
-            >
-              <div className="cal-month-name">{nomMois}</div>
-              <div className="cal-month-year">{year}</div>
-              {fiches.length > 0 ? (
-                <div className="cal-month-info">
-                  <div style={{ color: "var(--teal)" }}>{fmt(fiches[0].salaire_net)} net</div>
-                  {fiches[0].primes ? (
-                    <div style={{ color: "var(--gold)", fontSize: 10 }}>+{fmt(fiches[0].primes)} primes</div>
-                  ) : null}
-                  {hasPdf && <div style={{ fontSize: 10, color: "var(--teal)", marginTop: 4 }}>PDF ●</div>}
+            <div key={key} className={`cal-month ${hasPdf ? "has-pdf" : ""}`}
+              style={{ opacity: isEmpty ? 0.45 : 1, padding: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+              {/* Header */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 10px", borderBottom: "1px solid var(--border)" }}>
+                <span className="cal-month-name">{nomMois}</span>
+                <span className="cal-month-year">{year}</span>
+              </div>
+              {/* Body: left = fiche, right = primes */}
+              <div style={{ display: "flex", flex: 1, minHeight: 56 }}>
+                {/* Fiche de paye */}
+                <div style={{ flex: 1, padding: "6px 10px", borderRight: "1px solid var(--border)",
+                  cursor: fiches.length > 0 ? "pointer" : "default" }}
+                  onClick={() => fiches.length > 0 && setSelected(fiches[0])}>
+                  {fiches.length > 0 ? (
+                    <div>
+                      <div style={{ color: "var(--teal)", fontSize: 12, fontFamily: "var(--serif)" }}>{fmt(fiches[0].salaire_net)}</div>
+                      {fiches[0].primes ? <div style={{ color: "var(--gold)", fontSize: 10 }}>+{fmt(fiches[0].primes)}</div> : null}
+                      {hasPdf && <div style={{ fontSize: 9, color: "var(--teal)", marginTop: 2 }}>PDF ●</div>}
+                    </div>
+                  ) : (
+                    <div style={{ color: "var(--text-2)", fontSize: 10 }}>—</div>
+                  )}
                 </div>
-              ) : (
-                <div className="cal-month-info" style={{ color: "var(--text-2)", fontSize: 11 }}>Non renseigné</div>
-              )}
+                {/* Primes & aides */}
+                <div style={{ flex: 1, padding: "6px 8px", overflow: "hidden" }}>
+                  {monthPrimes.length > 0 ? (
+                    <>
+                      {monthPrimes.slice(0, 3).map(p => {
+                        const pType = (p.notes ?? "").replace(/\[PRIME:([^\]]+)\].*/, "$1").trim();
+                        return (
+                          <div key={p.id} style={{ marginBottom: 2 }}>
+                            <div style={{ color: "var(--gold)", fontSize: 11, fontFamily: "var(--serif)", lineHeight: 1.2 }}>{fmt(p.primes ?? 0)}</div>
+                            <div style={{ color: "var(--text-2)", fontSize: 9, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pType}</div>
+                          </div>
+                        );
+                      })}
+                      {monthPrimes.length > 3 && <div style={{ color: "var(--text-2)", fontSize: 9 }}>+{monthPrimes.length - 3}</div>}
+                    </>
+                  ) : (
+                    <div style={{ color: "var(--text-2)", fontSize: 10 }}>—</div>
+                  )}
+                </div>
+              </div>
             </div>
           );
         })}

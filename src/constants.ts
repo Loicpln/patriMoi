@@ -6,10 +6,10 @@
 
 // ── Livrets ────────────────────────────────────────────────────
 export const LIVRETS_DEF = [
-  { key: "livret_a",     label: "Livret A",     taux: 3.00, color: "#e6a817" },
-  { key: "ldds",         label: "LDDS",         taux: 3.00, color: "#d4793a" },
-  { key: "lep",          label: "LEP",          taux: 6.10, color: "#c95f2e" },
-  { key: "livret_jeune", label: "Livret Jeune", taux: 3.00, color: "#b8860b" },
+  { key: "livret_a",     label: "Livret A",     taux: 1.50, color: "#e6a817" },
+  { key: "ldds",         label: "LDDS",         taux: 1.50, color: "#d4793a" },
+  { key: "lep",          label: "LEP",          taux: 2.50, color: "#c95f2e" },
+  { key: "livret_jeune", label: "Livret Jeune", taux: 2.40, color: "#b8860b" },
 ] as const;
 
 export type LivretKey = typeof LIVRETS_DEF[number]["key"];

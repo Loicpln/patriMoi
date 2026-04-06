@@ -239,35 +239,39 @@ function xPixel(scale: any, value: string): number | null {
   return range[0] + (idx / (domain.length - 1)) * (range[1] - range[0]);
 }
 
-// ── Custom colored tooltip ─────────────────────────────────────────────────────
-const HIDDEN_KEYS = new Set(["_lossArea"]);
-
-function ColoredTooltip({ active, payload, fmt: fmtFn, label }: any) {
+// ── Custom poche tooltip: versements first row + +/– sign, then items ─────────
+function PocheTooltip({ active, payload, label, fmt: fmtFn }: any) {
   if (!active || !payload?.length) return null;
-  const visible = payload.filter((p: any) => p.value !== 0 && p.value != null && !HIDDEN_KEYS.has(p.dataKey));
-  if (!visible.length) return null;
+  const row = payload[0]?.payload;
+  if (!row) return null;
+  const pnlTotal: number | null  = row._pnlTotal ?? null;
+  const vers:     number | undefined = row._versTotal;
 
-  // Read pnlTotal directly from the raw data row
-  const pnlTotal: number | null = payload[0]?.payload?._pnlTotal ?? null;
+  const SKIP = new Set(["_lossArea", "_versTotal", "_pnlTotal"]);
+  const items = payload.filter(
+    (p: any) => !SKIP.has(p.dataKey) && p.value !== 0 && p.value != null,
+  );
+  if (!items.length && vers == null) return null;
 
   return (
-    <div style={{ ...TOOLTIP_STYLE, padding: "8px 12px", maxWidth: 280 }}>
-      {label && <div style={{ color: "var(--text-2)", fontSize: 9, marginBottom: 6 }}>{label}</div>}
-      {visible.map((p: any, i: number) => {
-        const isVers = p.dataKey === "_versTotal";
-        const pnlColor = pnlTotal != null ? (pnlTotal >= 0 ? "var(--teal)" : "var(--rose)") : undefined;
-        const baseColor = p.color ?? p.stroke ?? p.fill ?? "var(--text-0)";
-        return (
-          <div key={i} style={{ color: baseColor, fontSize: 11, marginBottom: 2, display: "flex", gap: 8, alignItems: "baseline" }}>
-            <span><span style={{ fontWeight: 500 }}>{p.name}</span>: {fmtFn(p.value)}</span>
-            {isVers && pnlTotal != null && (
-              <span style={{ color: pnlColor, fontSize: 10 }}>
-                ({pnlTotal >= 0 ? "+" : ""}{fmtFn(pnlTotal)})
-              </span>
-            )}
-          </div>
-        );
-      })}
+    <div style={{ ...TOOLTIP_STYLE, padding: "10px 14px", minWidth: 190 }}>
+      {label && <div style={{ color: "var(--text-2)", fontSize: 9, marginBottom: 8, letterSpacing: ".05em" }}>{label}</div>}
+      {vers != null && (
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, marginBottom: 6, borderBottom: "1px solid var(--border)", paddingBottom: 5 }}>
+          <span style={{ color: "#e63946", fontSize: 10 }}>Versements&nbsp;{fmtFn(vers)}</span>
+          {pnlTotal != null && (
+            <span style={{ color: pnlTotal >= 0 ? "var(--teal)" : "var(--rose)", fontSize: 11, fontWeight: 700 }}>
+              {pnlTotal >= 0 ? "+" : "−"}{fmtFn(Math.abs(pnlTotal))}
+            </span>
+          )}
+        </div>
+      )}
+      {items.map((p: any, i: number) => (
+        <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 2 }}>
+          <span style={{ color: p.color ?? p.stroke ?? p.fill ?? "var(--text-1)", fontSize: 10 }}>{p.name || p.dataKey}</span>
+          <span style={{ color: "var(--text-0)", fontSize: 10 }}>{fmtFn(Number(p.value))}</span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -402,9 +406,23 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
     setBrushIdx(isFullRange ? null : { start: s, end: e });
   };
 
-  // Weekly aggregation of PnL/divs: sum per ISO week so bars are readable
+  // Weekly aggregation of PnL/divs: sum per ISO week so bars are readable.
+  // Starts from the ISO week of the first position (not the beginning of that month).
   const weeklyPnlData = useMemo(() => {
     if (!chartData.length) return [];
+
+    // Compute Monday of the first position's week
+    const firstPosDate = positions.map(p => p.date_achat ?? "").filter(Boolean).sort()[0] ?? "";
+    let firstPosWeek = "";
+    if (firstPosDate) {
+      const [fy, fm, fd] = firstPosDate.split("-").map(Number);
+      const fd0 = new Date(fy, fm - 1, fd);
+      const dow = fd0.getDay();
+      const diff = dow === 0 ? -6 : 1 - dow;
+      const mon = new Date(fy, fm - 1, fd + diff);
+      firstPosWeek = `${mon.getFullYear()}-${String(mon.getMonth()+1).padStart(2,"0")}-${String(mon.getDate()).padStart(2,"0")}`;
+    }
+
     const weeks = new Map<string, any>();
     (chartData as any[]).forEach(row => {
       // Parse date components locally (avoids UTC-midnight timezone shift)
@@ -428,8 +446,10 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
       });
       w[`_divs__INTERETS_`] += (row[`_divs__INTERETS_`] as number) ?? 0;
     });
-    return [...weeks.values()].sort((a, b) => (a.date as string).localeCompare(b.date as string));
-  }, [chartData, tickers]);
+    return [...weeks.values()]
+      .sort((a, b) => (a.date as string).localeCompare(b.date as string))
+      .filter(w => !firstPosWeek || (w.date as string) >= firstPosWeek);
+  }, [chartData, tickers, positions]);
 
   // Independent brush state for the PnL/divs chart
   const [pnlBrushIdx, setPnlBrushIdx] = useState<{ start: number; end: number } | null>(null);
@@ -488,7 +508,7 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
   const summary = [
     { label: "Versements",     value: fmt(totalVers),    color: "var(--text-1)" },
     { label: "Investi",        value: fmt(totalInvest),  color: "var(--text-0)" },
-    { label: `Valeur·${mois}`, value: fmt(totalValue),   color: "var(--teal)"   },
+    { label: `Valeur·${mois}`, value: fmt(totalValue + especes), color: "var(--teal)" },
     { label: "PnL latent",     value: `${totalPnlOpen >= 0 ? "+" : ""}${fmt(totalPnlOpen)}`, color: totalPnlOpen >= 0 ? "var(--teal)" : "var(--rose)" },
     { label: "PnL réalisé",    value: `${totalPnlReal >= 0 ? "+" : ""}${fmt(totalPnlReal)}`, color: totalPnlReal >= 0 ? "var(--teal)" : "var(--rose)" },
     { label: "Dividendes",     value: fmt(totalDivs),    color: "var(--gold)"   },
@@ -533,7 +553,7 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
           <YAxis tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
             tickFormatter={v => v >= 1000 ? `${(v / 1000).toFixed(0)}k€` : `${v}€`} width={45}
             domain={[0, "auto"]}/>
-          {isExp && <Tooltip content={<ColoredTooltip fmt={fmt}/>}/>}
+          {isExp && <Tooltip content={<PocheTooltip fmt={fmt}/>}/>}
           {/* Espèces — bottom of stack */}
           <Area type="monotone" dataKey="_especes" stackId="v" name="Espèces"
             stroke={INVEST_SUBCAT_COLOR["especes"] ?? "#78909c"} strokeWidth={1}
@@ -601,7 +621,7 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
                 <YAxis tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
                   tickFormatter={v => v === 0 ? "0€" : Math.abs(v) >= 100 ? `${v.toFixed(0)}€` : `${v.toFixed(2)}€`} width={52}/>
               )}
-              {isExp && <Tooltip content={<ColoredTooltip fmt={fmt}/>}/>}
+              {isExp && <Tooltip content={<PocheTooltip fmt={fmt}/>}/>}
               <ReferenceLine y={0} stroke="var(--border-l)"/>
               {pnlMode === "latent" && sortedTickers.map(t => (
                 <Line key={t.ticker} type="monotone" dataKey={`_pnlLat_${t.ticker}`} name={t.nom}
@@ -654,7 +674,7 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
           <span style={{ fontSize: 10, transform: open ? "rotate(90deg)" : "none", display: "inline-block", transition: "transform .2s", color: "var(--text-2)" }}>▶</span>
           <span className="poche-title" style={{ color: poche.color }}>{poche.label}</span>
           <span style={{ fontSize: 11, color: "var(--text-1)" }}>
-            {fmt(totalInvest)} · <span style={{ color: totalPnlOpen >= 0 ? "var(--teal)" : "var(--rose)" }}>{totalPnlOpen >= 0 ? "+" : ""}{fmt(totalPnlOpen)}</span>
+            {fmt(totalValue + especes)}&nbsp;·&nbsp;<span style={{ color: totalPnlOpen >= 0 ? "var(--teal)" : "var(--rose)", fontWeight: 600 }}>{totalPnlOpen >= 0 ? "+" : "−"}{fmt(Math.abs(totalPnlOpen))}</span>
           </span>
         </div>
         <div style={{ display: "flex", gap: 6 }} onClick={e => e.stopPropagation()}>

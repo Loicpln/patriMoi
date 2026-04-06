@@ -1,13 +1,29 @@
 import { useState, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, ReferenceLine, ResponsiveContainer, Tooltip,
+  Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip, ComposedChart, Customized,
 } from "recharts";
 import { useDevise, curMonth } from "../../context/DeviseContext";
-import { LIVRETS_DEF, monthsBetween, TOOLTIP_STYLE } from "../../constants";
-import { ChartGrid, NestedPie, TTP, AccordionSection } from "./shared";
+import { LIVRETS_DEF, TOOLTIP_STYLE } from "../../constants";
+import { ChartGrid, NestedPie, AccordionSection } from "./shared";
 import { LivretModal, InteretModal } from "./modals";
 import type { Livret } from "./types";
+
+const MN_SHORT = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
+
+// Robust XAxis pixel lookup (point/band/linear scales + nearest-neighbour fallback)
+function xPixel(scale: any, value: string): number | null {
+  if (!scale) return null;
+  const direct = scale(value);
+  if (direct != null && !isNaN(direct)) return direct as number;
+  // Fallback: find the value's index in the domain, then interpolate in range
+  const domain: string[] = scale.domain ? (scale.domain() as string[]) : [];
+  const idx = domain.indexOf(value);
+  if (idx < 0) return null;
+  const range: number[] = scale.range ? (scale.range() as number[]) : [0, 0];
+  if (domain.length <= 1) return range[0];
+  return range[0] + (idx / (domain.length - 1)) * (range[1] - range[0]);
+}
 
 export function LivretsSection({livrets,mois,onRefresh}:{livrets:Livret[];mois:string;onRefresh:()=>void}) {
   const {fmt}=useDevise();
@@ -21,10 +37,6 @@ export function LivretsSection({livrets,mois,onRefresh}:{livrets:Livret[];mois:s
   const totalLivrets=Object.values(latest).reduce((s,l)=>s+l.montant,0);
 
   const annee=parseInt(mois.slice(0,4));
-  const interetsByPoche:Record<string,Livret[]>={};
-  livrets.filter(l=>isInteret(l)&&parseInt((l.date??"0").slice(0,4))===annee)
-    .forEach(l=>{(interetsByPoche[l.poche]??=[]).push(l);interetsByPoche[l.poche]=interetsByPoche[l.poche]||[];});
-  // redo cleanly
   const interetsMap:Record<string,Livret[]>={};
   livrets.filter(l=>isInteret(l)&&parseInt((l.date??"0").slice(0,4))===annee)
     .forEach(l=>{if(!interetsMap[l.poche])interetsMap[l.poche]=[];interetsMap[l.poche].push(l);});
@@ -33,42 +45,117 @@ export function LivretsSection({livrets,mois,onRefresh}:{livrets:Livret[];mois:s
   const inner=LIVRETS_DEF.map(l=>({name:l.label,value:latest[l.key]?.montant??0,color:l.color})).filter(p=>p.value>0);
   const outer=inner.map(p=>({...p,color:p.color+"99"}));
 
-  const allMs=livrets.filter(l=>!isInteret(l)).map(l=>(l.date??"").slice(0,7)).filter(Boolean).sort();
-  const firstMonth=allMs[0]??mois;
-  const evoMonths=useMemo(()=>monthsBetween(firstMonth,curMonth),[firstMonth]);
-  const evoData=useMemo(()=>evoMonths.map(m=>{
-    const snap:Record<string,Livret>={};
-    livrets.filter(l=>!isInteret(l)&&(l.date??"").slice(0,7)<=m)
-      .forEach(l=>{if(!snap[l.poche]||l.date>snap[l.poche].date)snap[l.poche]=l;});
-    const entry:any={mois:m};
-    LIVRETS_DEF.forEach(l=>{entry[l.label]=snap[l.key]?.montant??0;});
-    return entry;
-  }),[evoMonths,livrets]);
+  // ── Daily data: step-function per livret, one entry per calendar day ──────────
+  const dailyData=useMemo(()=>{
+    const nonInt=livrets.filter(l=>!isInteret(l));
+    if(!nonInt.length)return[];
+
+    // First and last date
+    const firstDate=nonInt.map(l=>l.date??"").filter(Boolean).sort()[0];
+
+    // Generate daily dates
+    const dayDates:string[]=[];
+    const cur=new Date(firstDate);
+    const now=new Date();now.setHours(23,59,59,999);
+    while(cur<=now){dayDates.push(cur.toISOString().slice(0,10));cur.setDate(cur.getDate()+1);}
+
+    // Sort each poche's entries chronologically
+    const byPoche:Record<string,Livret[]>={};
+    nonInt.forEach(l=>{if(!byPoche[l.poche])byPoche[l.poche]=[];byPoche[l.poche].push(l);});
+    Object.values(byPoche).forEach(arr=>arr.sort((a,b)=>(a.date??"").localeCompare(b.date??"")));
+
+    // For each poche, maintain a cursor that advances with dateStr
+    const cursors:Record<string,number>={};
+    const curVal:Record<string,number>={};
+    LIVRETS_DEF.forEach(l=>{cursors[l.key]=0;curVal[l.key]=0;});
+
+    return dayDates.map(dateStr=>{
+      LIVRETS_DEF.forEach(livDef=>{
+        const arr=byPoche[livDef.key]??[];
+        // Advance cursor to latest entry ≤ dateStr
+        while(cursors[livDef.key]<arr.length&&(arr[cursors[livDef.key]].date??"")<= dateStr){
+          curVal[livDef.key]=arr[cursors[livDef.key]].montant;
+          cursors[livDef.key]++;
+        }
+      });
+      const entry:any={date:dateStr,month:dateStr.slice(0,7)};
+      LIVRETS_DEF.forEach(l=>{entry[l.label]=curVal[l.key];});
+      return entry;
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[livrets]);
+
+  // XAxis ticks: first date of each month, ≤ 8 labels
+  const xTicks=useMemo(()=>{
+    const seen=new Set<string>();const firsts:string[]=[];
+    dailyData.forEach((d:any)=>{const m=(d.date as string).slice(0,7);if(!seen.has(m)){seen.add(m);firsts.push(d.date as string);}});
+    const step=Math.max(1,Math.ceil(firsts.length/8));
+    return firsts.filter((_,i)=>i%step===0);
+  },[dailyData]);
+
+  // Selected-month range for gold highlight
+  const monthRange=useMemo(()=>{
+    const inM=dailyData.filter((d:any)=>d.month===mois);
+    if(!inM.length)return null;
+    return{x1:inM[0].date as string,x2:inM[inM.length-1].date as string};
+  },[dailyData,mois]);
 
   // History entries for selected month (non-intérêts)
   const histMois=livrets.filter(l=>!isInteret(l)&&(l.date??"").slice(0,7)===mois);
+
+  // Custom tooltip — clean style, no versements/PnL header
+  const LivretTooltip=({active,payload,label}:any)=>{
+    if(!active||!payload?.length)return null;
+    const items=payload.filter((p:any)=>p.value>0);
+    if(!items.length)return null;
+    return(
+      <div style={{...TOOLTIP_STYLE,padding:"10px 14px",minWidth:160}}>
+        {label&&<div style={{color:"var(--text-2)",fontSize:9,marginBottom:8,letterSpacing:".05em"}}>{label}</div>}
+        {items.map((p:any,i:number)=>(
+          <div key={i} style={{display:"flex",justifyContent:"space-between",gap:8,marginBottom:2}}>
+            <span style={{color:p.stroke??p.color??"var(--text-1)",fontSize:10}}>{p.name||p.dataKey}</span>
+            <span style={{color:"var(--text-0)",fontSize:10}}>{fmt(Number(p.value))}</span>
+          </div>
+        ))}
+      </div>
+    );
+  };
 
   const pieNode=(h:number,_isExp?:boolean)=>inner.length===0?<div className="empty">Aucune donnée</div>:(
     <NestedPie inner={inner} outer={outer} total={totalLivrets} fmt={fmt} h={h}
       toggleLabel="Capital" onToggle={()=>{}}/>
   );
 
-  const stackNode=(h:number,_isExp?:boolean)=>evoData.length===0?<div className="empty">Aucune donnée</div>:(
+  const stackNode=(h:number,_isExp?:boolean)=>dailyData.length===0?<div className="empty">Aucune donnée</div>:(
     <ResponsiveContainer width="100%" height={h}>
-      <AreaChart data={evoData}>
+      <ComposedChart data={dailyData} margin={{left:0,right:5,top:5,bottom:0}}>
         <defs>{LIVRETS_DEF.map(l=>(
           <linearGradient key={l.key} id={`gl_${l.key}`} x1="0" y1="0" x2="0" y2="1">
             <stop offset="5%" stopColor={l.color} stopOpacity={.6}/><stop offset="95%" stopColor={l.color} stopOpacity={.05}/>
           </linearGradient>
         ))}</defs>
         <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
-        <XAxis dataKey="mois" tick={{fontSize:8,fontFamily:"JetBrains Mono"}} interval={Math.max(0,Math.floor(evoData.length/7)-1)}/>
+        <XAxis dataKey="date" ticks={xTicks} tick={{fontSize:8,fontFamily:"JetBrains Mono"}}
+          tickFormatter={d=>{const mo=parseInt(d.slice(5,7));return MN_SHORT[mo-1];}}/>
         <YAxis tick={{fontSize:8,fontFamily:"JetBrains Mono"}} tickFormatter={v=>v>=1000?`${(v/1000).toFixed(0)}k€`:`${v}€`} width={45}/>
-        <Tooltip {...TTP} formatter={(v:number,n:string)=>[fmt(v),n]}/>
-        <ReferenceLine x={mois} stroke="var(--gold)" strokeDasharray="4 2"/>
-        {LIVRETS_DEF.map(l=><Area key={l.key} type="monotone" dataKey={l.label} stackId="a"
+        <Tooltip content={<LivretTooltip/>}/>
+        {LIVRETS_DEF.map(l=><Area key={l.key} type="stepAfter" dataKey={l.label} stackId="a"
           stroke={l.color} strokeWidth={1.5} fill={`url(#gl_${l.key})`}/>)}
-      </AreaChart>
+        {/* Gold month highlight — rendered after series to paint on top */}
+        {monthRange&&(
+          <Customized component={(p:any)=>{
+            const xAxis=Object.values(p.xAxisMap??{})[0] as any;
+            if(!xAxis?.scale)return null;
+            const bw=xAxis.scale.bandwidth?.()??0;
+            const rx1=xPixel(xAxis.scale,monthRange.x1);
+            const rx2=xPixel(xAxis.scale,monthRange.x2);
+            if(rx1==null||rx2==null)return null;
+            return<g><rect x={rx1} y={p.offset.top} width={Math.max(0,rx2-rx1+bw)} height={p.offset.height}
+              fill="var(--gold)" fillOpacity={0.18} stroke="var(--gold)" strokeOpacity={0.6}
+              strokeDasharray="4 2" strokeWidth={1} pointerEvents="none"/></g>;
+          }}/>
+        )}
+      </ComposedChart>
     </ResponsiveContainer>
   );
 
@@ -112,18 +199,17 @@ export function LivretsSection({livrets,mois,onRefresh}:{livrets:Livret[];mois:s
 
     <ChartGrid charts={[
       {key:"liv_pie",   title:`Répartition · ${mois}`,       node:pieNode},
-      {key:"liv_stack", title:"Évolution mensuelle (empilé)", node:stackNode},
+      {key:"liv_stack", title:"Évolution par jour (empilé)",  node:stackNode},
     ]}/>
 
     {/* Accordion: solde history for selected month */}
     <AccordionSection label={`Soldes renseignés · ${mois}`} count={histMois.length}>
       {histMois.length===0?<div className="empty">Aucune entrée ce mois</div>:(
-        <table><thead><tr><th>Poche</th><th>Montant</th><th>Taux</th><th>Date</th><th></th></tr></thead>
+        <table><thead><tr><th>Poche</th><th>Montant</th><th>Date</th><th></th></tr></thead>
         <tbody>{histMois.map(l=>(
           <tr key={l.id}>
             <td><span className="badge b-gold">{LIVRETS_DEF.find(d=>d.key===l.poche)?.label??l.poche}</span></td>
             <td style={{color:"var(--gold)"}}>{fmt(l.montant)}</td>
-            <td style={{color:"var(--text-1)"}}>{(l.taux??0).toFixed(2)} %</td>
             <td style={{color:"var(--text-1)"}}>{l.date}</td>
             <td><button className="btn btn-danger btn-sm" onClick={async()=>{await invoke("delete_livret",{id:l.id});onRefresh();}}>✕</button></td>
           </tr>
