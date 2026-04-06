@@ -513,10 +513,11 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
       .sort((a, b) => subcatIdx(a.subcat) - subcatIdx(b.subcat))
       .map(p => ({
         name:  p.nom,
+        group: INVEST_SUBCATS.find(s => s.key === p.subcat)?.label ?? p.subcat,
         value: pieToggle === "capital" ? p.investTotal : p.currentValue,
         color: tickerColorDim(p.ticker),
       })),
-    ...(especes > 0 ? [{ name: "Espèces", value: especes, color: (INVEST_SUBCAT_COLOR["especes"] ?? "#78909c") + "99" }] : []),
+    ...(especes > 0 ? [{ name: "Espèces", group: "Espèces", value: especes, color: (INVEST_SUBCAT_COLOR["especes"] ?? "#78909c") + "99" }] : []),
   ].filter(p => p.value > 0), [enriched, pieToggle, especes]);
 
   const pieTotal = (pieToggle === "capital" ? totalInvest : totalValue) + especes;
@@ -542,140 +543,150 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
   // + red line/fill for cumulative versements (shows loss zone when portfolio < versements)
   const stackNode = (h: number, isExp: boolean) => chartData.length === 0
     ? <div className="empty">Aucune donnée</div>
-    : (
-      <ResponsiveContainer width="100%" height={h}>
-        <ComposedChart data={chartData} margin={{ left: 0, right: 5, top: 5, bottom: isExp ? 28 : 0 }}>
-          <defs>
-            {sortedTickers.map(t => (
-              <linearGradient key={t.ticker} id={`gs_${poche.key}_${t.ticker.replace(/\W/g, "_")}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%"  stopColor={t.color} stopOpacity={.75}/>
-                <stop offset="95%" stopColor={t.color} stopOpacity={.05}/>
+    : (() => {
+      // Compact: pass visibleData so zoom is preserved without the Brush component.
+      // Expanded: pass full chartData + Brush slider for range selection.
+      const chartDataForNode = isExp ? chartData : visibleData;
+      return (
+        <ResponsiveContainer width="100%" height={h}>
+          <ComposedChart data={chartDataForNode} margin={{ left: 0, right: 5, top: 5, bottom: isExp ? 28 : 0 }}>
+            <defs>
+              {sortedTickers.map(t => (
+                <linearGradient key={t.ticker} id={`gs_${poche.key}_${t.ticker.replace(/\W/g, "_")}`} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%"  stopColor={t.color} stopOpacity={.75}/>
+                  <stop offset="95%" stopColor={t.color} stopOpacity={.05}/>
+                </linearGradient>
+              ))}
+              <linearGradient id={`gs_${poche.key}_loss`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%"   stopColor="#e63946" stopOpacity={.55}/>
+                <stop offset="100%" stopColor="#e63946" stopOpacity={.15}/>
               </linearGradient>
+              <linearGradient id={`gs_${poche.key}_cash`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%"  stopColor={INVEST_SUBCAT_COLOR["especes"] ?? "#78909c"} stopOpacity={.7}/>
+                <stop offset="95%" stopColor={INVEST_SUBCAT_COLOR["especes"] ?? "#78909c"} stopOpacity={.1}/>
+              </linearGradient>
+            </defs>
+            <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
+            <XAxis dataKey="date" tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
+              ticks={xTicks}
+              tickFormatter={d => { const mo = parseInt(d.slice(5, 7)); return MN_SHORT[mo - 1]; }}/>
+            {/* Y-axis clamped to [0, auto] — portfolio value can't be negative */}
+            <YAxis tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
+              tickFormatter={v => v >= 1000 ? `${(v / 1000).toFixed(0)}k€` : `${v}€`} width={45}
+              domain={[0, "auto"]}/>
+            {isExp && <Tooltip content={<PocheTooltip fmt={fmt}/>}/>}
+            {/* Espèces — bottom of stack */}
+            <Area type="monotone" dataKey="_especes" stackId="v" name="Espèces"
+              stroke={INVEST_SUBCAT_COLOR["especes"] ?? "#78909c"} strokeWidth={1}
+              fill={`url(#gs_${poche.key}_cash)`} legendType="none"/>
+            {/* Stacked portfolio areas */}
+            {sortedTickers.map(t => (
+              <Area key={t.ticker} type="monotone" dataKey={t.ticker} stackId="v" name={t.nom}
+                stroke={t.color} strokeWidth={1.5}
+                fill={`url(#gs_${poche.key}_${t.ticker.replace(/\W/g, "_")})`}/>
             ))}
-            <linearGradient id={`gs_${poche.key}_loss`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%"   stopColor="#e63946" stopOpacity={.55}/>
-              <stop offset="100%" stopColor="#e63946" stopOpacity={.15}/>
-            </linearGradient>
-            <linearGradient id={`gs_${poche.key}_cash`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%"  stopColor={INVEST_SUBCAT_COLOR["especes"] ?? "#78909c"} stopOpacity={.7}/>
-              <stop offset="95%" stopColor={INVEST_SUBCAT_COLOR["especes"] ?? "#78909c"} stopOpacity={.1}/>
-            </linearGradient>
-          </defs>
-          <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
-          <XAxis dataKey="date" tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
-            ticks={xTicks}
-            tickFormatter={d => { const mo = parseInt(d.slice(5, 7)); return MN_SHORT[mo - 1]; }}/>
-          {/* Y-axis clamped to [0, auto] — portfolio value can't be negative */}
-          <YAxis tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
-            tickFormatter={v => v >= 1000 ? `${(v / 1000).toFixed(0)}k€` : `${v}€`} width={45}
-            domain={[0, "auto"]}/>
-          {isExp && <Tooltip content={<PocheTooltip fmt={fmt}/>}/>}
-          {/* Espèces — bottom of stack */}
-          <Area type="monotone" dataKey="_especes" stackId="v" name="Espèces"
-            stroke={INVEST_SUBCAT_COLOR["especes"] ?? "#78909c"} strokeWidth={1}
-            fill={`url(#gs_${poche.key}_cash)`} legendType="none"/>
-          {/* Stacked portfolio areas */}
-          {sortedTickers.map(t => (
-            <Area key={t.ticker} type="monotone" dataKey={t.ticker} stackId="v" name={t.nom}
-              stroke={t.color} strokeWidth={1.5}
-              fill={`url(#gs_${poche.key}_${t.ticker.replace(/\W/g, "_")})`}/>
-          ))}
-          {/* Loss zone: stacked on top of portfolio, fills gap up to versements line */}
-          <Area type="monotone" dataKey="_lossArea" stackId="v" name="_lossArea"
-            stroke="none" strokeWidth={0}
-            fill={`url(#gs_${poche.key}_loss)`} legendType="none"/>
-          {/* Versements cumulative line (not stacked — absolute value) */}
-          <Line type="monotone" dataKey="_versTotal" name="Versements"
-            stroke="#e63946" strokeWidth={1.5} dot={false} strokeDasharray="4 3" legendType="none"/>
-          {/* Gold month highlight — index-based to avoid scale domain truncation */}
-          {monthWeekRange && (
-            <Customized component={(p: any) => {
-              const bS = brushIdx?.start ?? 0; const bE = brushIdx?.end ?? chartData.length - 1;
-              const r = idxPx(chartData, monthWeekRange.x1, monthWeekRange.x2, p.offset, bS, bE);
-              if (!r) return null;
-              return <g><rect x={r.rx1} y={p.offset.top} width={Math.max(1, r.rx2 - r.rx1 + r.step)} height={p.offset.height}
-                fill="var(--gold)" fillOpacity={0.18} stroke="var(--gold)" strokeOpacity={0.6}
-                strokeDasharray="4 2" strokeWidth={1} pointerEvents="none"/></g>;
-            }}/>
-          )}
-          {/* Range slider for zoom — only in expanded view */}
-          {isExp && <Brush dataKey="date" height={22} travellerWidth={6}
-            stroke="var(--border)" fill="var(--bg-2)"
-            startIndex={brushIdx?.start ?? 0}
-            endIndex={brushIdx?.end ?? chartData.length - 1}
-            onChange={onBrushChange}
-            tickFormatter={() => ""}/>}
-        </ComposedChart>
-      </ResponsiveContainer>
-    );
+            {/* Loss zone: stacked on top of portfolio, fills gap up to versements line */}
+            <Area type="monotone" dataKey="_lossArea" stackId="v" name="_lossArea"
+              stroke="none" strokeWidth={0}
+              fill={`url(#gs_${poche.key}_loss)`} legendType="none"/>
+            {/* Versements cumulative line (not stacked — absolute value) */}
+            <Line type="monotone" dataKey="_versTotal" name="Versements"
+              stroke="#e63946" strokeWidth={1.5} dot={false} strokeDasharray="4 3" legendType="none"/>
+            {/* Gold month highlight — index-based; when compact data is already sliced (bStart=0) */}
+            {monthWeekRange && (
+              <Customized component={(p: any) => {
+                const bS = isExp ? (brushIdx?.start ?? 0) : 0;
+                const bE = isExp ? (brushIdx?.end ?? chartData.length - 1) : visibleData.length - 1;
+                const r = idxPx(chartDataForNode, monthWeekRange.x1, monthWeekRange.x2, p.offset, bS, bE);
+                if (!r) return null;
+                return <g><rect x={r.rx1} y={p.offset.top} width={Math.max(1, r.rx2 - r.rx1 + r.step)} height={p.offset.height}
+                  fill="var(--gold)" fillOpacity={0.18} stroke="var(--gold)" strokeOpacity={0.6}
+                  strokeDasharray="4 2" strokeWidth={1} pointerEvents="none"/></g>;
+              }}/>
+            )}
+            {/* Range slider for zoom — only in expanded view */}
+            {isExp && <Brush dataKey="date" height={22} travellerWidth={6}
+              stroke="var(--border)" fill="var(--bg-2)"
+              startIndex={brushIdx?.start ?? 0}
+              endIndex={brushIdx?.end ?? chartData.length - 1}
+              onChange={onBrushChange}
+              tickFormatter={() => ""}/>}
+          </ComposedChart>
+        </ResponsiveContainer>
+      );
+    })();
 
   // PnL + dividendes par ticker, événements assignés à leur semaine exacte
   const pnlDivNode = (h: number, isExp: boolean) => chartData.length === 0
     ? <div className="empty">Aucune donnée</div>
-    : (
-      <div style={{ height: h, display: "flex", flexDirection: "column" }}>
-        <div style={{ display: "flex", gap: 4, marginBottom: 8, flexShrink: 0 }}>
-          {([["latent", "PnL latent"], ["realise", "PnL réalisé"], ["divs", "Dividendes"]] as const).map(([k, l]) => (
-            <button key={k} className={`btn btn-sm ${pnlMode === k ? "btn-primary" : "btn-ghost"}`}
-              style={{ flex: 1, fontSize: 10 }} onClick={() => setPnlMode(k)}>{l}</button>
-          ))}
+    : (() => {
+      const pnlDataForNode = isExp ? weeklyPnlData : pnlVisibleData;
+      return (
+        <div style={{ height: h, display: "flex", flexDirection: "column" }}>
+          <div style={{ display: "flex", gap: 4, marginBottom: 8, flexShrink: 0 }}>
+            {([["latent", "PnL latent"], ["realise", "PnL réalisé"], ["divs", "Dividendes"]] as const).map(([k, l]) => (
+              <button key={k} className={`btn btn-sm ${pnlMode === k ? "btn-primary" : "btn-ghost"}`}
+                style={{ flex: 1, fontSize: 10 }} onClick={() => setPnlMode(k)}>{l}</button>
+            ))}
+          </div>
+          <div style={{ flex: 1 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={pnlDataForNode} stackOffset="sign" margin={{ left: 0, right: 5, top: 5, bottom: isExp ? 28 : 0 }}>
+                <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
+                <XAxis dataKey="date" tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
+                  ticks={pnlXTicks}
+                  tickFormatter={d => { const mo = parseInt(d.slice(5, 7)); return MN_SHORT[mo - 1]; }}/>
+                {pnlMode !== "divs" ? (
+                  <YAxis tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
+                    tickFormatter={v => Math.abs(v) >= 1000 ? `${(v / 1000).toFixed(0)}k€` : `${v.toFixed(0)}€`} width={45}/>
+                ) : (
+                  <YAxis tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
+                    tickFormatter={v => v === 0 ? "0€" : Math.abs(v) >= 100 ? `${v.toFixed(0)}€` : `${v.toFixed(2)}€`} width={52}/>
+                )}
+                {isExp && <Tooltip content={<PocheTooltip fmt={fmt}/>}/>}
+                <ReferenceLine y={0} stroke="var(--border-l)"/>
+                {pnlMode === "latent" && sortedTickers.map(t => (
+                  <Line key={t.ticker} type="monotone" dataKey={`_pnlLat_${t.ticker}`} name={t.nom}
+                    stroke={t.color} strokeWidth={1.5} dot={false}/>
+                ))}
+                {pnlMode === "realise" && sortedTickers.map(t => (
+                  <Bar key={t.ticker} dataKey={`_pnlReal_${t.ticker}`} name={t.nom}
+                    stackId="r" fill={t.color} radius={[0, 0, 0, 0]}/>
+                ))}
+                {/* Intérêts espèces — en premier dans le stack (barre du bas) */}
+                {pnlMode === "divs" && (
+                  <Bar dataKey="_divs__INTERETS_" name="Intérêts"
+                    stackId="d" fill={INVEST_SUBCAT_COLOR["especes"] ?? "#78909c"} radius={[0, 0, 0, 0]}/>
+                )}
+                {pnlMode === "divs" && sortedTickers.map(t => (
+                  <Bar key={t.ticker} dataKey={`_divs_${t.ticker}`} name={t.nom}
+                    stackId="d" fill={t.color} radius={[0, 0, 0, 0]}/>
+                ))}
+                {/* Gold month highlight — index-based */}
+                {pnlMonthRange && (
+                  <Customized component={(p: any) => {
+                    const bS = isExp ? (pnlBrushIdx?.start ?? 0) : 0;
+                    const bE = isExp ? (pnlBrushIdx?.end ?? weeklyPnlData.length - 1) : pnlVisibleData.length - 1;
+                    const r = idxPx(pnlDataForNode, pnlMonthRange.x1, pnlMonthRange.x2, p.offset, bS, bE);
+                    if (!r) return null;
+                    return <g><rect x={r.rx1} y={p.offset.top} width={Math.max(1, r.rx2 - r.rx1 + r.step)} height={p.offset.height}
+                      fill="var(--gold)" fillOpacity={0.18} stroke="var(--gold)" strokeOpacity={0.6}
+                      strokeDasharray="4 2" strokeWidth={1} pointerEvents="none"/></g>;
+                  }}/>
+                )}
+                {/* Range slider — independent from portfolio chart, only in expanded view */}
+                {isExp && <Brush dataKey="date" height={22} travellerWidth={6}
+                  stroke="var(--border)" fill="var(--bg-2)"
+                  startIndex={pnlBrushIdx?.start ?? 0}
+                  endIndex={pnlBrushIdx?.end ?? weeklyPnlData.length - 1}
+                  onChange={onPnlBrushChange}
+                  tickFormatter={() => ""}/>}
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
         </div>
-        <div style={{ flex: 1 }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={weeklyPnlData} stackOffset="sign" margin={{ left: 0, right: 5, top: 5, bottom: isExp ? 28 : 0 }}>
-              <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
-              <XAxis dataKey="date" tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
-                ticks={pnlXTicks}
-                tickFormatter={d => { const mo = parseInt(d.slice(5, 7)); return MN_SHORT[mo - 1]; }}/>
-              {pnlMode !== "divs" ? (
-                <YAxis tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
-                  tickFormatter={v => Math.abs(v) >= 1000 ? `${(v / 1000).toFixed(0)}k€` : `${v.toFixed(0)}€`} width={45}/>
-              ) : (
-                <YAxis tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
-                  tickFormatter={v => v === 0 ? "0€" : Math.abs(v) >= 100 ? `${v.toFixed(0)}€` : `${v.toFixed(2)}€`} width={52}/>
-              )}
-              {isExp && <Tooltip content={<PocheTooltip fmt={fmt}/>}/>}
-              <ReferenceLine y={0} stroke="var(--border-l)"/>
-              {pnlMode === "latent" && sortedTickers.map(t => (
-                <Line key={t.ticker} type="monotone" dataKey={`_pnlLat_${t.ticker}`} name={t.nom}
-                  stroke={t.color} strokeWidth={1.5} dot={false}/>
-              ))}
-              {pnlMode === "realise" && sortedTickers.map(t => (
-                <Bar key={t.ticker} dataKey={`_pnlReal_${t.ticker}`} name={t.nom}
-                  stackId="r" fill={t.color} radius={[0, 0, 0, 0]}/>
-              ))}
-              {/* Intérêts espèces — en premier dans le stack (barre du bas) */}
-              {pnlMode === "divs" && (
-                <Bar dataKey="_divs__INTERETS_" name="Intérêts"
-                  stackId="d" fill={INVEST_SUBCAT_COLOR["especes"] ?? "#78909c"} radius={[0, 0, 0, 0]}/>
-              )}
-              {pnlMode === "divs" && sortedTickers.map(t => (
-                <Bar key={t.ticker} dataKey={`_divs_${t.ticker}`} name={t.nom}
-                  stackId="d" fill={t.color} radius={[0, 0, 0, 0]}/>
-              ))}
-              {/* Gold month highlight — index-based */}
-              {pnlMonthRange && (
-                <Customized component={(p: any) => {
-                  const bS = pnlBrushIdx?.start ?? 0; const bE = pnlBrushIdx?.end ?? weeklyPnlData.length - 1;
-                  const r = idxPx(weeklyPnlData, pnlMonthRange.x1, pnlMonthRange.x2, p.offset, bS, bE);
-                  if (!r) return null;
-                  return <g><rect x={r.rx1} y={p.offset.top} width={Math.max(1, r.rx2 - r.rx1 + r.step)} height={p.offset.height}
-                    fill="var(--gold)" fillOpacity={0.18} stroke="var(--gold)" strokeOpacity={0.6}
-                    strokeDasharray="4 2" strokeWidth={1} pointerEvents="none"/></g>;
-                }}/>
-              )}
-              {/* Range slider — independent from portfolio chart, only in expanded view */}
-              {isExp && <Brush dataKey="date" height={22} travellerWidth={6}
-                stroke="var(--border)" fill="var(--bg-2)"
-                startIndex={pnlBrushIdx?.start ?? 0}
-                endIndex={pnlBrushIdx?.end ?? weeklyPnlData.length - 1}
-                onChange={onPnlBrushChange}
-                tickFormatter={() => ""}/>}
-            </ComposedChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-    );
+      );
+    })();
 
   return (
     <div className="table-card" style={{ marginBottom: 12 }}>
@@ -713,8 +724,10 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
 
           <ChartGrid charts={[
             { key: `pie_${poche.key}`,    title: `Répartition · ${mois}`,          node: pieNode    },
-            { key: `stack_${poche.key}`,  title: "Valeur portefeuille / jour",      node: stackNode  },
-            { key: `pnldiv_${poche.key}`, title: "PnL + Dividendes",                node: pnlDivNode },
+            { key: `stack_${poche.key}`,  title: "Valeur portefeuille / jour",      node: stackNode,
+              onResetZoom: () => setBrushIdx(null), brushActive: !!brushIdx },
+            { key: `pnldiv_${poche.key}`, title: "PnL + Dividendes",                node: pnlDivNode,
+              onResetZoom: () => setPnlBrushIdx(null), brushActive: !!pnlBrushIdx },
           ]}/>
 
           <AccordionSection label="Titres" count={enriched.length} color={poche.color}>
@@ -732,15 +745,15 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
                     <tr key={p.ticker} style={{ verticalAlign: "middle" }}>
                       <td>{p.nom}</td>
                       <td>
-                        <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                          <span className="badge" style={{ color: p.color, borderColor: p.color, background: p.color + "22" }}>{p.ticker}</span>
-                          <span style={{ fontSize: 10, color: "var(--text-1)", display: "flex", gap: 4, alignItems: "center" }}>
-                            <span style={{ fontFamily: "var(--mono)" }}>{fmt(p.currentPrice)}</span>
-                            <span style={{ color: p.pnlPct >= 0 ? "var(--teal)" : "var(--rose)", fontWeight: 600 }}>
+                        <span className="badge" style={{ color: p.color, borderColor: p.color, background: p.color + "22", display: "inline-flex", flexDirection: "column", alignItems: "center", gap: 1, lineHeight: 1.3, padding: "4px 7px" }}>
+                          <span>{p.ticker}</span>
+                          <span style={{ display: "flex", gap: 3, alignItems: "center", fontSize: 9 }}>
+                            <span style={{ fontFamily: "var(--mono)", color: "var(--text-1)" }}>{fmt(p.currentPrice)}</span>
+                            <span style={{ color: p.pnlPct >= 0 ? "var(--teal)" : "var(--rose)", fontWeight: 700 }}>
                               {p.pnlPct >= 0 ? "+" : ""}{p.pnlPct.toFixed(2)}%
                             </span>
                           </span>
-                        </div>
+                        </span>
                       </td>
                       <td><span className="badge b-neutral">{INVEST_SUBCATS.find(s => s.key === p.subcat)?.label ?? p.subcat}</span></td>
                       <td style={{ fontFamily: "var(--mono)", fontSize: 11 }}>{p.quantite.toFixed(qtyPrec)}</td>

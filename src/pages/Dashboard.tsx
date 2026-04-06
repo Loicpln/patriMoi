@@ -170,10 +170,14 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
         <div className="chart-card" style={expSal ? { gridColumn: "1 / -1" } : {}}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
             <div className="chart-title" style={{ marginBottom: 0 }}>Évolution du salaire net + primes</div>
-            <button className="btn btn-ghost btn-sm" style={{ fontSize: 10 }}
-              onClick={() => setExpSal(v => !v)}>
-              {expSal ? "⊟ Réduire" : "⊞ Agrandir"}
-            </button>
+            <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+              <button className="btn btn-ghost btn-sm" style={{ fontSize: 10, opacity: brushDash ? 1 : 0.35, cursor: brushDash ? "pointer" : "default" }}
+                onClick={() => brushDash && setBrushDash(null)} title="Réinitialiser le zoom">↺</button>
+              <button className="btn btn-ghost btn-sm" style={{ fontSize: 10 }}
+                onClick={() => setExpSal(v => !v)}>
+                {expSal ? "⊟ Réduire" : "⊞ Agrandir"}
+              </button>
+            </div>
           </div>
           {evoSal.length === 0 ? <div className="empty">Aucune fiche de paie.</div> : (
             <ResponsiveContainer width="100%" height={expSal ? 460 : 220}>

@@ -491,10 +491,14 @@ export default function Fiches() {
           <div className="chart-card" style={{ marginBottom: 20 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
               <div className="chart-title" style={{ marginBottom: 0 }}>Évolution du salaire net + primes</div>
-              <button className="btn btn-ghost btn-sm" style={{ fontSize: 10 }}
-                onClick={() => setExpChart(v => !v)}>
-                {expChart ? "⊟ Réduire" : "⊞ Agrandir"}
-              </button>
+              <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                <button className="btn btn-ghost btn-sm" style={{ fontSize: 10, opacity: brushFiches ? 1 : 0.35, cursor: brushFiches ? "pointer" : "default" }}
+                  onClick={() => brushFiches && setBrushFiches(null)} title="Réinitialiser le zoom">↺</button>
+                <button className="btn btn-ghost btn-sm" style={{ fontSize: 10 }}
+                  onClick={() => setExpChart(v => !v)}>
+                  {expChart ? "⊟ Réduire" : "⊞ Agrandir"}
+                </button>
+              </div>
             </div>
             <ResponsiveContainer width="100%" height={h}>
               <AreaChart data={evoData} margin={{ left: 0, right: 5, top: 5, bottom: expChart ? 28 : 0 }}>

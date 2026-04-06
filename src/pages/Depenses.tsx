@@ -22,7 +22,7 @@ const CAT_COLOR: Record<string, string> = Object.fromEntries(
 const CAT_KEYS = Object.keys(DEPENSE_CATEGORIES);
 
 // ── Chart grid (same as Patrimoine) ──────────────────────────────────────────
-function ChartGrid({charts}:{charts:{key:string;title:string;node:(h:number,isExp:boolean)=>React.ReactNode}[]}) {
+function ChartGrid({charts}:{charts:{key:string;title:string;node:(h:number,isExp:boolean)=>React.ReactNode;onResetZoom?:()=>void;brushActive?:boolean}[]}) {
   const [exp,setExp]=useState<string|null>(null);
   return(
     <div style={{display:"grid",gridTemplateColumns:exp?"1fr":"repeat(auto-fit,minmax(280px,1fr))",gap:16,marginBottom:24}}>
@@ -34,10 +34,17 @@ function ChartGrid({charts}:{charts:{key:string;title:string;node:(h:number,isEx
           <div key={c.key} className="chart-card" style={{margin:0,height:h+52}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
               <div className="chart-title" style={{marginBottom:0,fontSize:12}}>{c.title}</div>
-              <button className="btn btn-ghost btn-sm" style={{fontSize:10}}
-                onClick={()=>setExp(v=>v===c.key?null:c.key)}>
-                {isExp?"⊟ Réduire":"⊞ Agrandir"}
-              </button>
+              <div style={{display:"flex",gap:4,alignItems:"center"}}>
+                {c.onResetZoom&&(
+                  <button className="btn btn-ghost btn-sm" style={{fontSize:10,opacity:c.brushActive?1:0.35,cursor:c.brushActive?"pointer":"default"}}
+                    onClick={()=>c.brushActive&&c.onResetZoom?.()}
+                    title="Réinitialiser le zoom">↺</button>
+                )}
+                <button className="btn btn-ghost btn-sm" style={{fontSize:10}}
+                  onClick={()=>setExp(v=>v===c.key?null:c.key)}>
+                  {isExp?"⊟ Réduire":"⊞ Agrandir"}
+                </button>
+              </div>
             </div>
             <div style={{height:h}}>{c.node(h,isExp)}</div>
           </div>

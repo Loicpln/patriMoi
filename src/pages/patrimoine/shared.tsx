@@ -29,7 +29,7 @@ export const TTP = {
 };
 
 // ── Chart grid: expand hides others, expands active ───────────────────────────
-export function ChartGrid({charts}:{charts:{key:string;title:string;node:(h:number,isExp:boolean)=>ReactNode}[]}) {
+export function ChartGrid({charts}:{charts:{key:string;title:string;node:(h:number,isExp:boolean)=>ReactNode;onResetZoom?:()=>void;brushActive?:boolean}[]}) {
   const [exp,setExp]=useState<string|null>(null);
   return(
     <div style={{display:"grid",gridTemplateColumns:exp?"1fr":"repeat(auto-fit,minmax(280px,1fr))",gap:16,padding:20}}>
@@ -41,10 +41,17 @@ export function ChartGrid({charts}:{charts:{key:string;title:string;node:(h:numb
           <div key={c.key} className="chart-card" style={{margin:0,height:h+52}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
               <div className="chart-title" style={{marginBottom:0,fontSize:12}}>{c.title}</div>
-              <button className="btn btn-ghost btn-sm" style={{fontSize:10}}
-                onClick={()=>setExp(v=>v===c.key?null:c.key)}>
-                {isExp?"⊟ Réduire":"⊞ Agrandir"}
-              </button>
+              <div style={{display:"flex",gap:4,alignItems:"center"}}>
+                {c.onResetZoom&&(
+                  <button className="btn btn-ghost btn-sm" style={{fontSize:10,opacity:c.brushActive?1:0.35,cursor:c.brushActive?"pointer":"default"}}
+                    onClick={()=>c.brushActive&&c.onResetZoom?.()}
+                    title="Réinitialiser le zoom">↺</button>
+                )}
+                <button className="btn btn-ghost btn-sm" style={{fontSize:10}}
+                  onClick={()=>setExp(v=>v===c.key?null:c.key)}>
+                  {isExp?"⊟ Réduire":"⊞ Agrandir"}
+                </button>
+              </div>
             </div>
             <div style={{height:h}}>{c.node(h,isExp)}</div>
           </div>
@@ -57,17 +64,24 @@ export function ChartGrid({charts}:{charts:{key:string;title:string;node:(h:numb
 // ── Nested Pie ─────────────────────────────────────────────────────────────────
 export function NestedPie({inner,outer,total,fmt,toggleLabel,onToggle,h=260}:{
   inner:{name:string;value:number;color:string}[];
-  outer:{name:string;value:number;color:string}[];
+  outer:{name:string;value:number;color:string;group?:string}[];
   total:number;fmt:(n:number)=>string;toggleLabel:string;onToggle:()=>void;h?:number;
 }) {
+  const [selectedGroup,setSelectedGroup]=useState<string|null>(null);
+
+  const filteredOuter=selectedGroup
+    ?outer.filter(o=>o.group===selectedGroup)
+    :outer;
+
   const CT=({active,payload}:any)=>{
     if(!active||!payload?.length)return null;
     const p=payload[0];
+    const ref=selectedGroup?filteredOuter.reduce((s,o)=>s+o.value,0):total;
     return(
       <div style={{...TOOLTIP_STYLE,padding:"8px 12px"}}>
         <div style={{color:"var(--text-0)",fontWeight:500,marginBottom:4}}>{p.name}</div>
         <div style={{color:"var(--gold)"}}>{fmt(p.value)}</div>
-        {total>0&&<div style={{color:"var(--text-1)",fontSize:10,marginTop:2}}>{((p.value/total)*100).toFixed(1)} %</div>}
+        {ref>0&&<div style={{color:"var(--text-1)",fontSize:10,marginTop:2}}>{((p.value/ref)*100).toFixed(1)} %</div>}
       </div>
     );
   };
@@ -78,11 +92,20 @@ export function NestedPie({inner,outer,total,fmt,toggleLabel,onToggle,h=260}:{
         onClick={e=>{e.stopPropagation();onToggle();}}>{toggleLabel}</button>
       <ResponsiveContainer width="100%" height={h}>
         <PieChart>
-          <Pie data={inner} cx="50%" cy="50%" innerRadius={ir} outerRadius={or1} paddingAngle={0} dataKey="value">
-            {inner.map((e,i)=><Cell key={i} fill={e.color} stroke="var(--bg-1)" strokeWidth={2}/>)}
+          <Pie data={inner} cx="50%" cy="50%" innerRadius={ir} outerRadius={or1} paddingAngle={0} dataKey="value"
+            style={{cursor:"pointer"}}
+            onClick={(_:any,index:number)=>{
+              const name=inner[index]?.name;
+              if(!name)return;
+              setSelectedGroup(v=>v===name?null:name);
+            }}>
+            {inner.map((e,i)=>(
+              <Cell key={i} fill={e.color} stroke="var(--bg-1)" strokeWidth={selectedGroup===e.name?3:2}
+                opacity={selectedGroup&&selectedGroup!==e.name?0.25:1}/>
+            ))}
           </Pie>
-          <Pie data={outer} cx="50%" cy="50%" innerRadius={ir2} outerRadius={or2} paddingAngle={0} dataKey="value">
-            {outer.map((e,i)=><Cell key={i} fill={e.color} stroke="var(--bg-1)" strokeWidth={1}/>)}
+          <Pie data={filteredOuter} cx="50%" cy="50%" innerRadius={ir2} outerRadius={or2} paddingAngle={0} dataKey="value">
+            {filteredOuter.map((e,i)=><Cell key={i} fill={e.color} stroke="var(--bg-1)" strokeWidth={1}/>)}
           </Pie>
           <Tooltip content={<CT/>}/>
           <text x="50%" y="47%" textAnchor="middle" dominantBaseline="middle"

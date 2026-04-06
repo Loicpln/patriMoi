@@ -143,7 +143,7 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
     const [pk,...rest]=k.split("||");const sk=rest.join("||");
     const pocheName=POCHES.find(p=>p.key===pk)?.label??pk;
     const subcatName=sk==="especes"?"Espèces":(INVEST_SUBCATS.find(s=>s.key===sk)?.label??sk);
-    return{name:`${subcatName} (${pocheName})`,...v};
+    return{name:subcatName,group:pocheName,...v};
   }).filter(e=>e.value>0);
   const grandTotal=Object.values(pocheMap).reduce((s,v)=>s+v.value,0);
 
@@ -327,7 +327,8 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
     <div className="section-sep"><span className="section-sep-label">Récap. investissements</span><div className="section-sep-line"/></div>
     <ChartGrid charts={[
       {key:"recap_pie",   title:`Poche / Sous-catégorie · ${mois}`, node:pieNode},
-      {key:"recap_stack", title:"Valeur par poche / jour",           node:stackNode},
+      {key:"recap_stack", title:"Valeur par poche / jour",           node:stackNode,
+        onResetZoom:()=>setBrushIdxR(null), brushActive:!!brushIdxR},
     ]}/>
   </div>);
 }
@@ -424,8 +425,8 @@ function GlobalRecap({livrets,positions,ventes,versements,mois,scpiValuations}:{
     {name:"Investissements",value:investVal,color:"#3a7bd5"},
   ].filter(p=>p.value>0);
   const outer=[
-    ...LIVRETS_DEF.map(l=>({name:l.label,value:latestLiv[l.key]?.montant??0,color:l.color+"cc"})),
-    ...POCHES.map(p=>({name:p.label,value:pieToggle==="versements"?(versParPoche[p.key]??0):(portfolioParPoche[p.key]??0),color:p.color+"cc"})),
+    ...LIVRETS_DEF.map(l=>({name:l.label,group:"Livrets",value:latestLiv[l.key]?.montant??0,color:l.color+"cc"})),
+    ...POCHES.map(p=>({name:p.label,group:"Investissements",value:pieToggle==="versements"?(versParPoche[p.key]??0):(portfolioParPoche[p.key]??0),color:p.color+"cc"})),
   ].filter(p=>p.value>0);
   const grandTotal=totalLivrets+investVal;
 
@@ -529,7 +530,8 @@ function GlobalRecap({livrets,positions,ventes,versements,mois,scpiValuations}:{
     </div>
     <ChartGrid charts={[
       {key:"global_pie",   title:`Répartition globale · ${mois}`,  node:pieNode},
-      {key:"global_stack", title:"Évolution mensuelle globale",     node:stackNode},
+      {key:"global_stack", title:"Évolution mensuelle globale",     node:stackNode,
+        onResetZoom:()=>setBrushIdxG(null), brushActive:!!brushIdxG},
     ]}/>
   </div>);
 }

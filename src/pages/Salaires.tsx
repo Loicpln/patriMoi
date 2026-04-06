@@ -266,10 +266,20 @@ export default function Salaires() {
               <div key={c.key} className="chart-card" style={{ margin: 0, height: h + 52 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
                   <div className="chart-title" style={{ marginBottom: 0, fontSize: 12 }}>{c.title}</div>
-                  <button className="btn btn-ghost btn-sm" style={{ fontSize: 10 }}
-                    onClick={() => setExpChart(v => v === c.key ? null : c.key)}>
-                    {isExp ? "⊟ Réduire" : "⊞ Agrandir"}
-                  </button>
+                  <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                    {(() => {
+                      const brushActive = c.key === "sal" ? !!brushSal : !!brushPrime;
+                      const resetFn = c.key === "sal" ? () => setBrushSal(null) : () => setBrushPrime(null);
+                      return (
+                        <button className="btn btn-ghost btn-sm" style={{ fontSize: 10, opacity: brushActive ? 1 : 0.35, cursor: brushActive ? "pointer" : "default" }}
+                          onClick={() => brushActive && resetFn()} title="Réinitialiser le zoom">↺</button>
+                      );
+                    })()}
+                    <button className="btn btn-ghost btn-sm" style={{ fontSize: 10 }}
+                      onClick={() => setExpChart(v => v === c.key ? null : c.key)}>
+                      {isExp ? "⊟ Réduire" : "⊞ Agrandir"}
+                    </button>
+                  </div>
                 </div>
                 <div style={{ height: h }}>{c.node(h, isExp)}</div>
               </div>

@@ -45,7 +45,7 @@ export function LivretsSection({livrets,mois,onRefresh}:{livrets:Livret[];mois:s
   const totalInterets=Object.values(interetsMap).flat().reduce((s,l)=>s+l.montant,0);
 
   const inner=LIVRETS_DEF.map(l=>({name:l.label,value:latest[l.key]?.montant??0,color:l.color})).filter(p=>p.value>0);
-  const outer=inner.map(p=>({...p,color:p.color+"99"}));
+  const outer=inner.map(p=>({...p,group:p.name,color:p.color}));
 
   // ── Daily data: step-function per livret, one entry per calendar day ──────────
   const dailyData=useMemo(()=>{
@@ -133,45 +133,49 @@ export function LivretsSection({livrets,mois,onRefresh}:{livrets:Livret[];mois:s
       toggleLabel="Capital" onToggle={()=>{}}/>
   );
 
-  const stackNode=(h:number,isExp?:boolean)=>dailyData.length===0?<div className="empty">Aucune donnée</div>:(
-    <ResponsiveContainer width="100%" height={h}>
-      <ComposedChart data={dailyData} margin={{left:0,right:5,top:5,bottom:isExp?28:0}}>
-        <defs>{LIVRETS_DEF.map(l=>(
-          <linearGradient key={l.key} id={`gl_${l.key}`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%" stopColor={l.color} stopOpacity={.6}/><stop offset="95%" stopColor={l.color} stopOpacity={.05}/>
-          </linearGradient>
-        ))}</defs>
-        <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
-        <XAxis dataKey="date" ticks={xTicks} tick={{fontSize:8,fontFamily:"JetBrains Mono"}}
-          tickFormatter={d=>{const mo=parseInt(d.slice(5,7));return MN_SHORT[mo-1];}}/>
-        <YAxis tick={{fontSize:8,fontFamily:"JetBrains Mono"}} tickFormatter={v=>v>=1000?`${(v/1000).toFixed(0)}k€`:`${v}€`} width={45}/>
-        <Tooltip content={<LivretTooltip/>}/>
-        {LIVRETS_DEF.map(l=><Area key={l.key} type="stepAfter" dataKey={l.label} stackId="a"
-          stroke={l.color} strokeWidth={1.5} fill={`url(#gl_${l.key})`}/>)}
-        {/* Gold month highlight — rendered after series to paint on top */}
-        {monthRange&&(
-          <Customized component={(p:any)=>{
-            const bS=brushIdxL?.start??0;const bE=brushIdxL?.end??dailyData.length-1;
-            const r=idxPx(dailyData,monthRange.x1,monthRange.x2,p.offset,bS,bE);
-            if(!r)return null;
-            return<g><rect x={r.rx1} y={p.offset.top} width={Math.max(1,r.rx2-r.rx1+r.step)} height={p.offset.height}
-              fill="var(--gold)" fillOpacity={0.18} stroke="var(--gold)" strokeOpacity={0.6}
-              strokeDasharray="4 2" strokeWidth={1} pointerEvents="none"/></g>;
-          }}/>
-        )}
-        {isExp&&<Brush dataKey="date" height={22} travellerWidth={6}
-          stroke="var(--border)" fill="var(--bg-2)"
-          startIndex={brushIdxL?.start??0}
-          endIndex={brushIdxL?.end??dailyData.length-1}
-          onChange={(range:any)=>{
-            const{startIndex:s,endIndex:e}=range??{};
-            if(s===undefined||e===undefined)return;
-            setBrushIdxL(s===0&&e===dailyData.length-1?null:{start:s,end:e});
-          }}
-          tickFormatter={()=>""}/>}
-      </ComposedChart>
-    </ResponsiveContainer>
-  );
+  const stackNode=(h:number,isExp?:boolean)=>dailyData.length===0?<div className="empty">Aucune donnée</div>:(()=>{
+    const livDataForNode=isExp?dailyData:visibleLiv;
+    return(
+      <ResponsiveContainer width="100%" height={h}>
+        <ComposedChart data={livDataForNode} margin={{left:0,right:5,top:5,bottom:isExp?28:0}}>
+          <defs>{LIVRETS_DEF.map(l=>(
+            <linearGradient key={l.key} id={`gl_${l.key}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor={l.color} stopOpacity={.6}/><stop offset="95%" stopColor={l.color} stopOpacity={.05}/>
+            </linearGradient>
+          ))}</defs>
+          <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
+          <XAxis dataKey="date" ticks={xTicks} tick={{fontSize:8,fontFamily:"JetBrains Mono"}}
+            tickFormatter={d=>{const mo=parseInt(d.slice(5,7));return MN_SHORT[mo-1];}}/>
+          <YAxis tick={{fontSize:8,fontFamily:"JetBrains Mono"}} tickFormatter={v=>v>=1000?`${(v/1000).toFixed(0)}k€`:`${v}€`} width={45}/>
+          <Tooltip content={<LivretTooltip/>}/>
+          {LIVRETS_DEF.map(l=><Area key={l.key} type="stepAfter" dataKey={l.label} stackId="a"
+            stroke={l.color} strokeWidth={1.5} fill={`url(#gl_${l.key})`}/>)}
+          {/* Gold month highlight */}
+          {monthRange&&(
+            <Customized component={(p:any)=>{
+              const bS=isExp?(brushIdxL?.start??0):0;
+              const bE=isExp?(brushIdxL?.end??dailyData.length-1):visibleLiv.length-1;
+              const r=idxPx(livDataForNode,monthRange.x1,monthRange.x2,p.offset,bS,bE);
+              if(!r)return null;
+              return<g><rect x={r.rx1} y={p.offset.top} width={Math.max(1,r.rx2-r.rx1+r.step)} height={p.offset.height}
+                fill="var(--gold)" fillOpacity={0.18} stroke="var(--gold)" strokeOpacity={0.6}
+                strokeDasharray="4 2" strokeWidth={1} pointerEvents="none"/></g>;
+            }}/>
+          )}
+          {isExp&&<Brush dataKey="date" height={22} travellerWidth={6}
+            stroke="var(--border)" fill="var(--bg-2)"
+            startIndex={brushIdxL?.start??0}
+            endIndex={brushIdxL?.end??dailyData.length-1}
+            onChange={(range:any)=>{
+              const{startIndex:s,endIndex:e}=range??{};
+              if(s===undefined||e===undefined)return;
+              setBrushIdxL(s===0&&e===dailyData.length-1?null:{start:s,end:e});
+            }}
+            tickFormatter={()=>""}/>}
+        </ComposedChart>
+      </ResponsiveContainer>
+    );
+  })();
 
   return(<div>
     <div className="section-sep">
@@ -213,7 +217,8 @@ export function LivretsSection({livrets,mois,onRefresh}:{livrets:Livret[];mois:s
 
     <ChartGrid charts={[
       {key:"liv_pie",   title:`Répartition · ${mois}`,       node:pieNode},
-      {key:"liv_stack", title:"Évolution par jour (empilé)",  node:stackNode},
+      {key:"liv_stack", title:"Évolution par jour (empilé)",  node:stackNode,
+        onResetZoom:()=>setBrushIdxL(null), brushActive:!!brushIdxL},
     ]}/>
 
     {/* Accordion: solde history for selected month */}
