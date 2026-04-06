@@ -120,6 +120,7 @@ export default function Depenses() {
   const [editing, setEditing]       = useState<Depense | null>(null);
   const [loading, setLoading]       = useState(false);
   const [firstMonth, setFirstMonth] = useState<string | undefined>(undefined);
+  const [selectedDepCat, setSelectedDepCat] = useState<string | null>(null);
 
   const load = useCallback(async (m: string) => {
     setLoading(true);
@@ -167,14 +168,14 @@ export default function Depenses() {
     [catMap]
   );
 
-  // Outer ordered same as inner (subcats in order of parent category)
+  // Outer ordered same as inner (subcats in order of parent category), with group = category name
   const pieOuter = useMemo(() =>
     CAT_KEYS.flatMap(cat => {
       const v = catMap[cat];
       if (!v) return [];
       return CATEGORIES[cat]
         .filter(sub => v.subs[sub] !== undefined)
-        .map(sub => ({ name: sub, value: v.subs[sub], color: depenseSubColor(cat, sub) }));
+        .map(sub => ({ name: sub, group: cat, value: v.subs[sub], color: depenseSubColor(cat, sub) }));
     }),
     [catMap]
   );
@@ -225,6 +226,10 @@ export default function Depenses() {
     categorie: CAT_KEYS[0], sous_categorie: CATEGORIES[CAT_KEYS[0]]?.[0] ?? "Autre", libelle: "", montant: 0,
   };
 
+  const filteredPieOuter = selectedDepCat
+    ? pieOuter.filter(o => o.group === selectedDepCat)
+    : pieOuter;
+
   const pieNode = (h: number, _isExp?: boolean) => pieInner.length === 0
     ? <div className="empty">Aucune dépense ce mois.</div>
     : (
@@ -232,12 +237,21 @@ export default function Depenses() {
         <ResponsiveContainer width="100%" height={h}>
           <PieChart>
             <Pie data={pieInner} cx="50%" cy="50%" innerRadius={h*0.22} outerRadius={h*0.33}
-              paddingAngle={0} dataKey="value">
-              {pieInner.map((e,i) => <Cell key={i} fill={e.color} stroke="var(--bg-1)" strokeWidth={2}/>)}
+              paddingAngle={0} dataKey="value" style={{ cursor: "pointer" }}
+              onClick={(_: any, index: number) => {
+                const name = pieInner[index]?.name;
+                if (!name) return;
+                setSelectedDepCat(v => v === name ? null : name);
+              }}>
+              {pieInner.map((e,i) => (
+                <Cell key={i} fill={e.color} stroke="var(--bg-1)"
+                  strokeWidth={selectedDepCat === e.name ? 3 : 2}
+                  opacity={selectedDepCat && selectedDepCat !== e.name ? 0.25 : 1}/>
+              ))}
             </Pie>
-            <Pie data={pieOuter} cx="50%" cy="50%" innerRadius={h*0.33} outerRadius={h*0.42}
+            <Pie data={filteredPieOuter} cx="50%" cy="50%" innerRadius={h*0.33} outerRadius={h*0.42}
               paddingAngle={0} dataKey="value">
-              {pieOuter.map((e,i) => <Cell key={i} fill={e.color} stroke="var(--bg-1)" strokeWidth={1}/>)}
+              {filteredPieOuter.map((e,i) => <Cell key={i} fill={e.color} stroke="var(--bg-1)" strokeWidth={1}/>)}
             </Pie>
             <Tooltip content={<CT/>}/>
             <text x="50%" y="47%" textAnchor="middle" dominantBaseline="middle"

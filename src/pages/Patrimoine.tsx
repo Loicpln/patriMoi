@@ -143,7 +143,7 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
     const [pk,...rest]=k.split("||");const sk=rest.join("||");
     const pocheName=POCHES.find(p=>p.key===pk)?.label??pk;
     const subcatName=sk==="especes"?"Espèces":(INVEST_SUBCATS.find(s=>s.key===sk)?.label??sk);
-    return{name:subcatName,group:pocheName,...v};
+    return{name:`${subcatName}`,group:pocheName,...v};
   }).filter(e=>e.value>0);
   const grandTotal=Object.values(pocheMap).reduce((s,v)=>s+v.value,0);
 
@@ -284,45 +284,48 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
       toggleLabel={pieToggle==="capital"?"→ Valeur":"→ Capital"}
       onToggle={()=>setPieToggle(v=>v==="capital"?"valeur":"capital")}/>
   );
-  const stackNode=(h:number,isExp?:boolean)=>stackedData.length===0?<div className="empty">Aucune donnée</div>:(
-    <ResponsiveContainer width="100%" height={h}>
-      <ComposedChart data={stackedData} margin={{left:0,right:5,top:5,bottom:isExp?28:0}}>
-        <defs>
-          {POCHES.map(p=>(<linearGradient key={p.key} id={`gr_${p.key}`} x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={p.color} stopOpacity={.7}/><stop offset="95%" stopColor={p.color} stopOpacity={.05}/></linearGradient>))}
-        </defs>
-        <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
-        <XAxis dataKey="date" ticks={xTicks} tick={{fontSize:8,fontFamily:"JetBrains Mono"}}
-          tickFormatter={d=>{const mo=parseInt(d.slice(5,7));return MN_SHORT[mo-1];}}/>
-        <YAxis tick={{fontSize:8,fontFamily:"JetBrains Mono"}} tickFormatter={v=>v>=1000?`${(v/1000).toFixed(0)}k€`:`${v}€`} width={45} domain={[0,"auto"]}/>
-        <Tooltip content={<RecapTooltip/>}/>
-        {/* Each poche area already includes its own espèces */}
-        {POCHES.map(p=><Area key={p.key} type="monotone" dataKey={p.label} stackId="r" name={p.label} stroke={p.color} strokeWidth={1.5} fill={`url(#gr_${p.key})`}/>)}
-        <Line type="monotone" dataKey="_versTotal" name="Versements"
-          stroke="#e63946" strokeWidth={1.5} dot={false} strokeDasharray="4 3" legendType="none"/>
-        {monthRange&&(
-          <Customized component={(p:any)=>{
-            const bS=brushIdxR?.start??0;const bE=brushIdxR?.end??stackedData.length-1;
-            const r=idxPx(stackedData,monthRange.x1,monthRange.x2,p.offset,bS,bE);
-            if(!r)return null;
-            return<g><rect x={r.rx1} y={p.offset.top} width={Math.max(1,r.rx2-r.rx1+r.step)} height={p.offset.height}
-              fill="var(--gold)" fillOpacity={0.18} stroke="var(--gold)" strokeOpacity={0.6}
-              strokeDasharray="4 2" strokeWidth={1} pointerEvents="none"/></g>;
-          }}/>
-        )}
-        {isExp&&<Brush dataKey="date" height={22} travellerWidth={6}
-          stroke="var(--border)" fill="var(--bg-2)"
-          startIndex={brushIdxR?.start??0}
-          endIndex={brushIdxR?.end??stackedData.length-1}
-          onChange={(range:any)=>{
-            const{startIndex:s,endIndex:e}=range??{};
-            if(s===undefined||e===undefined)return;
-            const full=s===0&&e===stackedData.length-1;
-            setBrushIdxR(full?null:{start:s,end:e});
-          }}
-          tickFormatter={()=>""}/>}
-      </ComposedChart>
-    </ResponsiveContainer>
-  );
+  const stackNode=(h:number,isExp?:boolean)=>stackedData.length===0?<div className="empty">Aucune donnée</div>:(()=>{
+    const d=isExp?stackedData:visibleStackedData;
+    return(
+      <ResponsiveContainer width="100%" height={h}>
+        <ComposedChart data={d} margin={{left:0,right:5,top:5,bottom:isExp?28:0}}>
+          <defs>
+            {POCHES.map(p=>(<linearGradient key={p.key} id={`gr_${p.key}`} x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={p.color} stopOpacity={.7}/><stop offset="95%" stopColor={p.color} stopOpacity={.05}/></linearGradient>))}
+          </defs>
+          <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
+          <XAxis dataKey="date" ticks={xTicks} tick={{fontSize:8,fontFamily:"JetBrains Mono"}}
+            tickFormatter={dd=>{const mo=parseInt(dd.slice(5,7));return MN_SHORT[mo-1];}}/>
+          <YAxis tick={{fontSize:8,fontFamily:"JetBrains Mono"}} tickFormatter={v=>v>=1000?`${(v/1000).toFixed(0)}k€`:`${v}€`} width={45} domain={[0,"auto"]}/>
+          <Tooltip content={<RecapTooltip/>}/>
+          {POCHES.map(p=><Area key={p.key} type="monotone" dataKey={p.label} stackId="r" name={p.label} stroke={p.color} strokeWidth={1.5} fill={`url(#gr_${p.key})`}/>)}
+          <Line type="monotone" dataKey="_versTotal" name="Versements"
+            stroke="#e63946" strokeWidth={1.5} dot={false} strokeDasharray="4 3" legendType="none"/>
+          {monthRange&&(
+            <Customized component={(p:any)=>{
+              const bS=isExp?(brushIdxR?.start??0):0;
+              const bE=isExp?(brushIdxR?.end??stackedData.length-1):visibleStackedData.length-1;
+              const r=idxPx(d,monthRange.x1,monthRange.x2,p.offset,bS,bE);
+              if(!r)return null;
+              return<g><rect x={r.rx1} y={p.offset.top} width={Math.max(1,r.rx2-r.rx1+r.step)} height={p.offset.height}
+                fill="var(--gold)" fillOpacity={0.18} stroke="var(--gold)" strokeOpacity={0.6}
+                strokeDasharray="4 2" strokeWidth={1} pointerEvents="none"/></g>;
+            }}/>
+          )}
+          {isExp&&<Brush dataKey="date" height={22} travellerWidth={6}
+            stroke="var(--border)" fill="var(--bg-2)"
+            startIndex={brushIdxR?.start??0}
+            endIndex={brushIdxR?.end??stackedData.length-1}
+            onChange={(range:any)=>{
+              const{startIndex:s,endIndex:e}=range??{};
+              if(s===undefined||e===undefined)return;
+              const full=s===0&&e===stackedData.length-1;
+              setBrushIdxR(full?null:{start:s,end:e});
+            }}
+            tickFormatter={()=>""}/>}
+        </ComposedChart>
+      </ResponsiveContainer>
+    );
+  })();
   return(<div>
     <div className="section-sep"><span className="section-sep-label">Récap. investissements</span><div className="section-sep-line"/></div>
     <ChartGrid charts={[
@@ -336,7 +339,7 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
 // ── Global Recap ───────────────────────────────────────────────────────────────
 function GlobalRecap({livrets,positions,ventes,versements,mois,scpiValuations}:{livrets:Livret[];positions:Position[];ventes:Vente[];versements:Versement[];mois:string;scpiValuations:ScpiValuation[]}) {
   const {fmt}=useDevise();
-  const [pieToggle,setPieToggle]=useState<"versements"|"valeur">("valeur");
+  const [pieToggle,setPieToggle]=useState<"versements"|"valeur">("versements");
   const [brushIdxG,setBrushIdxG]=useState<{start:number;end:number}|null>(null);
 
   // SCPI price map
@@ -459,7 +462,7 @@ function GlobalRecap({livrets,positions,ventes,versements,mois,scpiValuations}:{
 
   const pieNode=(h:number,_isExp?:boolean)=>inner.length===0?<div className="empty">Aucune donnée</div>:(
     <NestedPie inner={inner} outer={outer} total={grandTotal} fmt={fmt} h={h}
-      toggleLabel={pieToggle==="versements"?"→ Valeur":"→ Versements"}
+      toggleLabel={pieToggle==="versements"?"→ Versements":"→ Valeur"}
       onToggle={()=>setPieToggle(v=>v==="versements"?"valeur":"versements")}/>
   );
 
@@ -483,43 +486,46 @@ function GlobalRecap({livrets,positions,ventes,versements,mois,scpiValuations}:{
     brushIdxG?evoData.slice(brushIdxG.start,brushIdxG.end+1):evoData,
   [evoData,brushIdxG]);
 
-  const stackNode=(h:number,isExp?:boolean)=>evoData.length===0?<div className="empty">Aucune donnée</div>:(
-    <ResponsiveContainer width="100%" height={h}>
-      <ComposedChart data={evoData} margin={{left:0,right:5,top:5,bottom:isExp?28:0}}>
-        <defs>
-          <linearGradient id="gGL4" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#e6a817" stopOpacity={.7}/><stop offset="95%" stopColor="#e6a817" stopOpacity={.05}/></linearGradient>
-          <linearGradient id="gGI4" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3a7bd5" stopOpacity={.7}/><stop offset="95%" stopColor="#3a7bd5" stopOpacity={.05}/></linearGradient>
-        </defs>
-        <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
-        <XAxis dataKey="mois" tick={{fontSize:8,fontFamily:"JetBrains Mono"}}
-          interval={brushIdxG?Math.max(0,Math.floor(visibleEvoData.length/7)-1):Math.max(0,Math.floor(evoData.length/7)-1)}/>
-        <YAxis tick={{fontSize:8,fontFamily:"JetBrains Mono"}} tickFormatter={v=>v>=1000?`${(v/1000).toFixed(0)}k€`:`${v}€`} width={45}/>
-        <Tooltip content={<GlobalTooltip/>}/>
-        <Area type="monotone" dataKey="Livrets" stackId="g" stroke="#e6a817" strokeWidth={1.5} fill="url(#gGL4)"/>
-        <Area type="monotone" dataKey="Investissements" stackId="g" stroke="#3a7bd5" strokeWidth={1.5} fill="url(#gGI4)"/>
-        {/* Gold rect for selected month — index-based */}
-        <Customized component={(p:any)=>{
-          const bS=brushIdxG?.start??0;const bE=brushIdxG?.end??evoData.length-1;
-          const r=idxPx(evoData,mois,mois,p.offset,bS,bE,"mois");
-          if(!r)return null;
-          return<g><rect x={r.rx1-r.step/2} y={p.offset.top} width={Math.max(4,r.step)}
-            height={p.offset.height}
-            fill="var(--gold)" fillOpacity={0.18} stroke="var(--gold)" strokeOpacity={0.6}
-            strokeDasharray="4 2" strokeWidth={1} pointerEvents="none"/></g>;
-        }}/>
-        {isExp&&<Brush dataKey="mois" height={22} travellerWidth={6}
-          stroke="var(--border)" fill="var(--bg-2)"
-          startIndex={brushIdxG?.start??0}
-          endIndex={brushIdxG?.end??evoData.length-1}
-          onChange={(range:any)=>{
-            const{startIndex:s,endIndex:e}=range??{};
-            if(s===undefined||e===undefined)return;
-            setBrushIdxG(s===0&&e===evoData.length-1?null:{start:s,end:e});
-          }}
-          tickFormatter={()=>""}/>}
-      </ComposedChart>
-    </ResponsiveContainer>
-  );
+  const stackNode=(h:number,isExp?:boolean)=>evoData.length===0?<div className="empty">Aucune donnée</div>:(()=>{
+    const d=isExp?evoData:visibleEvoData;
+    return(
+      <ResponsiveContainer width="100%" height={h}>
+        <ComposedChart data={d} margin={{left:0,right:5,top:5,bottom:isExp?28:0}}>
+          <defs>
+            <linearGradient id="gGL4" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#e6a817" stopOpacity={.7}/><stop offset="95%" stopColor="#e6a817" stopOpacity={.05}/></linearGradient>
+            <linearGradient id="gGI4" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3a7bd5" stopOpacity={.7}/><stop offset="95%" stopColor="#3a7bd5" stopOpacity={.05}/></linearGradient>
+          </defs>
+          <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
+          <XAxis dataKey="mois" tick={{fontSize:8,fontFamily:"JetBrains Mono"}}
+            interval={Math.max(0,Math.floor(d.length/7)-1)}/>
+          <YAxis tick={{fontSize:8,fontFamily:"JetBrains Mono"}} tickFormatter={v=>v>=1000?`${(v/1000).toFixed(0)}k€`:`${v}€`} width={45}/>
+          <Tooltip content={<GlobalTooltip/>}/>
+          <Area type="monotone" dataKey="Livrets" stackId="g" stroke="#e6a817" strokeWidth={1.5} fill="url(#gGL4)"/>
+          <Area type="monotone" dataKey="Investissements" stackId="g" stroke="#3a7bd5" strokeWidth={1.5} fill="url(#gGI4)"/>
+          <Customized component={(p:any)=>{
+            const bS=isExp?(brushIdxG?.start??0):0;
+            const bE=isExp?(brushIdxG?.end??evoData.length-1):visibleEvoData.length-1;
+            const r=idxPx(d,mois,mois,p.offset,bS,bE,"mois");
+            if(!r)return null;
+            return<g><rect x={r.rx1-r.step/2} y={p.offset.top} width={Math.max(4,r.step)}
+              height={p.offset.height}
+              fill="var(--gold)" fillOpacity={0.18} stroke="var(--gold)" strokeOpacity={0.6}
+              strokeDasharray="4 2" strokeWidth={1} pointerEvents="none"/></g>;
+          }}/>
+          {isExp&&<Brush dataKey="mois" height={22} travellerWidth={6}
+            stroke="var(--border)" fill="var(--bg-2)"
+            startIndex={brushIdxG?.start??0}
+            endIndex={brushIdxG?.end??evoData.length-1}
+            onChange={(range:any)=>{
+              const{startIndex:s,endIndex:e}=range??{};
+              if(s===undefined||e===undefined)return;
+              setBrushIdxG(s===0&&e===evoData.length-1?null:{start:s,end:e});
+            }}
+            tickFormatter={()=>""}/>}
+        </ComposedChart>
+      </ResponsiveContainer>
+    );
+  })();
 
   return(<div>
     <div className="section-sep"><span className="section-sep-label">Récapitulatif global</span><div className="section-sep-line"/></div>

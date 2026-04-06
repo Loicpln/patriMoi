@@ -43,6 +43,7 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
   const [positions, setPositions] = useState<Position[]>([]);
   const [expSal, setExpSal]       = useState(false);
   const [brushDash, setBrushDash] = useState<{start:number;end:number}|null>(null);
+  const [selectedDashCat, setSelectedDashCat] = useState<string | null>(null);
 
   const loadDepenses = useCallback((m: string) => {
     invoke<Depense[]>("get_depenses", { mois: m }).then(setDepenses).catch(() => setDepenses([]));
@@ -114,6 +115,11 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
     });
   }, [salaires, activePrimeTypesDash]);
 
+  // Visible slice for compact zoom preservation
+  const visibleEvoSal = useMemo(() =>
+    brushDash ? evoSal.slice(brushDash.start, brushDash.end + 1) : evoSal,
+  [evoSal, brushDash]);
+
   // Pie dépenses du mois sélectionné — 2 anneaux
   const { depPieInner, depPieOuter } = useMemo(() => {
     const catMap: Record<string, { total: number; subs: Record<string, number> }> = {};
@@ -126,7 +132,7 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
       .map(([cat, v]) => ({ name: cat, value: v.total, color: CAT_COLOR[cat] ?? "#888" }))
       .sort((a, b) => b.value - a.value);
     const outer = Object.entries(catMap).flatMap(([cat, v]) =>
-      Object.entries(v.subs).map(([sub, val]) => ({ name: sub, value: val, color: depenseSubColor(cat, sub) }))
+      Object.entries(v.subs).map(([sub, val]) => ({ name: sub, group: cat, value: val, color: depenseSubColor(cat, sub) }))
     );
     return { depPieInner: inner, depPieOuter: outer };
   }, [depenses]);
@@ -179,9 +185,12 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
               </button>
             </div>
           </div>
-          {evoSal.length === 0 ? <div className="empty">Aucune fiche de paie.</div> : (
+          {evoSal.length === 0 ? <div className="empty">Aucune fiche de paie.</div> : (() => {
+            // Compact: slice so zoom is preserved without Brush in DOM. Dot renderer must close over same slice.
+            const salChartData = expSal ? evoSal : visibleEvoSal;
+            return (
             <ResponsiveContainer width="100%" height={expSal ? 460 : 220}>
-              <AreaChart data={evoSal} margin={{left:0,right:5,top:5,bottom:expSal?28:0}}>
+              <AreaChart data={salChartData} margin={{left:0,right:5,top:5,bottom:expSal?28:0}}>
                 <defs>
                   <linearGradient id="gSal" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%"  stopColor="#5fa89e" stopOpacity={.4}/>
@@ -199,7 +208,7 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
                 </defs>
                 <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
                 <XAxis dataKey="mois" stroke="var(--text-2)" tick={{ fontSize: 9, fontFamily: "JetBrains Mono" }}
-                  interval={Math.max(0, Math.floor(evoSal.length / 8) - 1)}/>
+                  interval={Math.max(0, Math.floor(salChartData.length / 8) - 1)}/>
                 <YAxis stroke="var(--text-2)" tick={{ fontSize: 9, fontFamily: "JetBrains Mono" }}
                   tickFormatter={v => `${(v / 1000).toFixed(1)}k`}/>
                 <Tooltip content={({ active, payload, label }: any) => {
@@ -224,13 +233,13 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
                 }}/>
                 <ReferenceLine x={mois} stroke="var(--gold)" strokeDasharray="4 2"/>
                 <Area type="monotone" dataKey="net" stackId="s" stroke="#5fa89e" strokeWidth={2} fill="url(#gSal)"
-                  dot={renderIsolatedDot(evoSal, "net", "#5fa89e")} connectNulls={false}/>
+                  dot={renderIsolatedDot(salChartData, "net", "#5fa89e")} connectNulls={false}/>
                 {activePrimeTypesDash.map(type => {
                   const c = PRIME_TYPE_COLORS[type] ?? tickerColor(type);
                   return (
                     <Area key={type} type="monotone" dataKey={type} stackId="s" name={type}
                       stroke={c} strokeWidth={1.5} fill={`url(#gDP_${type.replace(/[^a-zA-Z0-9]/g,"_")})`}
-                      dot={renderIsolatedDot(evoSal, type, c)} connectNulls={false}/>
+                      dot={renderIsolatedDot(salChartData, type, c)} connectNulls={false}/>
                   );
                 })}
                 {expSal && <Brush dataKey="mois" height={22} travellerWidth={6}
@@ -245,22 +254,36 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
                   tickFormatter={()=>""}/>}
               </AreaChart>
             </ResponsiveContainer>
-          )}
+            );
+          })()}
         </div>
 
         {/* Dépenses du mois — camembert 2 anneaux dynamique */}
         <div className="chart-card">
           <div className="chart-title">Dépenses par catégorie · {mois}</div>
-          {depPieInner.length === 0 ? <div className="empty">Aucune dépense ce mois.</div> : (
+          {depPieInner.length === 0 ? <div className="empty">Aucune dépense ce mois.</div> : (() => {
+            const filteredOuter = selectedDashCat
+              ? depPieOuter.filter(o => o.group === selectedDashCat)
+              : depPieOuter;
+            return (
             <ResponsiveContainer width="100%" height={220}>
               <PieChart>
                 <Pie data={depPieInner} cx="50%" cy="50%" innerRadius={48} outerRadius={73}
-                  paddingAngle={0} dataKey="value">
-                  {depPieInner.map((e, i) => <Cell key={i} fill={e.color} stroke="var(--bg-1)" strokeWidth={2}/>)}
+                  paddingAngle={0} dataKey="value" style={{ cursor: "pointer" }}
+                  onClick={(_: any, index: number) => {
+                    const name = depPieInner[index]?.name;
+                    if (!name) return;
+                    setSelectedDashCat(v => v === name ? null : name);
+                  }}>
+                  {depPieInner.map((e, i) => (
+                    <Cell key={i} fill={e.color} stroke="var(--bg-1)"
+                      strokeWidth={selectedDashCat === e.name ? 3 : 2}
+                      opacity={selectedDashCat && selectedDashCat !== e.name ? 0.25 : 1}/>
+                  ))}
                 </Pie>
-                <Pie data={depPieOuter} cx="50%" cy="50%" innerRadius={73} outerRadius={92}
+                <Pie data={filteredOuter} cx="50%" cy="50%" innerRadius={73} outerRadius={92}
                   paddingAngle={0} dataKey="value">
-                  {depPieOuter.map((e, i) => <Cell key={i} fill={e.color} stroke="var(--bg-1)" strokeWidth={1}/>)}
+                  {filteredOuter.map((e, i) => <Cell key={i} fill={e.color} stroke="var(--bg-1)" strokeWidth={1}/>)}
                 </Pie>
                 <Tooltip contentStyle={TOOLTIP_STYLE} labelStyle={TOOLTIP_LABEL_STYLE} itemStyle={TOOLTIP_ITEM_STYLE}
                   formatter={(v: number, name: string) => [fmt(v), name]}/>
@@ -274,7 +297,8 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
                 </text>
               </PieChart>
             </ResponsiveContainer>
-          )}
+            );
+          })()}
         </div>
       </div>
 

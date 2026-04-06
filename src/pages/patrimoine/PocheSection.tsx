@@ -696,7 +696,7 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
           <span className="poche-title" style={{ color: poche.color }}>{poche.label}</span>
           <span style={{ fontSize: 11, color: "var(--text-1)" }}>
             {fmt(totalValue + especes)}&nbsp;·&nbsp;
-          {(() => { const pnlTot = totalPnlOpen + totalPnlReal; return <span style={{ color: pnlTot >= 0 ? "var(--teal)" : "var(--rose)", fontWeight: 600 }}>{pnlTot >= 0 ? "+" : "−"}{fmt(Math.abs(pnlTot))}</span>; })()}
+          {(() => { const pnlTot = totalPnlOpen + totalPnlReal + totalDivs; return <span style={{ color: pnlTot >= 0 ? "var(--teal)" : "var(--rose)", fontWeight: 600 }}>{pnlTot >= 0 ? "+" : "−"}{fmt(Math.abs(pnlTot))}</span>; })()}
           </span>
         </div>
         <div style={{ display: "flex", gap: 6 }} onClick={e => e.stopPropagation()}>

@@ -380,6 +380,11 @@ export default function Fiches() {
     });
   }, [fichesNormales, primes, activePrimeTypes]);
 
+  // Visible slice for compact view zoom preservation
+  const visibleEvoData = useMemo(() =>
+    brushFiches ? evoData.slice(brushFiches.start, brushFiches.end + 1) : evoData,
+  [evoData, brushFiches]);
+
   // Map YYYY-MM → Salaire
   const byMonth: Record<string, Salaire[]> = {};
   fichesNormales.forEach(s => {
@@ -487,6 +492,9 @@ export default function Fiches() {
       {/* Stacked area chart: net + prime types */}
       {evoData.length > 0 && (() => {
         const h = expChart ? 520 : 220;
+        // Compact: render sliced data so zoom is preserved without the Brush DOM element.
+        // Isolated-dot renderer must also close over the same slice to keep index alignment.
+        const chartData = expChart ? evoData : visibleEvoData;
         return (
           <div className="chart-card" style={{ marginBottom: 20 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
@@ -501,7 +509,7 @@ export default function Fiches() {
               </div>
             </div>
             <ResponsiveContainer width="100%" height={h}>
-              <AreaChart data={evoData} margin={{ left: 0, right: 5, top: 5, bottom: expChart ? 28 : 0 }}>
+              <AreaChart data={chartData} margin={{ left: 0, right: 5, top: 5, bottom: expChart ? 28 : 0 }}>
                 <defs>
                   <linearGradient id="gFNet" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%"  stopColor="#5fa89e" stopOpacity={.4}/>
@@ -519,35 +527,31 @@ export default function Fiches() {
                 </defs>
                 <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
                 <XAxis dataKey="mois" stroke="var(--text-2)" tick={{ fontSize: 9, fontFamily: "JetBrains Mono" }}
-                  interval={Math.max(0, Math.floor(evoData.length / 8) - 1)}/>
+                  interval={Math.max(0, Math.floor(chartData.length / 8) - 1)}/>
                 <YAxis stroke="var(--text-2)" tick={{ fontSize: 9, fontFamily: "JetBrains Mono" }}
                   tickFormatter={v => `${(v/1000).toFixed(1)}k`} width={40}/>
                 <Tooltip content={<EvoTooltip/>}/>
                 <Area type="monotone" dataKey="net" stackId="s" name="net"
                   stroke="#5fa89e" strokeWidth={2} fill="url(#gFNet)"
-                  dot={renderIsolatedDot(evoData, "net", "#5fa89e")} connectNulls={false}/>
+                  dot={renderIsolatedDot(chartData, "net", "#5fa89e")} connectNulls={false}/>
                 {activePrimeTypes.map(type => {
                   const c = PRIME_TYPE_COLORS[type] ?? tickerColor(type);
                   return (
                     <Area key={type} type="monotone" dataKey={type} stackId="s" name={type}
                       stroke={c} strokeWidth={1.5} fill={`url(#gFP_${type.replace(/[^a-zA-Z0-9]/g,"_")})`}
-                      dot={renderIsolatedDot(evoData, type, c)} connectNulls={false}/>
+                      dot={renderIsolatedDot(chartData, type, c)} connectNulls={false}/>
                   );
                 })}
                 {yearRange && (
                   <Customized component={(p: any) => {
-                    const N = evoData.length;
-                    const bS = brushFiches?.start ?? 0; const bE = brushFiches?.end ?? N - 1;
-                    const Nv = bE - bS + 1; if (Nv <= 0) return null;
-                    const idx1 = evoData.findIndex((d: any) => d.mois === yearRange.x1);
-                    let idx2 = -1; for (let i = N-1; i >= 0; i--) { if ((evoData[i] as any).mois === yearRange.x2) { idx2 = i; break; } }
+                    const Nv = chartData.length; if (Nv <= 0) return null;
+                    const idx1 = chartData.findIndex((d: any) => d.mois === yearRange.x1);
+                    let idx2 = -1; for (let i = Nv-1; i >= 0; i--) { if ((chartData[i] as any).mois === yearRange.x2) { idx2 = i; break; } }
                     if (idx1 < 0 || idx2 < 0) return null;
-                    const r1 = Math.max(0, idx1 - bS); const r2 = Math.min(Nv - 1, idx2 - bS);
-                    if (r2 < 0 || r1 >= Nv) return null;
                     const denom = Math.max(1, Nv - 1);
                     const step = Nv > 1 ? p.offset.width / (Nv - 1) : p.offset.width;
-                    const rx1 = p.offset.left + (r1 / denom) * p.offset.width;
-                    const rx2 = p.offset.left + (r2 / denom) * p.offset.width;
+                    const rx1 = p.offset.left + (idx1 / denom) * p.offset.width;
+                    const rx2 = p.offset.left + (idx2 / denom) * p.offset.width;
                     return (
                       <g>
                         <rect x={rx1 - step / 2} y={p.offset.top}
