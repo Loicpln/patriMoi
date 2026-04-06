@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
-  AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid,
+  AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Brush,
 } from "recharts";
 import { useDevise, curMonth } from "../context/DeviseContext";
 import { DEPENSE_CATEGORIES, TOOLTIP_STYLE, depenseSubColor, defaultDateForMonth } from "../constants";
@@ -294,9 +294,9 @@ export default function Depenses() {
     });
   }, [depenses, mois]);
 
-  const stackedBarNode = (h: number, _isExp?: boolean) => (
+  const stackedBarNode = (h: number, isExp?: boolean) => (
     <ResponsiveContainer width="100%" height={h}>
-      <AreaChart data={dailyByCat} margin={{ left: -10 }}>
+      <AreaChart data={dailyByCat} margin={{ left: -10, bottom: isExp ? 28 : 0 }}>
         <defs>
           {CAT_KEYS.filter(cat => catMap[cat]).map(cat => (
             <linearGradient key={cat} id={`da_${cat.replace(/\W/g,"_")}`} x1="0" y1="0" x2="0" y2="1">
@@ -319,6 +319,9 @@ export default function Depenses() {
             stroke={CAT_COLOR[cat]} strokeWidth={1.5}
             fill={`url(#da_${cat.replace(/\W/g,"_")})`}/>
         ))}
+        {isExp && <Brush dataKey="jour" height={22} travellerWidth={6}
+          stroke="var(--border)" fill="var(--bg-2)"
+          tickFormatter={v => `J${v}`}/>}
       </AreaChart>
     </ResponsiveContainer>
   );

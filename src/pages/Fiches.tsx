@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
 import { useDevise } from "../context/DeviseContext";
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Customized } from "recharts";
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Customized, Brush } from "recharts";
 import { TOOLTIP_STYLE, tickerColor, PRIME_TYPE_COLORS, monthsBetween, curMonthStr } from "../constants";
 
 function xPixel(scale: any, value: string): number | null {
@@ -325,6 +325,7 @@ export default function Fiches() {
   const [primesMonthKey, setPrimesMonthKey] = useState<string|null>(null);
   const [salToggle, setSalToggle] = useState<"moyen"|"total">("moyen");
   const [expChart, setExpChart] = useState(false);
+  const [brushFiches, setBrushFiches] = useState<{start:number;end:number}|null>(null);
 
   const load = async () => {
     const s = await invoke<Salaire[]>("get_salaires");
@@ -444,23 +445,29 @@ export default function Fiches() {
         )}
       </div>
 
-      {/* Year selector — pleine largeur */}
-      <div style={{ marginBottom: 10 }}>
-        <YearSelector value={year} onChange={setYear} years={years}/>
-      </div>
-
-      {/* Toggle + boutons d'ajout sur la même ligne */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
-        <span style={{ fontSize: 11, color: "var(--text-2)" }}>Affichage :</span>
-        <button
-          className={`btn btn-sm ${salToggle === "moyen" ? "btn-primary" : "btn-ghost"}`}
-          onClick={() => setSalToggle("moyen")}>Moyennes</button>
-        <button
-          className={`btn btn-sm ${salToggle === "total" ? "btn-primary" : "btn-ghost"}`}
-          onClick={() => setSalToggle("total")}>Totaux</button>
-        <div style={{ flex: 1 }}/>
-        <button className="btn btn-ghost btn-sm" onClick={() => setPrimeModal(true)}>+ Prime / Aide</button>
-        <button className="btn btn-primary btn-sm" onClick={() => setAddModal(true)}>+ Fiche</button>
+      {/* Year selector + contrôles — sticky */}
+      <div style={{
+        position: "sticky", top: 0, zIndex: 20,
+        background: "var(--bg-0)",
+        paddingBottom: 10,
+        boxShadow: "0 2px 8px rgba(0,0,0,0.18)",
+        marginBottom: 6,
+      }}>
+        <div style={{ marginBottom: 8 }}>
+          <YearSelector value={year} onChange={setYear} years={years}/>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 11, color: "var(--text-2)" }}>Affichage :</span>
+          <button
+            className={`btn btn-sm ${salToggle === "moyen" ? "btn-primary" : "btn-ghost"}`}
+            onClick={() => setSalToggle("moyen")}>Moyennes</button>
+          <button
+            className={`btn btn-sm ${salToggle === "total" ? "btn-primary" : "btn-ghost"}`}
+            onClick={() => setSalToggle("total")}>Totaux</button>
+          <div style={{ flex: 1 }}/>
+          <button className="btn btn-ghost btn-sm" onClick={() => setPrimeModal(true)}>+ Prime / Aide</button>
+          <button className="btn btn-primary btn-sm" onClick={() => setAddModal(true)}>+ Fiche</button>
+        </div>
       </div>
       <div className="stat-row">
         <div className="stat-card sc-teal">
@@ -490,7 +497,7 @@ export default function Fiches() {
               </button>
             </div>
             <ResponsiveContainer width="100%" height={h}>
-              <AreaChart data={evoData} margin={{ left: 0, right: 5, top: 5, bottom: 0 }}>
+              <AreaChart data={evoData} margin={{ left: 0, right: 5, top: 5, bottom: expChart ? 28 : 0 }}>
                 <defs>
                   <linearGradient id="gFNet" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%"  stopColor="#5fa89e" stopOpacity={.4}/>
@@ -526,14 +533,17 @@ export default function Fiches() {
                 {yearRange && (
                   <Customized component={(p: any) => {
                     const N = evoData.length;
-                    if (N === 0) return null;
+                    const bS = brushFiches?.start ?? 0; const bE = brushFiches?.end ?? N - 1;
+                    const Nv = bE - bS + 1; if (Nv <= 0) return null;
                     const idx1 = evoData.findIndex((d: any) => d.mois === yearRange.x1);
                     let idx2 = -1; for (let i = N-1; i >= 0; i--) { if ((evoData[i] as any).mois === yearRange.x2) { idx2 = i; break; } }
                     if (idx1 < 0 || idx2 < 0) return null;
-                    const denom = Math.max(1, N - 1);
-                    const step = N > 1 ? p.offset.width / (N - 1) : p.offset.width;
-                    const rx1 = p.offset.left + (idx1 / denom) * p.offset.width;
-                    const rx2 = p.offset.left + (idx2 / denom) * p.offset.width;
+                    const r1 = Math.max(0, idx1 - bS); const r2 = Math.min(Nv - 1, idx2 - bS);
+                    if (r2 < 0 || r1 >= Nv) return null;
+                    const denom = Math.max(1, Nv - 1);
+                    const step = Nv > 1 ? p.offset.width / (Nv - 1) : p.offset.width;
+                    const rx1 = p.offset.left + (r1 / denom) * p.offset.width;
+                    const rx2 = p.offset.left + (r2 / denom) * p.offset.width;
                     return (
                       <g>
                         <rect x={rx1 - step / 2} y={p.offset.top}
@@ -545,6 +555,16 @@ export default function Fiches() {
                     );
                   }}/>
                 )}
+                {expChart && <Brush dataKey="mois" height={22} travellerWidth={6}
+                  stroke="var(--border)" fill="var(--bg-2)"
+                  startIndex={brushFiches?.start ?? 0}
+                  endIndex={brushFiches?.end ?? evoData.length - 1}
+                  onChange={(range: any) => {
+                    const { startIndex: s, endIndex: e } = range ?? {};
+                    if (s === undefined || e === undefined) return;
+                    setBrushFiches(s === 0 && e === evoData.length - 1 ? null : { start: s, end: e });
+                  }}
+                  tickFormatter={() => ""}/>}
               </AreaChart>
             </ResponsiveContainer>
           </div>

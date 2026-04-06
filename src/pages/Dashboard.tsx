@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine,
-  PieChart, Pie, Cell,
+  PieChart, Pie, Cell, Brush,
 } from "recharts";
 import { useDevise } from "../context/DeviseContext";
 const curMonth = new Date().toISOString().slice(0, 7);
@@ -42,6 +42,7 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
   const [livrets, setLivrets]     = useState<Livret[]>([]);
   const [positions, setPositions] = useState<Position[]>([]);
   const [expSal, setExpSal]       = useState(false);
+  const [brushDash, setBrushDash] = useState<{start:number;end:number}|null>(null);
 
   const loadDepenses = useCallback((m: string) => {
     invoke<Depense[]>("get_depenses", { mois: m }).then(setDepenses).catch(() => setDepenses([]));
@@ -176,7 +177,7 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
           </div>
           {evoSal.length === 0 ? <div className="empty">Aucune fiche de paie.</div> : (
             <ResponsiveContainer width="100%" height={expSal ? 460 : 220}>
-              <AreaChart data={evoSal}>
+              <AreaChart data={evoSal} margin={{left:0,right:5,top:5,bottom:expSal?28:0}}>
                 <defs>
                   <linearGradient id="gSal" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%"  stopColor="#5fa89e" stopOpacity={.4}/>
@@ -228,6 +229,16 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
                       dot={renderIsolatedDot(evoSal, type, c)} connectNulls={false}/>
                   );
                 })}
+                {expSal && <Brush dataKey="mois" height={22} travellerWidth={6}
+                  stroke="var(--border)" fill="var(--bg-2)"
+                  startIndex={brushDash?.start??0}
+                  endIndex={brushDash?.end??evoSal.length-1}
+                  onChange={(range:any)=>{
+                    const{startIndex:s,endIndex:e}=range??{};
+                    if(s===undefined||e===undefined)return;
+                    setBrushDash(s===0&&e===evoSal.length-1?null:{start:s,end:e});
+                  }}
+                  tickFormatter={()=>""}/>}
               </AreaChart>
             </ResponsiveContainer>
           )}

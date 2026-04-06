@@ -68,7 +68,7 @@ export function DeletePositionModal({ticker,rows,onClose,onSave}:{ticker:string;
         <label key={r.id} style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",padding:"8px 12px",borderRadius:6,
           background:sel.has(r.id!)?"var(--rose-dim)":"var(--bg-2)",border:`1px solid ${sel.has(r.id!)?"var(--rose)":"var(--border)"}`}}>
           <input type="checkbox" checked={sel.has(r.id!)} onChange={()=>tog(r.id!)}/>
-          <span style={{fontSize:12}}>{r.date_achat} — {r.quantite.toFixed(4)} × {r.prix_achat.toFixed(4)} € = {(r.quantite*r.prix_achat).toFixed(2)} €</span>
+          <span style={{fontSize:12}}>{r.date_achat} — {r.quantite.toFixed(8)} × {r.prix_achat.toFixed(6)} € = {(r.quantite*r.prix_achat).toFixed(2)} €</span>
         </label>
       ))}
     </div>
@@ -205,15 +205,21 @@ export function DividendeModal({poche,positions,mois=curMonth,onClose,onSave}:{
 }) {
   const tickers=[...new Set(positions.map(p=>p.ticker))];
   const allOptions=[...tickers,"_INTERETS_"];
+  const nomByTicker=Object.fromEntries(positions.map(p=>[p.ticker,p.nom]));
   const [form,setForm]=useState<Dividende>({ticker:tickers[0]??"_INTERETS_",poche,montant:0,date:defaultDateForMonth(mois)});
   const s=(k:keyof Dividende,v:string|number)=>setForm(f=>({...f,[k]:v}));
+  const selectedNom=form.ticker==="_INTERETS_"?"Intérêts / Cash":(nomByTicker[form.ticker]??"");
   return(<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
     <div className="modal-title">Ajouter un dividende / intérêt</div>
     <div className="form-grid">
-      <div className="field"><label>Position</label>
+      <div className="field"><label>Ticker</label>
         <select value={form.ticker} onChange={e=>s("ticker",e.target.value)}>
           {allOptions.map(t=><option key={t} value={t}>{t==="_INTERETS_"?"Intérêts":t}</option>)}
         </select></div>
+      <div className="field"><label>Nom</label>
+        <input value={selectedNom} readOnly tabIndex={-1}
+          style={{background:"var(--bg-2)",color:"var(--text-2)",cursor:"default"}}/>
+      </div>
       <div className="field"><label>Montant (€)</label><input type="number" step="0.01" value={form.montant} onChange={e=>s("montant",parseFloat(e.target.value)||0)}/></div>
       <div className="field"><label>Date</label><input type="date" value={form.date} onChange={e=>s("date",e.target.value)}/></div>
       <div className="field span2"><label>Notes</label><textarea rows={2} value={form.notes??""} onChange={e=>s("notes",e.target.value)}/></div>

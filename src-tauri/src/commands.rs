@@ -334,6 +334,100 @@ pub fn choose_folder() -> Result<String, String> {
     Ok(String::from_utf8(output.stdout).map_err(|e| e.to_string())?.trim().to_string())
 }
 
+// ═══ IMPORT ══════════════════════════════════════════════════════════════════
+#[tauri::command]
+pub fn import_depenses(rows: Vec<Depense>, replace: bool, state: State<DbState>) -> Result<usize, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    if replace { conn.execute("DELETE FROM depenses", []).map_err(|e| e.to_string())?; }
+    for r in &rows {
+        conn.execute("INSERT INTO depenses (date,categorie,sous_categorie,libelle,montant,notes) VALUES (?1,?2,?3,?4,?5,?6)",
+            params![r.date,r.categorie,r.sous_categorie,r.libelle,r.montant,r.notes])
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(rows.len())
+}
+
+#[tauri::command]
+pub fn import_salaires(rows: Vec<Salaire>, replace: bool, state: State<DbState>) -> Result<usize, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    if replace { conn.execute("DELETE FROM salaires", []).map_err(|e| e.to_string())?; }
+    for r in &rows {
+        conn.execute("INSERT INTO salaires (date,salaire_brut,salaire_net,primes,employeur,pdf_path,notes) VALUES (?1,?2,?3,?4,?5,?6,?7)",
+            params![r.date,r.salaire_brut,r.salaire_net,r.primes,r.employeur,r.pdf_path,r.notes])
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(rows.len())
+}
+
+#[tauri::command]
+pub fn import_livrets(rows: Vec<Livret>, replace: bool, state: State<DbState>) -> Result<usize, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    if replace { conn.execute("DELETE FROM livrets", []).map_err(|e| e.to_string())?; }
+    for r in &rows {
+        conn.execute("INSERT INTO livrets (poche,montant,taux,date,notes) VALUES (?1,?2,?3,?4,?5)",
+            params![r.poche,r.montant,r.taux,r.date,r.notes])
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(rows.len())
+}
+
+#[tauri::command]
+pub fn import_poche(
+    poche: String,
+    positions: Vec<Position>,
+    ventes: Vec<Vente>,
+    dividendes: Vec<Dividende>,
+    versements: Vec<Versement>,
+    replace: bool,
+    state: State<DbState>,
+) -> Result<usize, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    if replace {
+        conn.execute("DELETE FROM positions WHERE poche=?1", params![poche]).map_err(|e| e.to_string())?;
+        conn.execute("DELETE FROM ventes WHERE poche=?1", params![poche]).map_err(|e| e.to_string())?;
+        conn.execute("DELETE FROM dividendes WHERE poche=?1", params![poche]).map_err(|e| e.to_string())?;
+        conn.execute("DELETE FROM versements WHERE poche=?1", params![poche]).map_err(|e| e.to_string())?;
+    }
+    let mut count = 0usize;
+    for r in &positions {
+        conn.execute("INSERT INTO positions (poche,ticker,nom,sous_categorie,quantite,prix_achat,date_achat,notes) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+            params![poche,r.ticker,r.nom,r.sous_categorie,r.quantite,r.prix_achat,r.date_achat,r.notes])
+            .map_err(|e| e.to_string())?;
+        count += 1;
+    }
+    for r in &ventes {
+        conn.execute("INSERT INTO ventes (poche,ticker,nom,quantite,prix_achat,prix_vente,date_vente,pnl,notes) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
+            params![poche,r.ticker,r.nom,r.quantite,r.prix_achat,r.prix_vente,r.date_vente,r.pnl,r.notes])
+            .map_err(|e| e.to_string())?;
+        count += 1;
+    }
+    for r in &dividendes {
+        conn.execute("INSERT INTO dividendes (position_id,ticker,poche,montant,date,notes) VALUES (?1,?2,?3,?4,?5,?6)",
+            params![r.position_id,r.ticker,poche,r.montant,r.date,r.notes])
+            .map_err(|e| e.to_string())?;
+        count += 1;
+    }
+    for r in &versements {
+        conn.execute("INSERT INTO versements (poche,montant,date,notes) VALUES (?1,?2,?3,?4)",
+            params![poche,r.montant,r.date,r.notes])
+            .map_err(|e| e.to_string())?;
+        count += 1;
+    }
+    Ok(count)
+}
+
+#[tauri::command]
+pub fn import_scpi_valuations(rows: Vec<ScpiValuation>, replace: bool, state: State<DbState>) -> Result<usize, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    if replace { conn.execute("DELETE FROM scpi_valuations", []).map_err(|e| e.to_string())?; }
+    for r in &rows {
+        conn.execute("INSERT INTO scpi_valuations (poche,ticker,mois,valeur_unit) VALUES (?1,?2,?3,?4) ON CONFLICT(poche,ticker,mois) DO UPDATE SET valeur_unit=excluded.valeur_unit",
+            params![r.poche,r.ticker,r.mois,r.valeur_unit])
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(rows.len())
+}
+
 // ═══ FETCH URL (proxy pour contourner CORS) ═══════════════════════════════════
 #[tauri::command]
 pub async fn fetch_url(url: String) -> Result<serde_json::Value, String> {

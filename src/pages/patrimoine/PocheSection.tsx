@@ -20,6 +20,21 @@ function subcatIdx(key: string) {
   return i >= 0 ? i : 99;
 }
 
+/** Returns the minimum decimal precision needed to display all quantities,
+ *  at least 2 and at most `max` (default 8). Trailing zeros are ignored. */
+function qtyPrecision(quantities: number[], max = 8): number {
+  let prec = 2;
+  for (const n of quantities) {
+    // strip trailing zeros from fixed representation
+    const s = n.toFixed(max).replace(/\.?0+$/, "");
+    const dot = s.indexOf(".");
+    const d = dot >= 0 ? s.length - dot - 1 : 0;
+    prec = Math.max(prec, d);
+    if (prec >= max) return max;
+  }
+  return prec;
+}
+
 // Apply one buy/sell event to a mutable map (chronological order required for correct PRU)
 type PortfolioMap = Record<string, { nom: string; subcat: string; q: number; inv: number }>;
 function applyBuy(map: PortfolioMap, ticker: string, nom: string, subcat: string, qty: number, price: number) {
@@ -361,6 +376,10 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
   const totalVers    = versements.filter(v => (v.date ?? "").slice(0, 7) <= mois).reduce((s, v) => s + v.montant, 0);
   const especes      = Math.max(0, totalVers + totalPnlReal + totalDivs - totalInvest);
 
+  // Dynamic quantity precision: max significant decimals across all quantities (≤ 8)
+  const qtyPrec  = useMemo(() => qtyPrecision(enriched.map(p => p.quantite)), [enriched]);
+  const ventPrec = useMemo(() => qtyPrecision(ventes.map(v => v.quantite)),   [ventes]);
+
   const chartData = useMemo(() => buildWeeklyData(positions, ventes, dividendes, versements, getPriceForDate, tickers, scpiPriceMap),
   // eslint-disable-next-line react-hooks/exhaustive-deps
   [positions, ventes, dividendes, versements, getPriceForDate, tickers, scpiPriceMap]);
@@ -625,15 +644,15 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
                 <Bar key={t.ticker} dataKey={`_pnlReal_${t.ticker}`} name={t.nom}
                   stackId="r" fill={t.color} radius={[0, 0, 0, 0]}/>
               ))}
-              {pnlMode === "divs" && sortedTickers.map(t => (
-                <Bar key={t.ticker} dataKey={`_divs_${t.ticker}`} name={t.nom}
-                  stackId="d" fill={t.color} radius={[0, 0, 0, 0]}/>
-              ))}
-              {/* Intérêts espèces — shown in divs mode, espèces color */}
+              {/* Intérêts espèces — en premier dans le stack (barre du bas) */}
               {pnlMode === "divs" && (
                 <Bar dataKey="_divs__INTERETS_" name="Intérêts"
                   stackId="d" fill={INVEST_SUBCAT_COLOR["especes"] ?? "#78909c"} radius={[0, 0, 0, 0]}/>
               )}
+              {pnlMode === "divs" && sortedTickers.map(t => (
+                <Bar key={t.ticker} dataKey={`_divs_${t.ticker}`} name={t.nom}
+                  stackId="d" fill={t.color} radius={[0, 0, 0, 0]}/>
+              ))}
               {/* Gold month highlight — index-based */}
               {pnlMonthRange && (
                 <Customized component={(p: any) => {
@@ -665,7 +684,8 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
           <span style={{ fontSize: 10, transform: open ? "rotate(90deg)" : "none", display: "inline-block", transition: "transform .2s", color: "var(--text-2)" }}>▶</span>
           <span className="poche-title" style={{ color: poche.color }}>{poche.label}</span>
           <span style={{ fontSize: 11, color: "var(--text-1)" }}>
-            {fmt(totalValue + especes)}&nbsp;·&nbsp;<span style={{ color: totalPnlOpen >= 0 ? "var(--teal)" : "var(--rose)", fontWeight: 600 }}>{totalPnlOpen >= 0 ? "+" : "−"}{fmt(Math.abs(totalPnlOpen))}</span>
+            {fmt(totalValue + especes)}&nbsp;·&nbsp;
+          {(() => { const pnlTot = totalPnlOpen + totalPnlReal; return <span style={{ color: pnlTot >= 0 ? "var(--teal)" : "var(--rose)", fontWeight: 600 }}>{pnlTot >= 0 ? "+" : "−"}{fmt(Math.abs(pnlTot))}</span>; })()}
           </span>
         </div>
         <div style={{ display: "flex", gap: 6 }} onClick={e => e.stopPropagation()}>
@@ -705,27 +725,26 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
                 <table>
                   <thead><tr>
                     <th>Titre</th><th>Ticker</th><th>Sous-cat.</th>
-                    <th>Qté</th><th>PRU</th><th>Px·{mois}</th>
+                    <th>Qté</th><th>PRU</th>
                     <th>Investi</th><th>Valeur</th><th>PnL</th><th>Actions</th>
                   </tr></thead>
                   <tbody>{enriched.map(p => (
                     <tr key={p.ticker} style={{ verticalAlign: "middle" }}>
                       <td>{p.nom}</td>
                       <td>
-                        <span className="badge" style={{ color: p.color, borderColor: p.color, background: p.color + "22" }}>{p.ticker}</span>
-                        {p.quote && (
-                          <span className="quote-pill" style={{ marginLeft: 6 }}>
-                            <span className="quote-price">{fmt(p.quote.price)}</span>
-                            <span className={`quote-chg ${p.quote.changePct >= 0 ? "pos" : "neg"}`}>
-                              {p.quote.changePct >= 0 ? "+" : ""}{p.quote.changePct.toFixed(2)} %
+                        <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                          <span className="badge" style={{ color: p.color, borderColor: p.color, background: p.color + "22" }}>{p.ticker}</span>
+                          <span style={{ fontSize: 10, color: "var(--text-1)", display: "flex", gap: 4, alignItems: "center" }}>
+                            <span style={{ fontFamily: "var(--mono)" }}>{fmt(p.currentPrice)}</span>
+                            <span style={{ color: p.pnlPct >= 0 ? "var(--teal)" : "var(--rose)", fontWeight: 600 }}>
+                              {p.pnlPct >= 0 ? "+" : ""}{p.pnlPct.toFixed(2)}%
                             </span>
                           </span>
-                        )}
+                        </div>
                       </td>
                       <td><span className="badge b-neutral">{INVEST_SUBCATS.find(s => s.key === p.subcat)?.label ?? p.subcat}</span></td>
-                      <td>{p.quantite.toFixed(4)}</td>
+                      <td style={{ fontFamily: "var(--mono)", fontSize: 11 }}>{p.quantite.toFixed(qtyPrec)}</td>
                       <td style={{ color: "var(--text-1)" }}>{fmt(p.pru)}</td>
-                      <td>{fmt(p.currentPrice)}</td>
                       <td>{fmt(p.investTotal)}</td>
                       <td style={{ color: "var(--teal)" }}>{fmt(p.currentValue)}</td>
                       <td className={p.pnl >= 0 ? "pnl-pos" : "pnl-neg"} style={{ verticalAlign: "middle" }}>
@@ -783,7 +802,7 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
               <tbody>{ventes.map(v => (
                 <tr key={v.id}>
                   <td><span className="badge b-neutral">{v.ticker}</span></td>
-                  <td>{v.quantite.toFixed(4)}</td>
+                  <td style={{ fontFamily: "var(--mono)", fontSize: 11 }}>{v.quantite.toFixed(ventPrec)}</td>
                   <td style={{ color: "var(--text-1)" }}>{fmt(v.prix_achat)}</td>
                   <td>{fmt(v.prix_vente)}</td>
                   <td className={v.pnl >= 0 ? "pnl-pos" : "pnl-neg"}>{v.pnl >= 0 ? "+" : ""}{fmt(v.pnl)}</td>

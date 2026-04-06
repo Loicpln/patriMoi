@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
 import {
-  Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip, ComposedChart, Customized,
+  Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip, ComposedChart, Customized, Brush,
 } from "recharts";
 import { useDevise, curMonth } from "../../context/DeviseContext";
 import { LIVRETS_DEF, TOOLTIP_STYLE } from "../../constants";
@@ -12,21 +12,25 @@ import type { Livret } from "./types";
 const MN_SHORT = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
 
 // Index-based pixel: bypasses Recharts scale domain truncation (ticks-only bug)
-function idxPx(data: any[], x1: string, x2: string, offset: any) {
-  const N = data.length;
-  if (N === 0) return null;
+function idxPx(data: any[], x1: string, x2: string, offset: any, bStart = 0, bEnd?: number) {
+  const end = bEnd ?? data.length - 1;
+  const N = end - bStart + 1;
+  if (N <= 0) return null;
   const ai1 = data.findIndex((d: any) => d.date === x1);
-  let ai2 = -1; for (let i = N - 1; i >= 0; i--) { if ((data[i] as any).date === x2) { ai2 = i; break; } }
+  let ai2 = -1; for (let i = data.length - 1; i >= 0; i--) { if ((data[i] as any).date === x2) { ai2 = i; break; } }
   if (ai1 < 0 || ai2 < 0) return null;
+  const r1 = Math.max(0, ai1 - bStart); const r2 = Math.min(N - 1, ai2 - bStart);
+  if (r2 < 0 || r1 >= N) return null;
   const denom = Math.max(1, N - 1);
   const step = N > 1 ? offset.width / (N - 1) : offset.width;
-  return { rx1: offset.left + (ai1 / denom) * offset.width, rx2: offset.left + (ai2 / denom) * offset.width, step };
+  return { rx1: offset.left + (r1 / denom) * offset.width, rx2: offset.left + (r2 / denom) * offset.width, step };
 }
 
 export function LivretsSection({livrets,mois,onRefresh}:{livrets:Livret[];mois:string;onRefresh:()=>void}) {
   const {fmt}=useDevise();
   const [modal,setModal]=useState(false);
   const [interetModal,setInteretModal]=useState(false);
+  const [brushIdxL,setBrushIdxL]=useState<{start:number;end:number}|null>(null);
   const isInteret=(l:Livret)=>(l.notes??"").startsWith("[INTERET");
 
   const latest:Record<string,Livret>={};
@@ -83,20 +87,25 @@ export function LivretsSection({livrets,mois,onRefresh}:{livrets:Livret[];mois:s
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[livrets]);
 
-  // XAxis ticks: first date of each month, ≤ 8 labels
+  // Brush-limited visible slice
+  const visibleLiv=useMemo(()=>
+    brushIdxL?dailyData.slice(brushIdxL.start,brushIdxL.end+1):dailyData,
+  [dailyData,brushIdxL]);
+
+  // XAxis ticks: first date of each month, ≤ 8 labels — driven by brush
   const xTicks=useMemo(()=>{
     const seen=new Set<string>();const firsts:string[]=[];
-    dailyData.forEach((d:any)=>{const m=(d.date as string).slice(0,7);if(!seen.has(m)){seen.add(m);firsts.push(d.date as string);}});
+    visibleLiv.forEach((d:any)=>{const m=(d.date as string).slice(0,7);if(!seen.has(m)){seen.add(m);firsts.push(d.date as string);}});
     const step=Math.max(1,Math.ceil(firsts.length/8));
     return firsts.filter((_,i)=>i%step===0);
-  },[dailyData]);
+  },[visibleLiv]);
 
-  // Selected-month range for gold highlight
+  // Selected-month range for gold highlight — driven by brush
   const monthRange=useMemo(()=>{
-    const inM=dailyData.filter((d:any)=>d.month===mois);
+    const inM=visibleLiv.filter((d:any)=>d.month===mois);
     if(!inM.length)return null;
     return{x1:inM[0].date as string,x2:inM[inM.length-1].date as string};
-  },[dailyData,mois]);
+  },[visibleLiv,mois]);
 
   // History entries for selected month (non-intérêts)
   const histMois=livrets.filter(l=>!isInteret(l)&&(l.date??"").slice(0,7)===mois);
@@ -124,9 +133,9 @@ export function LivretsSection({livrets,mois,onRefresh}:{livrets:Livret[];mois:s
       toggleLabel="Capital" onToggle={()=>{}}/>
   );
 
-  const stackNode=(h:number,_isExp?:boolean)=>dailyData.length===0?<div className="empty">Aucune donnée</div>:(
+  const stackNode=(h:number,isExp?:boolean)=>dailyData.length===0?<div className="empty">Aucune donnée</div>:(
     <ResponsiveContainer width="100%" height={h}>
-      <ComposedChart data={dailyData} margin={{left:0,right:5,top:5,bottom:0}}>
+      <ComposedChart data={dailyData} margin={{left:0,right:5,top:5,bottom:isExp?28:0}}>
         <defs>{LIVRETS_DEF.map(l=>(
           <linearGradient key={l.key} id={`gl_${l.key}`} x1="0" y1="0" x2="0" y2="1">
             <stop offset="5%" stopColor={l.color} stopOpacity={.6}/><stop offset="95%" stopColor={l.color} stopOpacity={.05}/>
@@ -142,13 +151,24 @@ export function LivretsSection({livrets,mois,onRefresh}:{livrets:Livret[];mois:s
         {/* Gold month highlight — rendered after series to paint on top */}
         {monthRange&&(
           <Customized component={(p:any)=>{
-            const r=idxPx(dailyData,monthRange.x1,monthRange.x2,p.offset);
+            const bS=brushIdxL?.start??0;const bE=brushIdxL?.end??dailyData.length-1;
+            const r=idxPx(dailyData,monthRange.x1,monthRange.x2,p.offset,bS,bE);
             if(!r)return null;
             return<g><rect x={r.rx1} y={p.offset.top} width={Math.max(1,r.rx2-r.rx1+r.step)} height={p.offset.height}
               fill="var(--gold)" fillOpacity={0.18} stroke="var(--gold)" strokeOpacity={0.6}
               strokeDasharray="4 2" strokeWidth={1} pointerEvents="none"/></g>;
           }}/>
         )}
+        {isExp&&<Brush dataKey="date" height={22} travellerWidth={6}
+          stroke="var(--border)" fill="var(--bg-2)"
+          startIndex={brushIdxL?.start??0}
+          endIndex={brushIdxL?.end??dailyData.length-1}
+          onChange={(range:any)=>{
+            const{startIndex:s,endIndex:e}=range??{};
+            if(s===undefined||e===undefined)return;
+            setBrushIdxL(s===0&&e===dailyData.length-1?null:{start:s,end:e});
+          }}
+          tickFormatter={()=>""}/>}
       </ComposedChart>
     </ResponsiveContainer>
   );

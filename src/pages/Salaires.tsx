@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
-import { ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
+import { ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Brush } from "recharts";
 import { TOOLTIP_STYLE, tickerColor } from "../constants";
 
 interface Salaire {
@@ -73,6 +73,8 @@ export default function Salaires() {
   const [salaires, setSalaires] = useState<Salaire[]>([]);
   const [modal, setModal] = useState(false);
   const [expChart, setExpChart] = useState<"sal"|"prime"|null>(null);
+  const [brushSal, setBrushSal]     = useState<{start:number;end:number}|null>(null);
+  const [brushPrime, setBrushPrime] = useState<{start:number;end:number}|null>(null);
 
   const load = () => invoke<Salaire[]>("get_salaires").then(setSalaires).catch(console.error);
 
@@ -174,12 +176,12 @@ export default function Salaires() {
     );
   };
 
-  const charts: { key: "sal"|"prime"; title: string; node: (h: number) => React.ReactNode }[] = [];
+  const charts: { key: "sal"|"prime"; title: string; node: (h: number, isExp: boolean) => React.ReactNode }[] = [];
   if (salChartData.length > 0) charts.push({
     key: "sal", title: "Évolution du salaire net",
-    node: (h) => (
+    node: (h, isExp) => (
       <ResponsiveContainer width="100%" height={h}>
-        <ComposedChart data={salChartData} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+        <ComposedChart data={salChartData} margin={{ top: 4, right: 8, bottom: isExp ? 28 : 0, left: 0 }}>
           <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
           <XAxis dataKey="mois" tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}/>
           <YAxis tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
@@ -187,15 +189,25 @@ export default function Salaires() {
           <Tooltip content={<SalTooltip/>}/>
           <Bar dataKey="brut" name="brut" fill="var(--text-2)" radius={[3,3,0,0]} opacity={0.5}/>
           <Bar dataKey="net"  name="net"  fill="var(--teal)"   radius={[3,3,0,0]}/>
+          {isExp && <Brush dataKey="mois" height={22} travellerWidth={6}
+            stroke="var(--border)" fill="var(--bg-2)"
+            startIndex={brushSal?.start ?? 0}
+            endIndex={brushSal?.end ?? salChartData.length - 1}
+            onChange={(range: any) => {
+              const { startIndex: s, endIndex: e } = range ?? {};
+              if (s === undefined || e === undefined) return;
+              setBrushSal(s === 0 && e === salChartData.length - 1 ? null : { start: s, end: e });
+            }}
+            tickFormatter={() => ""}/>}
         </ComposedChart>
       </ResponsiveContainer>
     ),
   });
   if (primeChartData.length > 0) charts.push({
     key: "prime", title: "Primes & Aides",
-    node: (h) => (
+    node: (h, isExp) => (
       <ResponsiveContainer width="100%" height={h}>
-        <ComposedChart data={primeChartData} margin={{ left: 0, right: 5, top: 5, bottom: 0 }}>
+        <ComposedChart data={primeChartData} margin={{ left: 0, right: 5, top: 5, bottom: isExp ? 28 : 0 }}>
           <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
           <XAxis dataKey="mois" tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
             interval={Math.max(0, Math.floor(primeChartData.length / 6) - 1)}/>
@@ -207,6 +219,16 @@ export default function Salaires() {
               stroke={tickerColor(type)} strokeWidth={1.5}
               dot={{ r: 3, fill: tickerColor(type) }} connectNulls/>
           ))}
+          {isExp && <Brush dataKey="mois" height={22} travellerWidth={6}
+            stroke="var(--border)" fill="var(--bg-2)"
+            startIndex={brushPrime?.start ?? 0}
+            endIndex={brushPrime?.end ?? primeChartData.length - 1}
+            onChange={(range: any) => {
+              const { startIndex: s, endIndex: e } = range ?? {};
+              if (s === undefined || e === undefined) return;
+              setBrushPrime(s === 0 && e === primeChartData.length - 1 ? null : { start: s, end: e });
+            }}
+            tickFormatter={() => ""}/>}
         </ComposedChart>
       </ResponsiveContainer>
     ),
@@ -249,7 +271,7 @@ export default function Salaires() {
                     {isExp ? "⊟ Réduire" : "⊞ Agrandir"}
                   </button>
                 </div>
-                <div style={{ height: h }}>{c.node(h)}</div>
+                <div style={{ height: h }}>{c.node(h, isExp)}</div>
               </div>
             );
           })}

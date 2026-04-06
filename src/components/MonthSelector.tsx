@@ -72,6 +72,9 @@ export default function MonthSelector({ value, onChange, firstMonth, range = 6 }
 
   return (
     <div style={{
+      position: "sticky",
+      top: 0,
+      zIndex: 20,
       background: "var(--bg-1)",
       border: "1px solid var(--border)",
       borderRadius: "var(--r)",
@@ -82,6 +85,7 @@ export default function MonthSelector({ value, onChange, firstMonth, range = 6 }
       display: "flex",
       alignItems: "center",
       gap: 4,
+      boxShadow: "0 2px 8px rgba(0,0,0,0.18)",
     }}>
       {/* Scrollable strip (never contains todayMonth) */}
       <div ref={ref} style={{ display: "flex", gap: 2, flex: 1, overflowX: "hidden" }}>
