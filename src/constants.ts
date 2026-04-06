@@ -58,10 +58,8 @@ export const DEPENSE_CATEGORIES: Record<string, { color: string; subs: string[] 
   "Transport":    { color: "#e6a817", subs: ["Assurance auto", "Essence", "Entretien", "Contrôle technique", "Transport en commun", "Autre"] },
   "Logement":     { color: "#d4793a", subs: ["Loyer", "Assurance habitation", "Charges", "Travaux", "Autre"] },
   "Abonnements":  { color: "#5fa89e", subs: ["Frais Banque Populaire", "Prévoyance civile", "RED SFR", "Amazon", "Apple", "Spotify", "Autre"] },
-  "Sport":        { color: "#3a7bd5", subs: ["Judo", "Escalade", "Salle de sport", "Équipement", "Autre"] },
+  "Sport":        { color: "#3a7bd5", subs: ["Judo", "Escalade", "Salle de sport", "Autre"] },
   "Soins":        { color: "#7c6fd4", subs: ["Médecin", "Coiffeur", "Pharmacie", "Optique", "Dentiste", "Autre"] },
-  "Alimentation": { color: "#2196a8", subs: ["Courses", "Restaurant", "Fast-food", "Livraison", "Autre"] },
-  "Loisirs":      { color: "#c95f2e", subs: ["Sorties", "Bar", "Voyages", "Culture", "Jeux", "Autre"] },
   "Autre":        { color: "#78909c", subs: ["Divers"] },
 };
 
@@ -106,6 +104,19 @@ function hashStr(s: string): number {
   for (let i = 0; i < s.length; i++) h = ((h << 5) + h) ^ s.charCodeAt(i);
   return Math.abs(h);
 }
+
+// ── Couleurs fixes pour les types de primes (hues espacées à 30°) ────────────
+export const PRIME_TYPE_COLORS: Record<string, string> = {
+  "Bourse":                         "hsl(45,  80%, 58%)",
+  "Prime d'activité":               "hsl(165, 70%, 52%)",
+  "Prime de Noël":                  "hsl(0,   72%, 60%)",
+  "Prime vacances":                 "hsl(30,  80%, 60%)",
+  "Aides activités sportives":      "hsl(120, 60%, 55%)",
+  "Remboursement impôts":           "hsl(330, 68%, 62%)",
+  "Prime de parainnage":            "hsl(195, 72%, 58%)",
+  "Cours particuliers":             "hsl(75,  68%, 54%)",
+  "Autre aide":                     "hsl(240, 50%, 65%)",
+};
 
 // Palette de couleurs distinctes (HSL avec saturation/luminosité fixes)
 export function tickerColor(ticker: string): string {

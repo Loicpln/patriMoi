@@ -1,8 +1,34 @@
 import { useEffect, useState, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
 import { useDevise } from "../context/DeviseContext";
-import { ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { TOOLTIP_STYLE, tickerColor } from "../constants";
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Customized } from "recharts";
+import { TOOLTIP_STYLE, tickerColor, PRIME_TYPE_COLORS, monthsBetween, curMonthStr } from "../constants";
+
+function xPixel(scale: any, value: string): number | null {
+  if (!scale) return null;
+  const direct = scale(value);
+  if (direct != null && !isNaN(direct)) return direct as number;
+  const domain: string[] = scale.domain ? (scale.domain() as string[]) : [];
+  const idx = domain.indexOf(value);
+  if (idx < 0) return null;
+  const range: number[] = scale.range ? (scale.range() as number[]) : [0, 0];
+  if (domain.length <= 1) return range[0];
+  return range[0] + (idx / (domain.length - 1)) * (range[1] - range[0]);
+}
+
+function renderIsolatedDot(data: any[], dataKey: string, color: string) {
+  return (props: any) => {
+    const { cx, cy, index } = props;
+    if (cx == null || cy == null) return <g/>;
+    const prev1 = data[index - 1]?.[dataKey] ?? null;
+    const next1 = data[index + 1]?.[dataKey] ?? null;
+    const cur   = data[index]?.[dataKey] ?? null;
+    if (cur != null && prev1 == null && next1 == null) {
+      return <circle cx={cx} cy={cy} r={3.5} fill={color} stroke="var(--bg-0)" strokeWidth={1.5}/>;
+    }
+    return <g/>;
+  };
+}
 
 interface Salaire {
   id?: number; date: string; salaire_brut: number; salaire_net: number;
@@ -22,8 +48,9 @@ const MOIS_FR = ["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Ao�
 
 // ── Streak calculator ──────────────────────────────────────────────────────
 function calcStreak(salaires: Salaire[]): number {
-  if (!salaires.length) return 0;
-  const months = new Set(salaires.map(s => s.date.slice(0, 7)));
+  const fiches = salaires.filter(s => s.employeur !== "_PRIME");
+  if (!fiches.length) return 0;
+  const months = new Set(fiches.map(s => s.date.slice(0, 7)));
   let streak = 0;
   const now = new Date();
   let cur = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -42,7 +69,7 @@ function calcStreak(salaires: Salaire[]): number {
 
 
 const PRIME_TYPES = ["Bourse", "Prime d'activité", "Prime de Noël", "Aide au logement", "Allocation familiale",
-  "Prime vacances", "Aides aux activités sportives", "Remboursement impôts", "Prime de parainnage", "Cours particuliers", "Autre aide"];
+  "Prime vacances", "Aides activités sportives", "Remboursement impôts", "Prime de parainnage", "Cours particuliers", "Autre aide"];
 
 // ── Sélecteur d'année horizontal (style MonthSelector) ────────────────────
 function YearSelector({ value, onChange, years }: { value: number; onChange: (y: number) => void; years: number[] }) {
@@ -294,7 +321,10 @@ export default function Fiches() {
   const [selected, setSelected] = useState<Salaire | null>(null);
   const [addModal, setAddModal] = useState(false);
   const [primeModal, setPrimeModal] = useState(false);
+  const [primeAddDate, setPrimeAddDate] = useState("");
+  const [primesMonthKey, setPrimesMonthKey] = useState<string|null>(null);
   const [salToggle, setSalToggle] = useState<"moyen"|"total">("moyen");
+  const [expChart, setExpChart] = useState(false);
 
   const load = async () => {
     const s = await invoke<Salaire[]>("get_salaires");
@@ -324,29 +354,30 @@ export default function Fiches() {
     return [...types];
   }, [primes]);
 
-  const primeChartData = useMemo(() => {
-    if (!primes.length) return [];
-    const byMonth: Record<string, Record<string, number>> = {};
+  const evoData = useMemo(() => {
+    const all = [...fichesNormales, ...primes];
+    if (!all.length) return [];
+    const dates = all.map(s => s.date.slice(0, 7)).filter(Boolean).sort();
+    const months = monthsBetween(dates[0], curMonthStr());
+    const netByM: Record<string, number> = {};
+    fichesNormales.forEach(s => {
+      const m = s.date.slice(0, 7);
+      netByM[m] = (netByM[m] ?? 0) + s.salaire_net;
+    });
+    const primeByTypeM: Record<string, Record<string, number>> = {};
     primes.forEach(p => {
       const m = p.date.slice(0, 7);
       const t = (p.notes ?? "").replace(/\[PRIME:([^\]]+)\].*/, "$1").trim();
       if (!t) return;
-      if (!byMonth[m]) byMonth[m] = {};
-      byMonth[m][t] = (byMonth[m][t] ?? 0) + (p.primes ?? 0);
+      if (!primeByTypeM[t]) primeByTypeM[t] = {};
+      primeByTypeM[t][m] = (primeByTypeM[t][m] ?? 0) + (p.primes ?? 0);
     });
-    const months = Object.keys(byMonth).sort();
-    const cumByType: Record<string, number> = {};
-    activePrimeTypes.forEach(t => { cumByType[t] = 0; });
     return months.map(m => {
-      const entry: any = { mois: m };
-      activePrimeTypes.forEach(type => {
-        const monthly = byMonth[m][type] ?? 0;
-        if (monthly > 0) { cumByType[type] += monthly; entry[type] = monthly; }
-        entry[`_cum_${type}`] = cumByType[type];
-      });
+      const entry: any = { mois: m, net: netByM[m] ?? null };
+      activePrimeTypes.forEach(type => { entry[type] = primeByTypeM[type]?.[m] ?? null; });
       return entry;
     });
-  }, [primes, activePrimeTypes]);
+  }, [fichesNormales, primes, activePrimeTypes]);
 
   // Map YYYY-MM → Salaire
   const byMonth: Record<string, Salaire[]> = {};
@@ -371,23 +402,27 @@ export default function Fiches() {
 
   const emptySalaire: Salaire = { date: defaultDateForYear(year), salaire_brut: 0, salaire_net: 0, employeur: "", primes: 0 };
 
-  const PrimeTooltip = ({ active, payload, label }: any) => {
+  const yearRange = useMemo(() => {
+    const yearStr = String(year);
+    const inYear = evoData.filter((d: any) => (d.mois as string).startsWith(yearStr));
+    if (!inYear.length) return null;
+    return { x1: inYear[0].mois as string, x2: inYear[inYear.length - 1].mois as string };
+  }, [evoData, year]);
+
+  const EvoTooltip = ({ active, payload, label }: any) => {
     if (!active || !payload?.length) return null;
-    const row = payload[0]?.payload;
     const items = payload.filter((p: any) => p.value != null && p.value > 0);
     if (!items.length) return null;
     return (
-      <div style={{ ...TOOLTIP_STYLE, padding: "10px 14px", minWidth: 210 }}>
+      <div style={{ ...TOOLTIP_STYLE, padding: "10px 14px", minWidth: 180 }}>
         {label && <div style={{ color: "var(--text-2)", fontSize: 9, marginBottom: 8, letterSpacing: ".05em" }}>{label}</div>}
         {items.map((p: any, i: number) => {
-          const cum = row?.[`_cum_${p.name}`] ?? 0;
+          const col = p.dataKey === "net" ? "var(--teal)" : (PRIME_TYPE_COLORS[p.dataKey] ?? p.stroke ?? tickerColor(p.dataKey));
+          const lbl = p.dataKey === "net" ? "Salaire net" : p.dataKey;
           return (
             <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 2 }}>
-              <span style={{ color: p.stroke ?? p.color ?? "var(--text-1)", fontSize: 10 }}>{p.name}</span>
-              <span style={{ display: "flex", gap: 5, alignItems: "baseline" }}>
-                <span style={{ color: "var(--text-0)", fontSize: 10 }}>{fmt(p.value)}</span>
-                <span style={{ color: "var(--text-2)", fontSize: 9 }}>({fmt(cum)})</span>
-              </span>
+              <span style={{ color: col, fontSize: 10 }}>{lbl}</span>
+              <span style={{ color: "var(--text-0)", fontSize: 10 }}>{fmt(Number(p.value))}</span>
             </div>
           );
         })}
@@ -409,8 +444,12 @@ export default function Fiches() {
         )}
       </div>
 
-      {/* Stats année */}
-      {/* Toggle moyen / total */}
+      {/* Year selector — pleine largeur */}
+      <div style={{ marginBottom: 10 }}>
+        <YearSelector value={year} onChange={setYear} years={years}/>
+      </div>
+
+      {/* Toggle + boutons d'ajout sur la même ligne */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
         <span style={{ fontSize: 11, color: "var(--text-2)" }}>Affichage :</span>
         <button
@@ -419,6 +458,9 @@ export default function Fiches() {
         <button
           className={`btn btn-sm ${salToggle === "total" ? "btn-primary" : "btn-ghost"}`}
           onClick={() => setSalToggle("total")}>Totaux</button>
+        <div style={{ flex: 1 }}/>
+        <button className="btn btn-ghost btn-sm" onClick={() => setPrimeModal(true)}>+ Prime / Aide</button>
+        <button className="btn btn-primary btn-sm" onClick={() => setAddModal(true)}>+ Fiche</button>
       </div>
       <div className="stat-row">
         <div className="stat-card sc-teal">
@@ -435,13 +477,79 @@ export default function Fiches() {
         </div>
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
-        <div style={{ flex: 1 }}>
-          <YearSelector value={year} onChange={setYear} years={years}/>
-        </div>
-        <button className="btn btn-ghost" onClick={() => setPrimeModal(true)}>+ Prime / Aide</button>
-        <button className="btn btn-primary" onClick={() => setAddModal(true)}>+ Fiche</button>
-      </div>
+      {/* Stacked area chart: net + prime types */}
+      {evoData.length > 0 && (() => {
+        const h = expChart ? 520 : 220;
+        return (
+          <div className="chart-card" style={{ marginBottom: 20 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <div className="chart-title" style={{ marginBottom: 0 }}>Évolution du salaire net + primes</div>
+              <button className="btn btn-ghost btn-sm" style={{ fontSize: 10 }}
+                onClick={() => setExpChart(v => !v)}>
+                {expChart ? "⊟ Réduire" : "⊞ Agrandir"}
+              </button>
+            </div>
+            <ResponsiveContainer width="100%" height={h}>
+              <AreaChart data={evoData} margin={{ left: 0, right: 5, top: 5, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="gFNet" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%"  stopColor="#5fa89e" stopOpacity={.4}/>
+                    <stop offset="95%" stopColor="#5fa89e" stopOpacity={0}/>
+                  </linearGradient>
+                  {activePrimeTypes.map(type => {
+                    const c = PRIME_TYPE_COLORS[type] ?? tickerColor(type);
+                    return (
+                      <linearGradient key={type} id={`gFP_${type.replace(/[^a-zA-Z0-9]/g,"_")}`} x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%"  stopColor={c} stopOpacity={.5}/>
+                        <stop offset="95%" stopColor={c} stopOpacity={0}/>
+                      </linearGradient>
+                    );
+                  })}
+                </defs>
+                <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
+                <XAxis dataKey="mois" stroke="var(--text-2)" tick={{ fontSize: 9, fontFamily: "JetBrains Mono" }}
+                  interval={Math.max(0, Math.floor(evoData.length / 8) - 1)}/>
+                <YAxis stroke="var(--text-2)" tick={{ fontSize: 9, fontFamily: "JetBrains Mono" }}
+                  tickFormatter={v => `${(v/1000).toFixed(1)}k`} width={40}/>
+                <Tooltip content={<EvoTooltip/>}/>
+                <Area type="monotone" dataKey="net" stackId="s" name="net"
+                  stroke="#5fa89e" strokeWidth={2} fill="url(#gFNet)"
+                  dot={renderIsolatedDot(evoData, "net", "#5fa89e")} connectNulls={false}/>
+                {activePrimeTypes.map(type => {
+                  const c = PRIME_TYPE_COLORS[type] ?? tickerColor(type);
+                  return (
+                    <Area key={type} type="monotone" dataKey={type} stackId="s" name={type}
+                      stroke={c} strokeWidth={1.5} fill={`url(#gFP_${type.replace(/[^a-zA-Z0-9]/g,"_")})`}
+                      dot={renderIsolatedDot(evoData, type, c)} connectNulls={false}/>
+                  );
+                })}
+                {yearRange && (
+                  <Customized component={(p: any) => {
+                    const N = evoData.length;
+                    if (N === 0) return null;
+                    const idx1 = evoData.findIndex((d: any) => d.mois === yearRange.x1);
+                    let idx2 = -1; for (let i = N-1; i >= 0; i--) { if ((evoData[i] as any).mois === yearRange.x2) { idx2 = i; break; } }
+                    if (idx1 < 0 || idx2 < 0) return null;
+                    const denom = Math.max(1, N - 1);
+                    const step = N > 1 ? p.offset.width / (N - 1) : p.offset.width;
+                    const rx1 = p.offset.left + (idx1 / denom) * p.offset.width;
+                    const rx2 = p.offset.left + (idx2 / denom) * p.offset.width;
+                    return (
+                      <g>
+                        <rect x={rx1 - step / 2} y={p.offset.top}
+                          width={Math.max(4, rx2 - rx1 + step)} height={p.offset.height}
+                          fill="var(--gold)" fillOpacity={0.1}
+                          stroke="var(--gold)" strokeOpacity={0.5}
+                          strokeDasharray="4 2" strokeWidth={1} pointerEvents="none"/>
+                      </g>
+                    );
+                  }}/>
+                )}
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        );
+      })()}
 
       {/* Calendar grid */}
       <div className="cal-grid">
@@ -475,8 +583,9 @@ export default function Fiches() {
                     <div style={{ color: "var(--text-2)", fontSize: 10 }}>—</div>
                   )}
                 </div>
-                {/* Primes & aides */}
-                <div style={{ flex: 1, padding: "6px 8px", overflow: "hidden" }}>
+                {/* Primes & aides — click to manage */}
+                <div style={{ flex: 1, padding: "6px 8px", overflow: "hidden", cursor: "pointer" }}
+                  onClick={() => setPrimesMonthKey(key)}>
                   {monthPrimes.length > 0 ? (
                     <>
                       {monthPrimes.slice(0, 3).map(p => {
@@ -499,41 +608,6 @@ export default function Fiches() {
           );
         })}
       </div>
-
-      {/* Primes & Aides list */}
-      {primes.length > 0 && (
-        <div className="table-card" style={{ marginTop: 24 }}>
-          <div className="table-head">
-            <span className="table-head-title">Primes &amp; Aides · {year}</span>
-            <span style={{ color: "var(--gold)", fontSize: 12 }}>
-              Total : {fmt(primes.filter(p => p.date.startsWith(String(year))).reduce((s, p) => s + (p.primes ?? 0), 0))}
-            </span>
-          </div>
-          <table>
-            <thead><tr><th>Type</th><th>Montant</th><th>Date</th><th>Notes</th><th></th></tr></thead>
-            <tbody>
-              {primes.filter(p => p.date.startsWith(String(year))).map(p => (
-                <tr key={p.id}>
-                  <td>
-                    <span className="badge b-gold">
-                      {(p.notes ?? "").replace(/\[PRIME:([^\]]+)\].*/, "$1")}
-                    </span>
-                  </td>
-                  <td style={{ color: "var(--gold)" }}>{fmt(p.primes ?? 0)}</td>
-                  <td style={{ color: "var(--text-1)" }}>{p.date}</td>
-                  <td style={{ color: "var(--text-2)" }}>{(p.notes ?? "").replace(/\[PRIME:[^\]]+\]\s*/, "")}</td>
-                  <td>
-                    <button className="btn btn-danger btn-sm"
-                      onClick={async () => { await invoke("delete_salaire", { id: p.id }); load(); }}>
-                      ✕
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
 
       {selected && (
         <DetailModal
@@ -559,11 +633,56 @@ export default function Fiches() {
       )}
       {primeModal && (
         <PrimeModal
-          defaultDate={defaultDateForYear(year)}
-          onClose={() => setPrimeModal(false)}
-          onSave={() => { setPrimeModal(false); load(); }}
+          defaultDate={primeAddDate || defaultDateForYear(year)}
+          onClose={() => { setPrimeModal(false); setPrimeAddDate(""); }}
+          onSave={() => { setPrimeModal(false); setPrimeAddDate(""); load(); }}
         />
       )}
+
+      {primesMonthKey && (() => {
+        const monthLabel = MOIS_FR[parseInt(primesMonthKey.slice(5, 7)) - 1] + " " + primesMonthKey.slice(0, 4);
+        const monthPrimesList = primes.filter(p => p.date.slice(0, 7) === primesMonthKey);
+        return (
+          <div className="overlay" onClick={() => setPrimesMonthKey(null)}>
+            <div className="modal" onClick={e => e.stopPropagation()}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+                <div className="modal-title" style={{ marginBottom: 0 }}>Primes &amp; Aides · {monthLabel}</div>
+                <button className="btn btn-ghost btn-sm" onClick={() => { setPrimeAddDate(`${primesMonthKey}-01`); setPrimesMonthKey(null); setPrimeModal(true); }}>+ Ajouter</button>
+              </div>
+              {monthPrimesList.length === 0 ? (
+                <div className="empty" style={{ marginBottom: 16 }}>Aucune prime ce mois</div>
+              ) : (
+                <table style={{ marginBottom: 16 }}>
+                  <thead><tr><th>Type</th><th>Montant</th><th>Date</th><th>Notes</th><th></th></tr></thead>
+                  <tbody>
+                    {monthPrimesList.map(p => {
+                      const pType = (p.notes ?? "").replace(/\[PRIME:([^\]]+)\].*/, "$1").trim();
+                      const pNotes = (p.notes ?? "").replace(/\[PRIME:[^\]]+\]\s*/, "");
+                      return (
+                        <tr key={p.id}>
+                          <td><span className="badge b-gold">{pType}</span></td>
+                          <td style={{ color: "var(--gold)" }}>{fmt(p.primes ?? 0)}</td>
+                          <td style={{ color: "var(--text-1)" }}>{p.date}</td>
+                          <td style={{ color: "var(--text-2)" }}>{pNotes}</td>
+                          <td>
+                            <button className="btn btn-danger btn-sm"
+                              onClick={async () => { await invoke("delete_salaire", { id: p.id }); load(); }}>
+                              ✕
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+              <div className="form-actions">
+                <button className="btn btn-ghost" onClick={() => setPrimesMonthKey(null)}>Fermer</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

@@ -23,18 +23,19 @@ import { LivretsSection } from "./patrimoine/LivretsSection";
 import { PocheSection } from "./patrimoine/PocheSection";
 import type { Livret, Position, Vente, Dividende, Versement, ScpiValuation } from "./patrimoine/types";
 
-// Robust XAxis pixel lookup — handles point/band/linear scales with nearest-neighbour fallback
-function xPixel(scale: any, value: string): number | null {
-  if (!scale) return null;
-  const direct = scale(value);
-  if (direct != null && !isNaN(direct)) return direct as number;
-  // Fallback: find the value's index in the domain, then interpolate in range
-  const domain: string[] = scale.domain ? (scale.domain() as string[]) : [];
-  const idx = domain.indexOf(value);
-  if (idx < 0) return null;
-  const range: number[] = scale.range ? (scale.range() as number[]) : [0, 0];
-  if (domain.length <= 1) return range[0];
-  return range[0] + (idx / (domain.length - 1)) * (range[1] - range[0]);
+// Index-based pixel: avoids Recharts scale domain truncation (ticks-only domain bug)
+function idxPx(data: any[], x1: string, x2: string, offset: any, bStart = 0, bEnd?: number, key = "date") {
+  const end = bEnd ?? data.length - 1;
+  const N = end - bStart + 1;
+  if (N <= 0) return null;
+  const ai1 = data.findIndex((d: any) => d[key] === x1);
+  let ai2 = -1; for (let i = data.length - 1; i >= 0; i--) { if ((data[i] as any)[key] === x2) { ai2 = i; break; } }
+  if (ai1 < 0 || ai2 < 0) return null;
+  const r1 = Math.max(0, ai1 - bStart); const r2 = Math.min(N - 1, ai2 - bStart);
+  if (r2 < 0 || r1 >= N) return null;
+  const denom = Math.max(1, N - 1);
+  const step = N > 1 ? offset.width / (N - 1) : offset.width;
+  return { rx1: offset.left + (r1 / denom) * offset.width, rx2: offset.left + (r2 / denom) * offset.width, step };
 }
 
 // Build scpiPriceMap from valuations: ticker → (month → unit price)
@@ -294,13 +295,9 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
           stroke="#e63946" strokeWidth={1.5} dot={false} strokeDasharray="4 3" legendType="none"/>
         {monthRange&&(
           <Customized component={(p:any)=>{
-            const xAxis=Object.values(p.xAxisMap??{})[0] as any;
-            if(!xAxis?.scale)return null;
-            const bw=xAxis.scale.bandwidth?.()??0;
-            const rx1=xPixel(xAxis.scale,monthRange.x1);
-            const rx2=xPixel(xAxis.scale,monthRange.x2);
-            if(rx1==null||rx2==null)return null;
-            return<g><rect x={rx1} y={p.offset.top} width={Math.max(0,rx2-rx1+bw)} height={p.offset.height}
+            const r=idxPx(stackedData,monthRange.x1,monthRange.x2,p.offset);
+            if(!r)return null;
+            return<g><rect x={r.rx1} y={p.offset.top} width={Math.max(1,r.rx2-r.rx1+r.step)} height={p.offset.height}
               fill="var(--gold)" fillOpacity={0.18} stroke="var(--gold)" strokeOpacity={0.6}
               strokeDasharray="4 2" strokeWidth={1} pointerEvents="none"/></g>;
           }}/>
@@ -475,18 +472,11 @@ function GlobalRecap({livrets,positions,ventes,versements,mois,scpiValuations}:{
         <Tooltip content={<GlobalTooltip/>}/>
         <Area type="monotone" dataKey="Livrets" stackId="g" stroke="#e6a817" strokeWidth={1.5} fill="url(#gGL4)"/>
         <Area type="monotone" dataKey="Investissements" stackId="g" stroke="#3a7bd5" strokeWidth={1.5} fill="url(#gGI4)"/>
-        {/* Gold rect for selected month — placed after series to paint on top */}
+        {/* Gold rect for selected month — index-based */}
         <Customized component={(p:any)=>{
-          const xAxis=Object.values(p.xAxisMap??{})[0] as any;
-          if(!xAxis?.scale)return null;
-          const domain:string[]=xAxis.scale.domain?xAxis.scale.domain():[];
-          const range:number[]=xAxis.scale.range?xAxis.scale.range():[0,0];
-          // step width between monthly ticks
-          const step=domain.length>1?(range[1]-range[0])/(domain.length-1):range[1]-range[0];
-          const cx=xPixel(xAxis.scale,mois);
-          if(cx==null)return null;
-          const rx=cx-step/2;
-          return<g><rect x={rx} y={p.offset.top} width={Math.max(4,step)}
+          const r=idxPx(evoData,mois,mois,p.offset,0,undefined,"mois");
+          if(!r)return null;
+          return<g><rect x={r.rx1-r.step/2} y={p.offset.top} width={Math.max(4,r.step)}
             height={p.offset.height}
             fill="var(--gold)" fillOpacity={0.18} stroke="var(--gold)" strokeOpacity={0.6}
             strokeDasharray="4 2" strokeWidth={1} pointerEvents="none"/></g>;
