@@ -143,7 +143,7 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
     const [pk,...rest]=k.split("||");const sk=rest.join("||");
     const pocheName=POCHES.find(p=>p.key===pk)?.label??pk;
     const subcatName=sk==="especes"?"Espèces":(INVEST_SUBCATS.find(s=>s.key===sk)?.label??sk);
-    return{name:`${subcatName}`,group:pocheName,...v};
+    return{name:subcatName,group:pocheName,...v};
   }).filter(e=>e.value>0);
   const grandTotal=Object.values(pocheMap).reduce((s,v)=>s+v.value,0);
 
