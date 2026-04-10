@@ -55,9 +55,9 @@ export const INVEST_SUBCAT_COLOR: Record<string, string> = Object.fromEntries(
 
 // ── Catégories de dépenses ─────────────────────────────────────
 export const DEPENSE_CATEGORIES: Record<string, { color: string; subs: string[] }> = {
-  "Transport":    { color: "#e6a817", subs: ["Assurance auto", "Essence", "Entretien", "Contrôle technique", "Transport en commun", "Autre"] },
+  "Transport":    { color: "#e6a817", subs: ["Assurance auto", "Essence", "Entretien", "Carte grise", "Contrôle technique", "Transport en commun", "Autre"] },
   "Logement":     { color: "#d4793a", subs: ["Loyer", "Assurance habitation", "Charges", "Travaux", "Autre"] },
-  "Abonnements":  { color: "#5fa89e", subs: ["Frais Banque Populaire", "Prévoyance civile", "RED SFR", "Amazon", "Apple", "Spotify", "Autre"] },
+  "Abonnements":  { color: "#5fa89e", subs: ["Frais Banque Populaire", "Prévoyance civile", "AGPM", "RED SFR", "Amazon", "Apple", "Spotify", "Autre"] },
   "Sport":        { color: "#3a7bd5", subs: ["Judo", "Escalade", "Salle de sport", "Autre"] },
   "Soins":        { color: "#7c6fd4", subs: ["Médecin", "Coiffeur", "Pharmacie", "Optique", "Dentiste", "Autre"] },
   "Autre":        { color: "#78909c", subs: ["Divers"] },

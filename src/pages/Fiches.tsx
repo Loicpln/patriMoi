@@ -103,8 +103,20 @@ function YearSelector({ value, onChange, years }: { value: number; onChange: (y:
 
   return (
     <div style={{
-      background: "var(--bg-1)", border: "1px solid var(--border)", borderRadius: "var(--r)",
-      padding: "4px 6px", display: "flex", alignItems: "center", gap: 2,
+      position: "sticky",
+      top: 0,
+      zIndex: 20,
+      background: "var(--bg-1)",
+      border: "1px solid var(--border)",
+      borderRadius: "var(--r)",
+      padding: "4px 6px",
+      width: "100%",
+      marginBottom: 24,
+      boxSizing: "border-box",
+      display: "flex",
+      alignItems: "center",
+      gap: 4,
+      boxShadow: "0 2px 8px rgba(0,0,0,0.18)",
     }}>
       {/* Strip scrollable sans l'année en cours */}
       <div style={{ display: "flex", gap: 2, flex: 1 }}>
@@ -451,28 +463,18 @@ export default function Fiches() {
       </div>
 
       {/* Year selector + contrôles — sticky */}
-      <div style={{
-        position: "sticky", top: 0, zIndex: 20,
-        background: "var(--bg-0)",
-        paddingBottom: 10,
-        boxShadow: "0 2px 8px rgba(0,0,0,0.18)",
-        marginBottom: 6,
-      }}>
-        <div style={{ marginBottom: 8 }}>
-          <YearSelector value={year} onChange={setYear} years={years}/>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 11, color: "var(--text-2)" }}>Affichage :</span>
-          <button
-            className={`btn btn-sm ${salToggle === "moyen" ? "btn-primary" : "btn-ghost"}`}
-            onClick={() => setSalToggle("moyen")}>Moyennes</button>
-          <button
-            className={`btn btn-sm ${salToggle === "total" ? "btn-primary" : "btn-ghost"}`}
-            onClick={() => setSalToggle("total")}>Totaux</button>
-          <div style={{ flex: 1 }}/>
-          <button className="btn btn-ghost btn-sm" onClick={() => setPrimeModal(true)}>+ Prime / Aide</button>
-          <button className="btn btn-primary btn-sm" onClick={() => setAddModal(true)}>+ Fiche</button>
-        </div>
+      <YearSelector value={year} onChange={setYear} years={years}/>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom:16 }}>
+        <span style={{ fontSize: 11, color: "var(--text-2)" }}>Affichage :</span>
+        <button
+          className={`btn btn-sm ${salToggle === "moyen" ? "btn-primary" : "btn-ghost"}`}
+          onClick={() => setSalToggle("moyen")}>Moyennes</button>
+        <button
+          className={`btn btn-sm ${salToggle === "total" ? "btn-primary" : "btn-ghost"}`}
+          onClick={() => setSalToggle("total")}>Totaux</button>
+        <div style={{ flex: 1 }}/>
+        <button className="btn btn-ghost btn-sm" onClick={() => setPrimeModal(true)}>+ Prime / Aide</button>
+        <button className="btn btn-primary btn-sm" onClick={() => setAddModal(true)}>+ Fiche</button>
       </div>
       <div className="stat-row">
         <div className="stat-card sc-teal">
@@ -504,7 +506,7 @@ export default function Fiches() {
                   onClick={() => brushFiches && setBrushFiches(null)} title="Réinitialiser le zoom">↺</button>
                 <button className="btn btn-ghost btn-sm" style={{ fontSize: 10 }}
                   onClick={() => setExpChart(v => !v)}>
-                  {expChart ? "⊟ Réduire" : "⊞ Agrandir"}
+                  {expChart ? "-" : "+"}
                 </button>
               </div>
             </div>

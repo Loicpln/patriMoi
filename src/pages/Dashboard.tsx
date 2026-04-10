@@ -181,7 +181,7 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
                 onClick={() => brushDash && setBrushDash(null)} title="Réinitialiser le zoom">↺</button>
               <button className="btn btn-ghost btn-sm" style={{ fontSize: 10 }}
                 onClick={() => setExpSal(v => !v)}>
-                {expSal ? "⊟ Réduire" : "⊞ Agrandir"}
+                {expSal ? "-" : "+"}
               </button>
             </div>
           </div>
@@ -266,7 +266,7 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
               ? depPieOuter.filter(o => o.group === selectedDashCat)
               : depPieOuter;
             return (
-            <ResponsiveContainer width="100%" height={220}>
+            <ResponsiveContainer width="100%" height={260}>
               <PieChart>
                 <Pie data={depPieInner} cx="50%" cy="50%" innerRadius={48} outerRadius={73}
                   paddingAngle={0} dataKey="value" style={{ cursor: "pointer" }}

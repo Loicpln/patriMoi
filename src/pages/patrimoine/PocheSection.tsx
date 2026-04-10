@@ -300,7 +300,7 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
   const [verModal, setVerModal]   = useState(false);
   const [sellTarget, setSellTarget]   = useState<{ ticker: string; nom: string; maxQty: number; pru: number } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ ticker: string; rows: Position[] } | null>(null);
-  const [pieToggle, setPieToggle] = useState<"capital" | "valeur">("capital");
+  const [pieToggle, setPieToggle] = useState<"investi" | "valeur">("valeur");
   const [pnlMode, setPnlMode]     = useState<"latent" | "realise" | "divs">("latent");
   const [brushIdx, setBrushIdx] = useState<{ start: number; end: number } | null>(null);
   const [scpiModal, setScpiModal] = useState(false);
@@ -497,7 +497,7 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
   const pieInner = useMemo(() => {
     const map: Record<string, { v: number; c: string }> = {};
     enriched.forEach(p => {
-      const val = pieToggle === "capital" ? p.investTotal : p.currentValue;
+      const val = pieToggle === "investi" ? p.investTotal : p.currentValue;
       if (!map[p.subcat]) map[p.subcat] = { v: 0, c: INVEST_SUBCAT_COLOR[p.subcat] ?? poche.color };
       map[p.subcat].v += val;
     });
@@ -514,13 +514,13 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
       .map(p => ({
         name:  p.nom,
         group: INVEST_SUBCATS.find(s => s.key === p.subcat)?.label ?? p.subcat,
-        value: pieToggle === "capital" ? p.investTotal : p.currentValue,
+        value: pieToggle === "investi" ? p.investTotal : p.currentValue,
         color: tickerColorDim(p.ticker),
       })),
     ...(especes > 0 ? [{ name: "Espèces", group: "Espèces", value: especes, color: (INVEST_SUBCAT_COLOR["especes"] ?? "#78909c") + "99" }] : []),
   ].filter(p => p.value > 0), [enriched, pieToggle, especes]);
 
-  const pieTotal = (pieToggle === "capital" ? totalInvest : totalValue) + especes;
+  const pieTotal = (pieToggle === "investi" ? totalInvest : totalValue) + especes;
 
   const summary = [
     { label: "Versements",     value: fmt(totalVers),    color: "var(--text-1)" },
@@ -536,8 +536,8 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
   const pieNode = (h: number) => pieInner.length === 0
     ? <div className="empty">Aucune position pour ce mois</div>
     : <NestedPie inner={pieInner} outer={pieOuter} total={pieTotal} fmt={fmt} h={h}
-        toggleLabel={pieToggle === "capital" ? "→ Valeur" : "→ Capital"}
-        onToggle={() => setPieToggle(v => v === "capital" ? "valeur" : "capital")}/>;
+        toggleLabel={pieToggle === "investi" ? "↔ Investi" : "↔ Valeur"}
+        onToggle={() => setPieToggle(v => v === "investi" ? "valeur" : "investi")}/>;
 
   // Stacked area: value per ticker per day (actual daily close prices)
   // + red line/fill for cumulative versements (shows loss zone when portfolio < versements)
@@ -745,7 +745,7 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
                     <tr key={p.ticker} style={{ verticalAlign: "middle" }}>
                       <td>{p.nom}</td>
                       <td>
-                        <span className="badge" style={{ color: p.color, borderColor: p.color, background: p.color + "22", display: "inline-flex", flexDirection: "column", alignItems: "center", gap: 1, lineHeight: 1.3, padding: "4px 7px" }}>
+                        <span className="badge" style={{ color: p.color, borderColor: p.color, width: "100%", background: p.color + "22", display: "inline-flex", flexDirection: "column", alignItems: "center", gap: 1, lineHeight: 1.3, padding: "4px 7px" }}>
                           <span>{p.ticker}</span>
                           <span style={{ display: "flex", gap: 3, alignItems: "center", fontSize: 9 }}>
                             <span style={{ fontFamily: "var(--mono)", color: "var(--text-1)" }}>{fmt(p.currentPrice)}</span>

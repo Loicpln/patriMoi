@@ -59,7 +59,7 @@ function scpiPrice(map: Record<string, Record<string, number>>, ticker: string, 
 function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiValuations}:{positions:Position[];ventes:Vente[];dividendes:Dividende[];versements:Versement[];mois:string;scpiValuations:ScpiValuation[]}) {
   const {fmt}=useDevise();
   const MN_SHORT=["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
-  const [pieToggle,setPieToggle]=useState<"capital"|"valeur">("capital");
+  const [pieToggle,setPieToggle]=useState<"investi"|"valeur">("valeur");
   const [brushIdxR,setBrushIdxR]=useState<{start:number;end:number}|null>(null);
 
   // SCPI price map
@@ -115,7 +115,7 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
     Object.entries(byT).forEach(([ticker,d])=>{
       if(d.q<=1e-9)return;
       const pru=d.q>0?d.inv/d.q:0;
-      const val=pieToggle==="capital"?d.inv:(d.q*(getPrice(ticker,mois,pru)));
+      const val=pieToggle==="investi"?d.inv:(d.q*(getPrice(ticker,mois,pru)));
       if(!pocheMap[p.key])pocheMap[p.key]={value:0,color:p.color};
       pocheMap[p.key].value+=val;
       pocheCost+=d.inv;
@@ -281,8 +281,8 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
 
   const pieNode=(h:number,_isExp?:boolean)=>inner.length===0?<div className="empty">Aucune donnée</div>:(
     <NestedPie inner={inner} outer={outer} total={grandTotal} fmt={fmt} h={h}
-      toggleLabel={pieToggle==="capital"?"→ Valeur":"→ Capital"}
-      onToggle={()=>setPieToggle(v=>v==="capital"?"valeur":"capital")}/>
+      toggleLabel={pieToggle==="investi"?"↔ Investi":"↔ Valeur"}
+      onToggle={()=>setPieToggle(v=>v==="investi"?"valeur":"investi")}/>
   );
   const stackNode=(h:number,isExp?:boolean)=>stackedData.length===0?<div className="empty">Aucune donnée</div>:(()=>{
     const d=isExp?stackedData:visibleStackedData;
@@ -339,7 +339,7 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
 // ── Global Recap ───────────────────────────────────────────────────────────────
 function GlobalRecap({livrets,positions,ventes,versements,mois,scpiValuations}:{livrets:Livret[];positions:Position[];ventes:Vente[];versements:Versement[];mois:string;scpiValuations:ScpiValuation[]}) {
   const {fmt}=useDevise();
-  const [pieToggle,setPieToggle]=useState<"versements"|"valeur">("versements");
+  const [pieToggle,setPieToggle]=useState<"versements"|"valeur">("valeur");
   const [brushIdxG,setBrushIdxG]=useState<{start:number;end:number}|null>(null);
 
   // SCPI price map
@@ -462,7 +462,7 @@ function GlobalRecap({livrets,positions,ventes,versements,mois,scpiValuations}:{
 
   const pieNode=(h:number,_isExp?:boolean)=>inner.length===0?<div className="empty">Aucune donnée</div>:(
     <NestedPie inner={inner} outer={outer} total={grandTotal} fmt={fmt} h={h}
-      toggleLabel={pieToggle==="versements"?"→ Versements":"→ Valeur"}
+      toggleLabel={pieToggle==="versements"?"↔ Versements":"↔ Valeur"}
       onToggle={()=>setPieToggle(v=>v==="versements"?"valeur":"versements")}/>
   );
 
@@ -544,7 +544,7 @@ function GlobalRecap({livrets,positions,ventes,versements,mois,scpiValuations}:{
 
 // ── Main Page ──────────────────────────────────────────────────────────────────
 function PatrimoineInner() {
-  const [tab,setTab]=useState<"global"|"livrets"|"recap"|"investissement">("global");
+  const [tab,setTab]=useState<"global"|"livrets"|"investissements">("global");
   const [mois,setMois]=useState(curMonth);
   const [livrets,setLivrets]=useState<Livret[]>([]);
   const [positions,setPositions]=useState<Position[]>([]);
@@ -586,14 +586,14 @@ function PatrimoineInner() {
     <MonthSelector value={mois} onChange={setMois} firstMonth={patrimoineFirstMonth}/>
     {err&&<div style={{padding:"12px 16px",marginBottom:16,background:"var(--rose-dim)",border:"1px solid var(--rose)",borderRadius:8,color:"var(--rose)",fontSize:12}}>⚠ {err}</div>}
     <div className="tabs">
-      {[["global","Vue globale"],["livrets","Livrets"],["recap","Récap. Invest."],["investissement","Poches"]].map(([k,l])=>(
+      {[["global","Vue globale"],["livrets","Livrets"],["investissements","Investissements"]].map(([k,l])=>(
         <button key={k} className={`tab-btn ${tab===k?"active":""}`} onClick={()=>setTab(k as any)}>{l}</button>
       ))}
     </div>
     {tab==="global"&&<GlobalRecap livrets={livrets} positions={positions} ventes={ventes} versements={versements} mois={mois} scpiValuations={scpiValuations}/>}
     {tab==="livrets"&&<LivretsSection livrets={livrets} mois={mois} onRefresh={load}/>}
-    {tab==="recap"&&<RecapInvestissement positions={positions} ventes={ventes} dividendes={dividendes} versements={versements} mois={mois} scpiValuations={scpiValuations}/>}
-    {tab==="investissement"&&POCHES.map((p: typeof POCHES[number])=>(
+    {tab==="investissements"&&<RecapInvestissement positions={positions} ventes={ventes} dividendes={dividendes} versements={versements} mois={mois} scpiValuations={scpiValuations}/>}
+    {tab==="investissements"&&POCHES.map((p: typeof POCHES[number])=>(
       <Boundary key={p.key} label={p.label}>
         <PocheSection poche={p} allPositions={positions} allVentes={ventes}
           allDividendes={dividendes} allVersements={versements} mois={mois} onRefresh={load}/>

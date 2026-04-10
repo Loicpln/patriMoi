@@ -42,7 +42,7 @@ function ChartGrid({charts}:{charts:{key:string;title:string;node:(h:number,isEx
                 )}
                 <button className="btn btn-ghost btn-sm" style={{fontSize:10}}
                   onClick={()=>setExp(v=>v===c.key?null:c.key)}>
-                  {isExp?"⊟ Réduire":"⊞ Agrandir"}
+                  {isExp?"-":"+"}
                 </button>
               </div>
             </div>

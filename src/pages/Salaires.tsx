@@ -277,7 +277,7 @@ export default function Salaires() {
                     })()}
                     <button className="btn btn-ghost btn-sm" style={{ fontSize: 10 }}
                       onClick={() => setExpChart(v => v === c.key ? null : c.key)}>
-                      {isExp ? "⊟ Réduire" : "⊞ Agrandir"}
+                      {isExp ? "-" : "+"}
                     </button>
                   </div>
                 </div>
