@@ -7,7 +7,7 @@ import type { Livret, Position, Vente, Dividende, Versement, ScpiValuation } fro
 
 // ── Livret Modal ───────────────────────────────────────────────────────────────
 export function LivretModal({mois,onClose,onSave}:{mois:string;onClose:()=>void;onSave:()=>void}) {
-  const [form,setForm]=useState<Livret>({poche:"livret_a",montant:0,taux:3.0,date:defaultDateForMonth(mois)});
+  const [form,setForm]=useState<Livret>({poche:LIVRETS_DEF[0].key,montant:0,taux:LIVRETS_DEF[0].taux,date:defaultDateForMonth(mois)});
   const s=(k:keyof Livret,v:string|number)=>setForm(f=>({...f,[k]:v}));
   return(<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
     <div className="modal-title">Mise à jour livret</div>
