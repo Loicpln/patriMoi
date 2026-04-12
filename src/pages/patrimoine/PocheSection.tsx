@@ -23,7 +23,7 @@ function subcatIdx(key: string) {
 /** Returns the minimum decimal precision needed to display all quantities,
  *  at least 2 and at most `max` (default 8). Trailing zeros are ignored. */
 function qtyPrecision(quantities: number[], max = 8): number {
-  let prec = 2;
+  let prec = 0;
   for (const n of quantities) {
     // strip trailing zeros from fixed representation
     const s = n.toFixed(max).replace(/\.?0+$/, "");

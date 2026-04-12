@@ -7,13 +7,29 @@ import {
 import { useDevise } from "../context/DeviseContext";
 const curMonth = new Date().toISOString().slice(0, 7);
 import MonthSelector from "../components/MonthSelector";
-import { TOOLTIP_STYLE, TOOLTIP_LABEL_STYLE, TOOLTIP_ITEM_STYLE, monthsBetween, DEPENSE_CATEGORIES, DEPENSE_CAT_KEYS, depenseSubColor, tickerColor, PRIME_TYPE_COLORS } from "../constants";
+import { TOOLTIP_STYLE, TOOLTIP_LABEL_STYLE, TOOLTIP_ITEM_STYLE, monthsBetween, DEPENSE_CATEGORIES, DEPENSE_CAT_KEYS, depenseSubColor, tickerColor, PRIME_TYPE_COLORS, POCHES } from "../constants";
 import { NestedPie } from "./patrimoine/shared";
+import { useQuotes } from "../hooks/useQuotes";
 
 interface Salaire { id?: number; date: string; salaire_brut: number; salaire_net: number; primes?: number; employeur: string; notes?: string; }
 interface Depense { date: string; categorie: string; sous_categorie: string; montant: number; }
-interface Livret  { poche: string; montant: number; date: string; }
-interface Position { poche: string; quantite: number; prix_achat: number; date_achat?: string; }
+interface Livret  { poche: string; montant: number; date: string; notes?: string; }
+interface Position { poche: string; ticker: string; quantite: number; prix_achat: number; date_achat?: string; sous_categorie?: string; }
+interface Vente    { poche: string; ticker: string; quantite: number; prix_achat: number; pnl: number; date_vente: string; }
+interface Versement{ poche: string; montant: number; date: string; }
+interface Dividende{ poche: string; montant: number; date: string; }
+interface ScpiVal  { poche: string; ticker: string; mois: string; valeur_unit: number; }
+
+function buildScpiMapD(vals: ScpiVal[]): Record<string, Record<string, number>> {
+  const m: Record<string, Record<string, number>> = {};
+  for (const v of vals) { if (!m[v.ticker]) m[v.ticker] = {}; m[v.ticker][v.mois] = v.valeur_unit; }
+  return m;
+}
+function scpiPriceD(map: Record<string, Record<string, number>>, ticker: string, month: string, fallback: number): number {
+  const mm = map[ticker] ?? {};
+  const keys = Object.keys(mm).filter(k => k <= month).sort();
+  return keys.length ? mm[keys[keys.length - 1]] : fallback;
+}
 
 type Page = "dashboard" | "depenses" | "fiches" | "patrimoine" | "parametres";
 
@@ -40,10 +56,14 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
   const [mois, setMois]           = useState(curMonth);
   const [salaires, setSalaires]   = useState<Salaire[]>([]);
   const [depenses, setDepenses]   = useState<Depense[]>([]);
-  const [livrets, setLivrets]     = useState<Livret[]>([]);
-  const [positions, setPositions] = useState<Position[]>([]);
-  const [expSal, setExpSal]       = useState(false);
-  const [brushDash, setBrushDash] = useState<{start:number;end:number}|null>(null);
+  const [livrets, setLivrets]         = useState<Livret[]>([]);
+  const [positions, setPositions]     = useState<Position[]>([]);
+  const [ventes, setVentes]           = useState<Vente[]>([]);
+  const [versements, setVersements]   = useState<Versement[]>([]);
+  const [dividendes, setDividendes]   = useState<Dividende[]>([]);
+  const [scpiVals, setScpiVals]       = useState<ScpiVal[]>([]);
+  const [expSal, setExpSal]           = useState(false);
+  const [brushDash, setBrushDash]     = useState<{start:number;end:number}|null>(null);
 
   const loadDepenses = useCallback((m: string) => {
     invoke<Depense[]>("get_depenses", { mois: m }).then(setDepenses).catch(() => setDepenses([]));
@@ -53,6 +73,10 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
     invoke<Salaire[]>("get_salaires").then(setSalaires).catch(console.error);
     invoke<Livret[]>("get_livrets").then(setLivrets).catch(console.error);
     invoke<Position[]>("get_positions", {}).then(setPositions).catch(console.error);
+    invoke<Vente[]>("get_ventes").then(setVentes).catch(console.error);
+    invoke<Versement[]>("get_versements").then(setVersements).catch(console.error);
+    invoke<Dividende[]>("get_dividendes").then(setDividendes).catch(console.error);
+    invoke<ScpiVal[]>("get_scpi_valuations").then(setScpiVals).catch(console.error);
   }, []);
 
   useEffect(() => { loadDepenses(mois); }, [mois, loadDepenses]);
@@ -70,10 +94,68 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
   const salaireMois = salaires.find(s => s.employeur !== "_PRIME" && s.date.slice(0, 7) === mois) ?? null;
   const totalDepenses = depenses.reduce((s, d) => s + d.montant, 0);
 
+  // ── Livrets au mois sélectionné ───────────────────────────────────────────────
+  const isInteret = (l: Livret) => (l.notes ?? "").startsWith("[INTERET");
   const latestLivrets: Record<string, Livret> = {};
-  livrets.forEach(l => { if (!latestLivrets[l.poche] || l.date > latestLivrets[l.poche].date) latestLivrets[l.poche] = l; });
+  livrets.filter(l => !isInteret(l) && l.date.slice(0, 7) <= mois)
+    .forEach(l => { if (!latestLivrets[l.poche] || l.date > latestLivrets[l.poche].date) latestLivrets[l.poche] = l; });
   const totalLivrets = Object.values(latestLivrets).reduce((s, l) => s + l.montant, 0);
-  const totalInvesti = positions.reduce((s, p) => s + p.quantite * p.prix_achat, 0);
+
+  // ── Portfolio value au mois sélectionné (valeur de marché) ────────────────────
+  const scpiPriceMap = useMemo(() => buildScpiMapD(scpiVals), [scpiVals]);
+  const allTickers = useMemo(() => {
+    const skip = new Set(positions.filter(p => p.sous_categorie === "fond" || p.sous_categorie === "scp").map(p => p.ticker));
+    return [...new Set(positions.map(p => p.ticker))].filter(t => !skip.has(t));
+  }, [positions]);
+  const fromMonthD = useMemo(() => {
+    const ds = positions.map(p => p.date_achat?.slice(0, 7) ?? "").filter(Boolean).sort();
+    return ds[0] ?? curMonth;
+  }, [positions]);
+  const { getPrice: _getPriceD } = useQuotes(allTickers, fromMonthD);
+  const getPriceD = useCallback((ticker: string, month: string, pru = 0): number => {
+    const p = positions.find(pos => pos.ticker === ticker);
+    const sc = p?.sous_categorie;
+    if (sc === "fond") return 1.0;
+    if (sc === "scp") return scpiPriceD(scpiPriceMap, ticker, month, pru);
+    return _getPriceD(ticker, month, pru);
+  }, [positions, scpiPriceMap, _getPriceD]);
+
+  const totalPortfolioValue = useMemo(() => {
+    let total = 0;
+    POCHES.forEach(p => {
+      type Ev = { date: string; type: "buy" | "sell"; ticker: string; sc: string; qty: number; price: number };
+      const evs: Ev[] = [
+        ...positions.filter(pos => pos.poche === p.key && (pos.date_achat ?? "").slice(0, 7) <= mois)
+          .map(pos => ({ date: pos.date_achat ?? "", type: "buy" as const, ticker: pos.ticker, sc: pos.sous_categorie ?? "actions", qty: pos.quantite, price: pos.prix_achat })),
+        ...ventes.filter(v => v.poche === p.key && v.date_vente.slice(0, 7) <= mois)
+          .map(v => ({ date: v.date_vente, type: "sell" as const, ticker: v.ticker, sc: "", qty: v.quantite, price: 0 })),
+      ].sort((a, b) => a.date.localeCompare(b.date));
+      const byT: Record<string, { q: number; inv: number }> = {};
+      evs.forEach(ev => {
+        if (ev.type === "buy") {
+          if (!byT[ev.ticker]) byT[ev.ticker] = { q: 0, inv: 0 };
+          byT[ev.ticker].q += ev.qty; byT[ev.ticker].inv += ev.qty * ev.price;
+        } else if (byT[ev.ticker]) {
+          const pru = byT[ev.ticker].q > 0 ? byT[ev.ticker].inv / byT[ev.ticker].q : 0;
+          byT[ev.ticker].q = Math.max(0, byT[ev.ticker].q - ev.qty);
+          byT[ev.ticker].inv = Math.max(0, byT[ev.ticker].inv - ev.qty * pru);
+          if (byT[ev.ticker].q <= 1e-9) delete byT[ev.ticker];
+        }
+      });
+      const marketVal = Object.entries(byT).reduce((s, [t, d]) => {
+        if (d.q <= 1e-9) return s;
+        return s + d.q * getPriceD(t, mois, d.q > 0 ? d.inv / d.q : 0);
+      }, 0);
+      const pocheCost = Object.values(byT).reduce((s, d) => s + d.inv, 0);
+      const versTotal = versements.filter(v => v.poche === p.key && v.date.slice(0, 7) <= mois).reduce((s, v) => s + v.montant, 0);
+      const pnlReal   = ventes.filter(v => v.poche === p.key && v.date_vente.slice(0, 7) <= mois).reduce((s, v) => s + v.pnl, 0);
+      const divTotal  = dividendes.filter(d => d.poche === p.key && d.date.slice(0, 7) <= mois).reduce((s, d) => s + d.montant, 0);
+      const esp = Math.max(0, versTotal + pnlReal + divTotal - pocheCost);
+      total += marketVal + esp;
+    });
+    return total;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [positions, ventes, versements, dividendes, mois, getPriceD]);
 
   const tauxEpargne = salaireMois && salaireMois.salaire_net > 0
     ? Math.max(0, ((salaireMois.salaire_net - totalDepenses) / salaireMois.salaire_net) * 100)
@@ -171,8 +253,8 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
           </div>
         )}
         <div className="stat-card sc-lav" style={{ cursor: "pointer" }} onClick={() => onNavigate("patrimoine")}>
-          <div className="sc-label">Patrimoine financier</div>
-          <div className="sc-value pos">{fmt(totalLivrets + totalInvesti)}</div>
+          <div className="sc-label">Patrimoine financier · {mois}</div>
+          <div className="sc-value pos">{fmt(totalLivrets + totalPortfolioValue)}</div>
           <div className="sc-sub">Livrets + Investissements</div>
         </div>
       </div>
