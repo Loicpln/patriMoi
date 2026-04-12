@@ -32,6 +32,13 @@ export const POCHE_COLOR: Record<string, string> = Object.fromEntries(
   POCHES.map(p => [p.key, p.color])
 );
 
+// ── Vue globale — couleurs des groupes agrégés ─────────────────
+// Utilisées dans GlobalRecap (camembert + graphique)
+export const GLOBAL_GROUP_COLORS = {
+  livrets:         "#e6a817", // Ensemble livrets (ton or)
+  investissements: "#3a7bd5", // Ensemble investissements (ton bleu)
+} as const;
+
 // ── Sous-catégories d'investissement ──────────────────────────
 export const INVEST_SUBCATS = [
   { key: "actions",        label: "Actions",          color: "#3a7bd5" },

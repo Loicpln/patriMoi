@@ -556,7 +556,7 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
   const pieNode = (h: number) => pieInner.length === 0
     ? <div className="empty">Aucune position pour ce mois</div>
     : <NestedPie inner={pieInner} outer={pieOuter} total={pieTotal} fmt={fmt} h={h}
-        toggleLabel={pieToggle === "investi" ? "↔ Investi" : "↔ Valeur"}
+        toggleLabel={pieToggle === "investi" ? "↔ Investi" : "↔ Valorisation"}
         onToggle={() => setPieToggle(v => v === "investi" ? "valeur" : "investi")}/>;
 
   // Stacked area: value per ticker per day (actual daily close prices)

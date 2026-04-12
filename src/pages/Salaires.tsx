@@ -1,7 +1,7 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
-import { ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Brush } from "recharts";
-import { TOOLTIP_STYLE, tickerColor } from "../constants";
+import { AreaChart, Area, ComposedChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Brush, Customized } from "recharts";
+import { TOOLTIP_STYLE, PRIME_TYPE_COLORS, tickerColor } from "../constants";
 
 interface Salaire {
   id?: number;
@@ -77,22 +77,12 @@ export default function Salaires() {
   const [brushPrime, setBrushPrime] = useState<{start:number;end:number}|null>(null);
 
   const load = () => invoke<Salaire[]>("get_salaires").then(setSalaires).catch(console.error);
+  useEffect(() => { load(); }, []);
 
   const deleteSalaire = async (id: number) => { await invoke("delete_salaire", { id }); load(); };
 
   const fichesNormales = useMemo(() => salaires.filter(s => s.employeur !== "_PRIME"), [salaires]);
   const primes = useMemo(() => salaires.filter(s => s.employeur === "_PRIME"), [salaires]);
-
-  const salChartData = useMemo(() => {
-    const byM: Record<string, { net: number; brut: number }> = {};
-    fichesNormales.forEach(s => {
-      const m = s.date.slice(0, 7);
-      if (!byM[m]) byM[m] = { net: 0, brut: 0 };
-      byM[m].net  += s.salaire_net;
-      byM[m].brut += s.salaire_brut;
-    });
-    return Object.entries(byM).sort(([a],[b]) => a.localeCompare(b)).slice(-12).map(([mois, v]) => ({ mois, ...v }));
-  }, [fichesNormales]);
 
   const activePrimeTypes = useMemo(() => {
     const types = new Set<string>();
@@ -103,6 +93,37 @@ export default function Salaires() {
     return [...types];
   }, [primes]);
 
+  // Combined evo data: net + prime types per month (same shape as Dashboard evoSal)
+  const salChartData = useMemo(() => {
+    const allEntries = salaires.filter(s => s.date);
+    if (!allEntries.length) return [];
+    const sorted = [...allEntries].sort((a, b) => a.date.localeCompare(b.date));
+    const allMonths: string[] = [];
+    const [fy, fm] = sorted[0].date.slice(0, 7).split("-").map(Number);
+    const now = new Date();
+    let y = fy, m = fm;
+    while (y < now.getFullYear() || (y === now.getFullYear() && m <= now.getMonth() + 1)) {
+      allMonths.push(`${y}-${String(m).padStart(2,"0")}`);
+      m++; if (m > 12) { m = 1; y++; }
+    }
+    const netByM: Record<string, number> = {};
+    fichesNormales.forEach(s => { const mo = s.date.slice(0,7); netByM[mo] = (netByM[mo]??0) + s.salaire_net; });
+    const primeByTypeM: Record<string, Record<string, number>> = {};
+    primes.forEach(p => {
+      const mo = p.date.slice(0,7);
+      const t = (p.notes ?? "").replace(/\[PRIME:([^\]]+)\].*/, "$1").trim();
+      if (!t) return;
+      if (!primeByTypeM[t]) primeByTypeM[t] = {};
+      primeByTypeM[t][mo] = (primeByTypeM[t][mo]??0) + (p.primes??0);
+    });
+    return allMonths.map(mo => {
+      const entry: any = { mois: mo, net: netByM[mo] ?? null };
+      activePrimeTypes.forEach(type => { entry[type] = primeByTypeM[type]?.[mo] ?? null; });
+      return entry;
+    });
+  }, [salaires, fichesNormales, primes, activePrimeTypes]);
+
+  // Prime-only chart data (cumulative, for the "Primes & Aides" second chart)
   const primeChartData = useMemo(() => {
     if (!primes.length) return [];
     const byMonth: Record<string, Record<string, number>> = {};
@@ -133,33 +154,32 @@ export default function Salaires() {
     : 0;
   const totalPrimes = primes.reduce((s, x) => s + (x.primes ?? 0), 0);
 
-  const SalTooltip = ({ active, payload, label }: any) => {
-    if (!active || !payload?.length) return null;
-    const items = payload.filter((p: any) => p.value != null && p.value > 0);
-    if (!items.length) return null;
-    const COLORS: Record<string, string> = { net: "var(--teal)", brut: "var(--text-1)" };
-    const LABELS: Record<string, string> = { net: "Salaire net", brut: "Salaire brut" };
-    return (
-      <div style={{ ...TOOLTIP_STYLE, padding: "10px 14px", minWidth: 180 }}>
-        {label && <div style={{ color: "var(--text-2)", fontSize: 9, marginBottom: 8, letterSpacing: ".05em" }}>{label}</div>}
-        {items.map((p: any, i: number) => (
-          <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 2 }}>
-            <span style={{ color: COLORS[p.dataKey] ?? "var(--text-1)", fontSize: 10 }}>{LABELS[p.dataKey] ?? p.dataKey}</span>
-            <span style={{ color: "var(--text-0)", fontSize: 10 }}>{fmt(Number(p.value))}</span>
-          </div>
-        ))}
-      </div>
-    );
-  };
+  function renderIsolatedDot(data: any[], dataKey: string, color: string) {
+    return (props: any) => {
+      const { cx, cy, index } = props;
+      if (cx == null || cy == null) return <g/>;
+      const prev = data[index - 1]?.[dataKey] ?? null;
+      const next = data[index + 1]?.[dataKey] ?? null;
+      const cur  = data[index]?.[dataKey] ?? null;
+      if (cur != null && prev == null && next == null)
+        return <circle cx={cx} cy={cy} r={3.5} fill={color} stroke="var(--bg-0)" strokeWidth={1.5}/>;
+      return <g/>;
+    };
+  }
 
   const PrimeTooltip = ({ active, payload, label }: any) => {
     if (!active || !payload?.length) return null;
     const row = payload[0]?.payload;
     const items = payload.filter((p: any) => p.value != null && p.value > 0);
     if (!items.length) return null;
+    const total = items.reduce((s: number, p: any) => s + Number(p.value), 0);
     return (
       <div style={{ ...TOOLTIP_STYLE, padding: "10px 14px", minWidth: 210 }}>
-        {label && <div style={{ color: "var(--text-2)", fontSize: 9, marginBottom: 8, letterSpacing: ".05em" }}>{label}</div>}
+        {label && <div style={{ color: "var(--text-2)", fontSize: 9, marginBottom: 6, letterSpacing: ".05em" }}>{label}</div>}
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 8, paddingBottom: 6, borderBottom: "1px solid var(--border)" }}>
+          <span style={{ color: "var(--text-1)", fontSize: 10 }}>Total revenus</span>
+          <span style={{ color: "var(--text-0)", fontSize: 11, fontWeight: 700 }}>{fmt(total)}</span>
+        </div>
         {items.map((p: any, i: number) => {
           const cum = row?.[`_cum_${p.name}`] ?? 0;
           return (
@@ -176,32 +196,86 @@ export default function Salaires() {
     );
   };
 
+  const MN_SHORT = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
+
   const charts: { key: "sal"|"prime"; title: string; node: (h: number, isExp: boolean) => React.ReactNode }[] = [];
   if (salChartData.length > 0) charts.push({
-    key: "sal", title: "Évolution du salaire net",
-    node: (h, isExp) => (
-      <ResponsiveContainer width="100%" height={h}>
-        <ComposedChart data={salChartData} margin={{ top: 4, right: 8, bottom: isExp ? 28 : 0, left: 0 }}>
-          <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
-          <XAxis dataKey="mois" tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}/>
-          <YAxis tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
-            tickFormatter={v => v >= 1000 ? `${(v/1000).toFixed(1)}k€` : `${v}€`} width={45}/>
-          <Tooltip content={<SalTooltip/>}/>
-          <Bar dataKey="brut" name="brut" fill="var(--text-2)" radius={[3,3,0,0]} opacity={0.5}/>
-          <Bar dataKey="net"  name="net"  fill="var(--teal)"   radius={[3,3,0,0]}/>
-          {isExp && <Brush dataKey="mois" height={22} travellerWidth={6}
-            stroke="var(--border)" fill="var(--bg-2)"
-            startIndex={brushSal?.start ?? 0}
-            endIndex={brushSal?.end ?? salChartData.length - 1}
-            onChange={(range: any) => {
-              const { startIndex: s, endIndex: e } = range ?? {};
-              if (s === undefined || e === undefined) return;
-              setBrushSal(s === 0 && e === salChartData.length - 1 ? null : { start: s, end: e });
-            }}
-            tickFormatter={() => ""}/>}
-        </ComposedChart>
-      </ResponsiveContainer>
-    ),
+    key: "sal", title: "Évolution du salaire net + primes",
+    node: (h, isExp) => {
+      const d = isExp ? salChartData : (brushSal ? salChartData.slice(brushSal.start, brushSal.end + 1) : salChartData);
+      return (
+        <ResponsiveContainer width="100%" height={h}>
+          <AreaChart data={d} margin={{ left: 0, right: 5, top: 5, bottom: isExp ? 28 : 0 }}>
+            <defs>
+              <linearGradient id="gSalP" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%"  stopColor="#5fa89e" stopOpacity={.4}/>
+                <stop offset="95%" stopColor="#5fa89e" stopOpacity={0}/>
+              </linearGradient>
+              {activePrimeTypes.map(type => {
+                const c = PRIME_TYPE_COLORS[type] ?? tickerColor(type);
+                return (
+                  <linearGradient key={type} id={`gSP_${type.replace(/[^a-zA-Z0-9]/g,"_")}`} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%"  stopColor={c} stopOpacity={.5}/>
+                    <stop offset="95%" stopColor={c} stopOpacity={0}/>
+                  </linearGradient>
+                );
+              })}
+            </defs>
+            <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
+            <XAxis dataKey="mois" tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
+              interval={Math.max(0, Math.floor(d.length / 7) - 1)}
+              tickFormatter={m => { const mo = parseInt(m.slice(5, 7)); return MN_SHORT[mo - 1]; }}/>
+            <YAxis tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
+              tickFormatter={v => v >= 1000 ? `${(v/1000).toFixed(1)}k€` : `${v}€`} width={45}/>
+            <Tooltip content={({ active, payload, label }: any) => {
+              if (!active || !payload?.length) return null;
+              const items = payload.filter((p: any) => p.value != null && p.value > 0);
+              if (!items.length) return null;
+              const total = items.reduce((s: number, p: any) => s + Number(p.value), 0);
+              return (
+                <div style={{ ...TOOLTIP_STYLE, padding: "10px 14px", minWidth: 180 }}>
+                  {label && <div style={{ color: "var(--text-2)", fontSize: 9, marginBottom: 6, letterSpacing: ".05em" }}>{label}</div>}
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 8, paddingBottom: 6, borderBottom: "1px solid var(--border)" }}>
+                    <span style={{ color: "var(--text-1)", fontSize: 10 }}>Total revenus</span>
+                    <span style={{ color: "var(--text-0)", fontSize: 11, fontWeight: 700 }}>{fmt(total)}</span>
+                  </div>
+                  {items.map((p: any, i: number) => {
+                    const col = p.dataKey === "net" ? "var(--teal)" : (PRIME_TYPE_COLORS[p.dataKey] ?? p.stroke ?? tickerColor(p.dataKey));
+                    const lbl = p.dataKey === "net" ? "Salaire net" : p.dataKey;
+                    return (
+                      <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 2 }}>
+                        <span style={{ color: col, fontSize: 10 }}>{lbl}</span>
+                        <span style={{ color: "var(--text-0)", fontSize: 10 }}>{fmt(Number(p.value))}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            }}/>
+            {activePrimeTypes.map(type => {
+              const c = PRIME_TYPE_COLORS[type] ?? tickerColor(type);
+              return (
+                <Area key={type} type="monotone" dataKey={type} stackId="s" name={type}
+                  stroke={c} strokeWidth={1.5} fill={`url(#gSP_${type.replace(/[^a-zA-Z0-9]/g,"_")})`}
+                  dot={renderIsolatedDot(d, type, c)} connectNulls={false}/>
+              );
+            })}
+            <Area type="monotone" dataKey="net" stackId="s" stroke="#5fa89e" strokeWidth={2} fill="url(#gSalP)"
+              dot={renderIsolatedDot(d, "net", "#5fa89e")} connectNulls={false}/>
+            {isExp && <Brush dataKey="mois" height={22} travellerWidth={6}
+              stroke="var(--border)" fill="var(--bg-2)"
+              startIndex={brushSal?.start ?? 0}
+              endIndex={brushSal?.end ?? salChartData.length - 1}
+              onChange={(range: any) => {
+                const { startIndex: s, endIndex: e } = range ?? {};
+                if (s === undefined || e === undefined) return;
+                setBrushSal(s === 0 && e === salChartData.length - 1 ? null : { start: s, end: e });
+              }}
+              tickFormatter={() => ""}/>}
+          </AreaChart>
+        </ResponsiveContainer>
+      );
+    },
   });
   if (primeChartData.length > 0) charts.push({
     key: "prime", title: "Primes & Aides",
@@ -210,7 +284,8 @@ export default function Salaires() {
         <ComposedChart data={primeChartData} margin={{ left: 0, right: 5, top: 5, bottom: isExp ? 28 : 0 }}>
           <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
           <XAxis dataKey="mois" tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
-            interval={Math.max(0, Math.floor(primeChartData.length / 6) - 1)}/>
+            interval={Math.max(0, Math.floor(primeChartData.length / 7) - 1)}
+            tickFormatter={m => { const mo = parseInt(m.slice(5, 7)); return MN_SHORT[mo - 1]; }}/>
           <YAxis tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
             tickFormatter={v => v >= 1000 ? `${(v/1000).toFixed(0)}k€` : `${v}€`} width={45}/>
           <Tooltip content={<PrimeTooltip/>}/>

@@ -431,9 +431,14 @@ export default function Fiches() {
     if (!active || !payload?.length) return null;
     const items = payload.filter((p: any) => p.value != null && p.value > 0);
     if (!items.length) return null;
+    const total = items.reduce((s: number, p: any) => s + Number(p.value), 0);
     return (
       <div style={{ ...TOOLTIP_STYLE, padding: "10px 14px", minWidth: 180 }}>
-        {label && <div style={{ color: "var(--text-2)", fontSize: 9, marginBottom: 8, letterSpacing: ".05em" }}>{label}</div>}
+        {label && <div style={{ color: "var(--text-2)", fontSize: 9, marginBottom: 6, letterSpacing: ".05em" }}>{label}</div>}
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 8, paddingBottom: 6, borderBottom: "1px solid var(--border)" }}>
+          <span style={{ color: "var(--text-1)", fontSize: 10 }}>Total revenus</span>
+          <span style={{ color: "var(--text-0)", fontSize: 11, fontWeight: 700 }}>{fmt(total)}</span>
+        </div>
         {items.map((p: any, i: number) => {
           const col = p.dataKey === "net" ? "var(--teal)" : (PRIME_TYPE_COLORS[p.dataKey] ?? p.stroke ?? tickerColor(p.dataKey));
           const lbl = p.dataKey === "net" ? "Salaire net" : p.dataKey;
@@ -533,9 +538,6 @@ export default function Fiches() {
                 <YAxis stroke="var(--text-2)" tick={{ fontSize: 9, fontFamily: "JetBrains Mono" }}
                   tickFormatter={v => `${(v/1000).toFixed(1)}k`} width={40}/>
                 <Tooltip content={<EvoTooltip/>}/>
-                <Area type="monotone" dataKey="net" stackId="s" name="net"
-                  stroke="#5fa89e" strokeWidth={2} fill="url(#gFNet)"
-                  dot={renderIsolatedDot(chartData, "net", "#5fa89e")} connectNulls={false}/>
                 {activePrimeTypes.map(type => {
                   const c = PRIME_TYPE_COLORS[type] ?? tickerColor(type);
                   return (
@@ -544,6 +546,9 @@ export default function Fiches() {
                       dot={renderIsolatedDot(chartData, type, c)} connectNulls={false}/>
                   );
                 })}
+                <Area type="monotone" dataKey="net" stackId="s" name="net"
+                  stroke="#5fa89e" strokeWidth={2} fill="url(#gFNet)"
+                  dot={renderIsolatedDot(chartData, "net", "#5fa89e")} connectNulls={false}/>
                 {yearRange && (
                   <Customized component={(p: any) => {
                     const Nv = chartData.length; if (Nv <= 0) return null;

@@ -2,6 +2,18 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
 import { save, open as openDialog } from "@tauri-apps/api/dialog";
 import { writeTextFile, readTextFile } from "@tauri-apps/api/fs";
+import { POCHES } from "../constants";
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+function todayStr(): string {
+  return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+}
+
+function withDate(name: string): string {
+  // Insert date before the extension: pea.csv → pea_2024-01-15.csv
+  const dot = name.lastIndexOf(".");
+  return dot >= 0 ? `${name.slice(0, dot)}_${todayStr()}${name.slice(dot)}` : `${name}_${todayStr()}`;
+}
 
 // ── CSV utilities ──────────────────────────────────────────────────────────
 function esc(v: any): string {
@@ -132,7 +144,7 @@ async function importScpi(rows: string[][], replace: boolean): Promise<number> {
 // ── Export functions ───────────────────────────────────────────────────────
 async function exportDepenses() {
   const rows = await invoke<any[]>("get_depenses", {});
-  downloadCsv("depenses.csv", toCsv(
+  downloadCsv(withDate("depenses.csv"), toCsv(
     ["id", "date", "categorie", "sous_categorie", "libelle", "montant", "notes"],
     rows.map(r => [r.id, r.date, r.categorie, r.sous_categorie, r.libelle, r.montant, r.notes])
   ));
@@ -140,7 +152,7 @@ async function exportDepenses() {
 
 async function exportSalaires() {
   const rows = await invoke<any[]>("get_salaires");
-  downloadCsv("fiches_et_primes.csv", toCsv(
+  downloadCsv(withDate("fiches_et_primes.csv"), toCsv(
     ["id", "date", "type", "salaire_brut", "salaire_net", "primes", "employeur", "notes"],
     rows.map(r => {
       const isP = r.employeur === "_PRIME";
@@ -155,7 +167,7 @@ async function exportSalaires() {
 
 async function exportLivrets() {
   const rows = await invoke<any[]>("get_livrets");
-  downloadCsv("livrets.csv", toCsv(
+  downloadCsv(withDate("livrets.csv"), toCsv(
     ["id", "poche", "date", "montant", "taux", "notes"],
     rows.map(r => [r.id, r.poche, r.date, r.montant, r.taux, r.notes])
   ));
@@ -176,16 +188,17 @@ async function exportPoche(poche: string, filename: string) {
     ...dividendes.map(r => ["Dividende", r.id, r.date,        r.ticker, "", "", "", "", "", "", r.montant, r.notes ?? ""]),
     ...versements.map(r => ["Versement", r.id, r.date,        "", "", "", "", "", "", "", r.montant, r.notes ?? ""]),
   ];
-  downloadCsv(filename, toCsv(headers, rows));
+  downloadCsv(withDate(filename), toCsv(headers, rows));
 }
 
 async function exportScpiValuations() {
   const rows = await invoke<any[]>("get_scpi_valuations", {});
-  downloadCsv("scpi_valorisations.csv", toCsv(
+  downloadCsv(withDate("scpi_valorisations.csv"), toCsv(
     ["id", "poche", "ticker", "mois", "valeur_unit"],
     rows.map(r => [r.id, r.poche, r.ticker, r.mois, r.valeur_unit])
   ));
 }
+
 
 // ── Export button ──────────────────────────────────────────────────────────
 function ExportBtn({ label, onExport }: { label: string; onExport: () => Promise<void> }) {
@@ -315,6 +328,8 @@ export default function Parametres() {
   const [pdfFolder, setPdfFolder] = useState("");
   const [saved, setSaved] = useState(false);
   const [importPending, setImportPending] = useState<ImportPending | null>(null);
+  const [exportAllState, setExportAllState] = useState<"idle"|"loading"|"done"|"error">("idle");
+  const [exportAllMsg, setExportAllMsg] = useState("");
 
   useEffect(() => {
     invoke<string>("get_parametre", { cle: "pdf_folder" }).then(setPdfFolder).catch(() => {});
@@ -370,31 +385,31 @@ export default function Parametres() {
     },
     {
       label: "PEA",
-      color: "var(--lavender)",
+      color: POCHES.find(p => p.key === "pea")!.color,
       exports: [{ name: "pea.csv", fn: () => exportPoche("pea", "pea.csv") }],
       importFn: importPoche("pea"),
     },
     {
       label: "Assurance Vie",
-      color: "var(--lavender)",
+      color: POCHES.find(p => p.key === "av")!.color,
       exports: [{ name: "assurance_vie.csv", fn: () => exportPoche("av", "assurance_vie.csv") }],
       importFn: importPoche("av"),
     },
     {
       label: "CTO",
-      color: "var(--lavender)",
+      color: POCHES.find(p => p.key === "cto")!.color,
       exports: [{ name: "cto.csv", fn: () => exportPoche("cto", "cto.csv") }],
       importFn: importPoche("cto"),
     },
     {
       label: "Wallet Crypto",
-      color: "var(--lavender)",
+      color: POCHES.find(p => p.key === "crypto")!.color,
       exports: [{ name: "crypto.csv", fn: () => exportPoche("crypto", "crypto.csv") }],
       importFn: importPoche("crypto"),
     },
     {
       label: "Valorisations SCPI",
-      color: "var(--lavender)",
+      color: "var(--text-2)",
       exports: [{ name: "scpi_valorisations.csv", fn: exportScpiValuations }],
       importFn: importScpi,
     },
@@ -448,7 +463,32 @@ export default function Parametres() {
       <div className="table-card" style={{ maxWidth: 600, marginTop: 20 }}>
         <div className="table-head">
           <span className="table-head-title">Export / Import CSV</span>
-          <span style={{ color: "var(--text-2)", fontSize: 11 }}>Toutes les données en base</span>
+          <button
+            className="btn btn-ghost btn-sm"
+            style={{ fontSize: 10, minWidth: 110, opacity: exportAllState === "loading" ? 0.6 : 1,
+              borderColor: exportAllState === "done" ? "var(--teal)" : exportAllState === "error" ? "var(--rose)" : undefined,
+              color: exportAllState === "done" ? "var(--teal)" : exportAllState === "error" ? "var(--rose)" : undefined }}
+            disabled={exportAllState === "loading"}
+            title={exportAllMsg || "Exporter tous les CSV dans un dossier"}
+            onClick={async () => {
+              setExportAllState("loading");
+              setExportAllMsg("");
+              try {
+                const subfolder = await invoke<string>("choose_export_folder");
+                if (!subfolder) { setExportAllState("idle"); return; }
+                const written = await invoke<string[]>("export_all_csv", { subfolder });
+                setExportAllMsg(`${written.length} fichiers → ${subfolder}`);
+                setExportAllState("done");
+                setTimeout(() => { setExportAllState("idle"); setExportAllMsg(""); }, 5000);
+              } catch (e) {
+                setExportAllMsg(String(e));
+                setExportAllState("error");
+                setTimeout(() => { setExportAllState("idle"); setExportAllMsg(""); }, 4000);
+              }
+            }}
+          >
+            {exportAllState === "loading" ? "…" : exportAllState === "done" ? `✓ ${exportAllMsg.split(" fichiers")[0]} fichiers` : exportAllState === "error" ? "⚠ Erreur" : "↓ Tout exporter"}
+          </button>
         </div>
         <div style={{ padding: "8px 0" }}>
           {EXPORTS.map(({ label, color, exports, importFn }) => (

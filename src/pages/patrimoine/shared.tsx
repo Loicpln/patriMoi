@@ -65,13 +65,21 @@ export function ChartGrid({charts}:{charts:{key:string;title:string;node:(h:numb
 export function NestedPie({inner,outer,total,fmt,toggleLabel,onToggle,h=260}:{
   inner:{name:string;value:number;color:string}[];
   outer:{name:string;value:number;color:string;group?:string}[];
-  total:number;fmt:(n:number)=>string;toggleLabel:string;onToggle:()=>void;h?:number;
+  total:number;fmt:(n:number)=>string;toggleLabel?:string;onToggle?:()=>void;h?:number;
 }) {
   const [selectedGroup,setSelectedGroup]=useState<string|null>(null);
 
+  // Order outer segments to match inner ring order (so each outer arc aligns with its inner arc)
+  const innerOrder=Object.fromEntries(inner.map((e,i)=>[e.name,i]));
+  const orderedOuter=[...outer].sort((a,b)=>{
+    const ia=innerOrder[a.group??a.name]??999;
+    const ib=innerOrder[b.group??b.name]??999;
+    return ia-ib;
+  });
+
   const filteredOuter=selectedGroup
-    ?outer.filter(o=>o.group===selectedGroup)
-    :outer;
+    ?orderedOuter.filter(o=>o.group===selectedGroup)
+    :orderedOuter;
 
   const CT=({active,payload}:any)=>{
     if(!active||!payload?.length)return null;
@@ -88,8 +96,10 @@ export function NestedPie({inner,outer,total,fmt,toggleLabel,onToggle,h=260}:{
   const ir=Math.round(h*0.21), or1=Math.round(h*0.32), ir2=or1, or2=Math.round(h*0.42);
   return(
     <div style={{position:"relative",height:h}}>
-      <button className="btn btn-ghost btn-sm" style={{position:"absolute",top:0,right:0,zIndex:10,fontSize:10}}
-        onClick={e=>{e.stopPropagation();onToggle();}}>{toggleLabel}</button>
+      {toggleLabel&&(
+        <button className="btn btn-ghost btn-sm" style={{position:"absolute",top:0,right:0,zIndex:10,fontSize:10}}
+          onClick={e=>{e.stopPropagation();onToggle?.();}}>{toggleLabel}</button>
+      )}
       <ResponsiveContainer width="100%" height={h}>
         <PieChart>
           <Pie data={inner} cx="50%" cy="50%" innerRadius={ir} outerRadius={or1} paddingAngle={0} dataKey="value"

@@ -22,7 +22,7 @@ fn main() {
             commands::get_ventes, commands::sell_position, commands::delete_vente,
             commands::get_dividendes, commands::add_dividende, commands::delete_dividende,
             commands::get_versements, commands::add_versement, commands::delete_versement,
-            commands::get_parametre, commands::set_parametre, commands::choose_folder,
+            commands::get_parametre, commands::set_parametre, commands::choose_folder, commands::choose_export_folder, commands::export_all_csv,
             commands::fetch_url,
             commands::get_scpi_valuations, commands::add_scpi_valuation, commands::delete_scpi_valuation,
             commands::import_depenses, commands::import_salaires, commands::import_livrets,

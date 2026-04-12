@@ -334,6 +334,163 @@ pub fn choose_folder() -> Result<String, String> {
     Ok(String::from_utf8(output.stdout).map_err(|e| e.to_string())?.trim().to_string())
 }
 
+/// Opens a folder picker, creates a dated subfolder (YYYY-MM-DD) inside it, and returns its path.
+/// The JS side can then write files directly into the returned path.
+#[tauri::command]
+pub fn choose_export_folder() -> Result<String, String> {
+    let output = std::process::Command::new("osascript")
+        .args(["-e","POSIX path of (choose folder with prompt \"Choisir le dossier de destination pour l'export\")"])
+        .output().map_err(|e| e.to_string())?;
+    let parent = String::from_utf8(output.stdout).map_err(|e| e.to_string())?.trim().to_string();
+    if parent.is_empty() {
+        return Ok(String::new()); // user cancelled
+    }
+    // Build date string YYYY-MM-DD
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_secs();
+    let days = now / 86400;
+    let (y, m, d) = days_to_ymd(days as i64);
+    let date_str = format!("{:04}-{:02}-{:02}", y, m, d);
+    // Strip trailing slash from parent
+    let parent = parent.trim_end_matches('/');
+    let subfolder = format!("{}/{}", parent, date_str);
+    std::fs::create_dir_all(&subfolder).map_err(|e| format!("Impossible de créer le dossier '{}': {}", subfolder, e))?;
+    Ok(subfolder)
+}
+
+/// Gregorian calendar: convert days-since-epoch to (year, month, day).
+fn days_to_ymd(z: i64) -> (i64, u8, u8) {
+    let z = z + 719468;
+    let era = if z >= 0 { z } else { z - 146096 } / 146097;
+    let doe = z - era * 146097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    (y, m as u8, d as u8)
+}
+
+/// Reads all tables from the DB and writes CSV files into `subfolder`.
+/// Returns the list of filenames written.
+#[tauri::command]
+pub fn export_all_csv(subfolder: String, state: State<DbState>) -> Result<Vec<String>, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let dir = std::path::Path::new(&subfolder);
+    let mut written: Vec<String> = Vec::new();
+
+    fn esc(v: &str) -> String {
+        if v.contains(',') || v.contains('"') || v.contains('\n') {
+            format!("\"{}\"", v.replace('"', "\"\""))
+        } else { v.to_string() }
+    }
+    fn row(fields: &[String]) -> String { fields.iter().map(|f| esc(f)).collect::<Vec<_>>().join(",") }
+    fn write_csv(dir: &std::path::Path, name: &str, header: &str, lines: Vec<String>) -> Result<(), String> {
+        let path = dir.join(name);
+        let mut content = "\u{FEFF}".to_string(); // BOM
+        content.push_str(header);
+        content.push('\n');
+        for l in lines { content.push_str(&l); content.push('\n'); }
+        std::fs::write(&path, content).map_err(|e| format!("{}: {}", name, e))
+    }
+
+    // ── Dépenses ──────────────────────────────────────────────────────────
+    {
+        let mut stmt = conn.prepare("SELECT id,date,categorie,sous_categorie,libelle,montant,notes FROM depenses ORDER BY date DESC").map_err(|e| e.to_string())?;
+        let lines: Vec<String> = stmt.query_map([], |r| {
+            let id: Option<i64> = r.get(0)?; let montant: f64 = r.get(5)?;
+            Ok(vec![id.map_or("".into(),|v|v.to_string()),r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,String>(3)?,r.get::<_,String>(4)?,format!("{:.2}",montant),r.get::<_,Option<String>>(6)?.unwrap_or_default()])
+        }).map_err(|e|e.to_string())?.filter_map(|r|r.ok()).map(|f|row(&f)).collect();
+        write_csv(dir,"depenses.csv","id,date,categorie,sous_categorie,libelle,montant,notes",lines)?;
+        written.push("depenses.csv".into());
+    }
+
+    // ── Salaires ──────────────────────────────────────────────────────────
+    {
+        let mut stmt = conn.prepare("SELECT id,date,salaire_brut,salaire_net,primes,employeur,notes FROM salaires ORDER BY date DESC").map_err(|e|e.to_string())?;
+        let lines: Vec<String> = stmt.query_map([],|r|{
+            let id:Option<i64>=r.get(0)?; let brut:f64=r.get(2)?; let net:f64=r.get(3)?;
+            let primes:Option<f64>=r.get(4)?; let emp:String=r.get(5)?; let notes:Option<String>=r.get(6)?;
+            let is_prime=emp=="_PRIME";
+            let notes_str=notes.clone().unwrap_or_default();
+            let type_str=if is_prime {
+                let re=notes_str.find('[').and_then(|_|notes_str.find(']')).map(|e|notes_str[7..e].to_string()).unwrap_or("Prime".into());
+                re
+            } else {"Fiche de paie".into()};
+            let notes_clean=if is_prime { let s=&notes_str; let end=s.find("] ").map(|i|i+2).unwrap_or(0); s[end..].to_string() } else { notes_str };
+            Ok(vec![id.map_or("".into(),|v|v.to_string()),r.get::<_,String>(1)?,type_str,format!("{:.2}",brut),format!("{:.2}",net),primes.map_or("".into(),|v|format!("{:.2}",v)),if is_prime{"".into()}else{emp},notes_clean])
+        }).map_err(|e|e.to_string())?.filter_map(|r|r.ok()).map(|f|row(&f)).collect();
+        write_csv(dir,"fiches_et_primes.csv","id,date,type,salaire_brut,salaire_net,primes,employeur,notes",lines)?;
+        written.push("fiches_et_primes.csv".into());
+    }
+
+    // ── Livrets ───────────────────────────────────────────────────────────
+    {
+        let mut stmt = conn.prepare("SELECT id,poche,date,montant,taux,notes FROM livrets ORDER BY date DESC").map_err(|e|e.to_string())?;
+        let lines: Vec<String> = stmt.query_map([],|r|{
+            let id:Option<i64>=r.get(0)?; let montant:f64=r.get(3)?; let taux:f64=r.get(4)?;
+            Ok(vec![id.map_or("".into(),|v|v.to_string()),r.get::<_,String>(1)?,r.get::<_,String>(2)?,format!("{:.2}",montant),format!("{}",taux),r.get::<_,Option<String>>(5)?.unwrap_or_default()])
+        }).map_err(|e|e.to_string())?.filter_map(|r|r.ok()).map(|f|row(&f)).collect();
+        write_csv(dir,"livrets.csv","id,poche,date,montant,taux,notes",lines)?;
+        written.push("livrets.csv".into());
+    }
+
+    // ── Poches ────────────────────────────────────────────────────────────
+    let poche_header="type,id,date,ticker,nom,sous_categorie,quantite,prix_achat,prix_vente,pnl,montant,notes";
+    for poche_key in &["pea","av","cto","crypto"] {
+        let _filename = match *poche_key { "av" => "assurance_vie.csv", _ => &format!("{}.csv",poche_key) };
+        let _filename = match *poche_key { "av" => "assurance_vie.csv".to_string(), k => format!("{}.csv",k) };
+        let mut lines: Vec<String> = Vec::new();
+        // Positions
+        let mut stmt=conn.prepare("SELECT id,date_achat,ticker,nom,sous_categorie,quantite,prix_achat,notes FROM positions WHERE poche=?1 ORDER BY date_achat").map_err(|e|e.to_string())?;
+        let rows=stmt.query_map([poche_key],|r|{
+            let id:Option<i64>=r.get(0)?; let qty:f64=r.get(5)?; let px:f64=r.get(6)?;
+            Ok(vec!["Position".into(),id.map_or("".into(),|v|v.to_string()),r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,String>(3)?,r.get::<_,Option<String>>(4)?.unwrap_or_default(),format!("{}",qty),format!("{}",px),"".into(),"".into(),"".into(),r.get::<_,Option<String>>(7)?.unwrap_or_default()])
+        }).map_err(|e|e.to_string())?;
+        for r in rows { lines.push(row(&r.map_err(|e|e.to_string())?)); }
+        // Ventes
+        let mut stmt=conn.prepare("SELECT id,date_vente,ticker,nom,quantite,prix_achat,prix_vente,pnl,notes FROM ventes WHERE poche=?1 ORDER BY date_vente").map_err(|e|e.to_string())?;
+        let rows=stmt.query_map([poche_key],|r|{
+            let id:Option<i64>=r.get(0)?; let qty:f64=r.get(4)?; let pa:f64=r.get(5)?; let pv:f64=r.get(6)?; let pnl:f64=r.get(7)?;
+            Ok(vec!["Vente".into(),id.map_or("".into(),|v|v.to_string()),r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,String>(3)?,String::new(),format!("{}",qty),format!("{}",pa),format!("{}",pv),format!("{}",pnl),String::new(),r.get::<_,Option<String>>(8)?.unwrap_or_default()])
+        }).map_err(|e|e.to_string())?;
+        for r in rows { lines.push(row(&r.map_err(|e|e.to_string())?)); }
+        // Dividendes
+        let mut stmt=conn.prepare("SELECT id,date,ticker,montant,notes FROM dividendes WHERE poche=?1 ORDER BY date").map_err(|e|e.to_string())?;
+        let rows=stmt.query_map([poche_key],|r|{
+            let id:Option<i64>=r.get(0)?; let m:f64=r.get(3)?;
+            Ok(vec!["Dividende".into(),id.map_or("".into(),|v|v.to_string()),r.get::<_,String>(1)?,r.get::<_,String>(2)?,String::new(),String::new(),String::new(),String::new(),String::new(),String::new(),format!("{}",m),r.get::<_,Option<String>>(4)?.unwrap_or_default()])
+        }).map_err(|e|e.to_string())?;
+        for r in rows { lines.push(row(&r.map_err(|e|e.to_string())?)); }
+        // Versements
+        let mut stmt=conn.prepare("SELECT id,date,montant,notes FROM versements WHERE poche=?1 ORDER BY date").map_err(|e|e.to_string())?;
+        let rows=stmt.query_map([poche_key],|r|{
+            let id:Option<i64>=r.get(0)?; let m:f64=r.get(2)?;
+            Ok(vec!["Versement".into(),id.map_or("".into(),|v|v.to_string()),r.get::<_,String>(1)?,String::new(),String::new(),String::new(),String::new(),String::new(),String::new(),String::new(),format!("{}",m),r.get::<_,Option<String>>(3)?.unwrap_or_default()])
+        }).map_err(|e|e.to_string())?;
+        for r in rows { lines.push(row(&r.map_err(|e|e.to_string())?)); }
+        write_csv(dir,&_filename,poche_header,lines)?;
+        written.push(_filename);
+    }
+
+    // ── SCPI ──────────────────────────────────────────────────────────────
+    {
+        let mut stmt=conn.prepare("SELECT id,poche,ticker,mois,valeur_unit FROM scpi_valuations ORDER BY poche,ticker,mois").map_err(|e|e.to_string())?;
+        let lines:Vec<String>=stmt.query_map([],|r|{
+            let id:Option<i64>=r.get(0)?; let v:f64=r.get(4)?;
+            Ok(vec![id.map_or("".into(),|x|x.to_string()),r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,String>(3)?,format!("{}",v)])
+        }).map_err(|e|e.to_string())?.filter_map(|r|r.ok()).map(|f|row(&f)).collect();
+        write_csv(dir,"scpi_valorisations.csv","id,poche,ticker,mois,valeur_unit",lines)?;
+        written.push("scpi_valorisations.csv".into());
+    }
+
+    Ok(written)
+}
+
 // ═══ IMPORT ══════════════════════════════════════════════════════════════════
 #[tauri::command]
 pub fn import_depenses(rows: Vec<Depense>, replace: bool, state: State<DbState>) -> Result<usize, String> {

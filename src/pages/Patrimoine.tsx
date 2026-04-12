@@ -15,7 +15,7 @@ import { useDevise, curMonth } from "../context/DeviseContext";
 import { useQuotes } from "../hooks/useQuotes";
 import {
   LIVRETS_DEF, POCHES, INVEST_SUBCATS, INVEST_SUBCAT_COLOR,
-  TOOLTIP_STYLE, monthsBetween,
+  GLOBAL_GROUP_COLORS, TOOLTIP_STYLE,
 } from "../constants";
 import MonthSelector from "../components/MonthSelector";
 import { Boundary, ChartGrid, NestedPie } from "./patrimoine/shared";
@@ -328,7 +328,7 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
 
   const pieNode=(h:number,_isExp?:boolean)=>inner.length===0?<div className="empty">Aucune donnée</div>:(
     <NestedPie inner={inner} outer={outer} total={grandTotal} fmt={fmt} h={h}
-      toggleLabel={pieToggle==="versements"?"↔ Versements":pieToggle==="investi"?"↔ Investi":"↔ Valeur"}
+      toggleLabel={pieToggle==="versements"?"↔ Versements":pieToggle==="investi"?"↔ Investi":"↔ Valorisation"}
       onToggle={()=>setPieToggle(v=>v==="versements"?"investi":v==="investi"?"valeur":"versements")}/>
   );
   const stackNode=(h:number,isExp?:boolean)=>stackedData.length===0?<div className="empty">Aucune donnée</div>:(()=>{
@@ -403,7 +403,6 @@ function GlobalRecap({livrets,positions,ventes,dividendes,versements,mois,scpiVa
     ...positions.map(p=>(p.date_achat??"").slice(0,7)),
   ].filter(Boolean).sort();
   const firstMonth=allDates[0]??curMonth;
-  const evoMonths=useMemo(()=>monthsBetween(firstMonth,curMonth),[firstMonth]);
 
   // Tickers for Yahoo (exclude fond + scp)
   const allTickersGlobal=useMemo(()=>{
@@ -414,7 +413,7 @@ function GlobalRecap({livrets,positions,ventes,dividendes,versements,mois,scpiVa
     const ds=[...livrets.filter(l=>!isInteret(l)).map(l=>(l.date??"").slice(0,7)),...positions.map(p=>(p.date_achat??"").slice(0,7))].filter(Boolean).sort();
     return ds[0]??curMonth;
   },[livrets,positions]);
-  const {getPrice:_getPriceGlobal}=useQuotes(allTickersGlobal,fromMonthGlobal);
+  const {getPrice:_getPriceGlobal,getPriceForDate:_getPriceForDateGlobal}=useQuotes(allTickersGlobal,fromMonthGlobal);
 
   // Price with fond/scp overrides
   const subcatByTicker=useMemo(()=>{
@@ -428,6 +427,12 @@ function GlobalRecap({livrets,positions,ventes,dividendes,versements,mois,scpiVa
     if(sc==="scp")return scpiPrice(scpiPriceMap,ticker,month,pru);
     return _getPriceGlobal(ticker,month,pru);
   },[subcatByTicker,scpiPriceMap,_getPriceGlobal]);
+  const getPriceForDateGlobal=useCallback((ticker:string,dateStr:string,pru=0):number=>{
+    const sc=subcatByTicker[ticker];
+    if(sc==="fond")return 1.0;
+    if(sc==="scp")return scpiPrice(scpiPriceMap,ticker,dateStr.slice(0,7),pru);
+    return _getPriceForDateGlobal(ticker,dateStr,pru);
+  },[subcatByTicker,scpiPriceMap,_getPriceForDateGlobal]);
 
   // Portfolio value per poche at mois — market value of positions + espèces (uninvested cash)
   const portfolioParPoche=useMemo(()=>{
@@ -482,8 +487,8 @@ function GlobalRecap({livrets,positions,ventes,dividendes,versements,mois,scpiVa
 
   const investVal=pieToggle==="versements"?totalVersInvest:totalPortfolioValue;
   const inner=[
-    {name:"Livrets",value:totalLivrets,color:"#e6a817"},
-    {name:"Investissements",value:investVal,color:"#3a7bd5"},
+    {name:"Livrets",value:totalLivrets,color:GLOBAL_GROUP_COLORS.livrets},
+    {name:"Investissements",value:investVal,color:GLOBAL_GROUP_COLORS.investissements},
   ].filter(p=>p.value>0);
   const outer=[
     ...LIVRETS_DEF.map(l=>({name:l.label,group:"Livrets",value:latestLiv[l.key]?.montant??0,color:l.color+"cc"})),
@@ -491,36 +496,68 @@ function GlobalRecap({livrets,positions,ventes,dividendes,versements,mois,scpiVa
   ].filter(p=>p.value>0);
   const grandTotal=totalLivrets+investVal;
 
-  const evoData=useMemo(()=>evoMonths.map(m=>{
-    const snap:Record<string,Livret>={};
-    livrets.filter(l=>!isInteret(l)&&(l.date??"").slice(0,7)<=m).forEach(l=>{if(!snap[l.poche]||l.date>snap[l.poche].date)snap[l.poche]=l;});
-    const livTotal=Object.values(snap).reduce((s,l)=>s+l.montant,0);
+  // ── Daily evo data (incremental) ─────────────────────────────────────────────
+  const evoData=useMemo(()=>{
+    const allRaw=[
+      ...livrets.filter(l=>!isInteret(l)).map(l=>(l.date??"").slice(0,7)),
+      ...positions.map(p=>(p.date_achat??"").slice(0,7)),
+    ].filter(Boolean).sort();
+    if(!allRaw.length)return[];
+    const firstDay=allRaw[0]+"-01";
+    const dayDates:string[]=[];
+    const cur=new Date(firstDay);const now=new Date();now.setHours(23,59,59,999);
+    while(cur<=now){dayDates.push(cur.toISOString().slice(0,10));cur.setDate(cur.getDate()+1);}
+
+    // Pre-sort events
     type Ev2={date:string;type:"buy"|"sell";ticker:string;subcat:string;qty:number;price:number};
-    const evs2:Ev2[]=[
+    const allEvs:Ev2[]=[
       ...positions.map(p=>({date:p.date_achat??"",type:"buy" as const,ticker:p.ticker,subcat:p.sous_categorie??"actions",qty:p.quantite,price:p.prix_achat})),
       ...ventes.map(v=>({date:v.date_vente??"",type:"sell" as const,ticker:v.ticker,subcat:"",qty:v.quantite,price:0})),
     ].sort((a,b)=>a.date.localeCompare(b.date));
+
+    // Pre-sort livrets (non-intérêts) for incremental step-function
+    const sortedLiv=livrets.filter(l=>!isInteret(l)).sort((a,b)=>(a.date??"").localeCompare(b.date??""));
+
     const byT:Record<string,{q:number;inv:number;subcat:string}>={};
-    evs2.filter(ev=>ev.date.slice(0,7)<=m).forEach(ev=>{
-      if(ev.type==="buy"){
-        if(!byT[ev.ticker])byT[ev.ticker]={q:0,inv:0,subcat:ev.subcat};
-        byT[ev.ticker].q+=ev.qty;byT[ev.ticker].inv+=ev.qty*ev.price;
-        if(ev.subcat)byT[ev.ticker].subcat=ev.subcat;
-      } else if(byT[ev.ticker]){
-        const pru=byT[ev.ticker].q>0?byT[ev.ticker].inv/byT[ev.ticker].q:0;
-        byT[ev.ticker].q=Math.max(0,byT[ev.ticker].q-ev.qty);
-        byT[ev.ticker].inv=Math.max(0,byT[ev.ticker].inv-ev.qty*pru);
-        if(byT[ev.ticker].q<=1e-9)delete byT[ev.ticker];
+    const latestLivByPoche:Record<string,Livret>={};
+    let evIdx=0,livIdx=0;
+
+    return dayDates.map(dateStr=>{
+      // Advance portfolio events
+      while(evIdx<allEvs.length&&allEvs[evIdx].date<=dateStr){
+        const ev=allEvs[evIdx++];
+        if(ev.type==="buy"){
+          if(!byT[ev.ticker])byT[ev.ticker]={q:0,inv:0,subcat:ev.subcat};
+          byT[ev.ticker].q+=ev.qty;byT[ev.ticker].inv+=ev.qty*ev.price;
+          if(ev.subcat)byT[ev.ticker].subcat=ev.subcat;
+        } else if(byT[ev.ticker]){
+          const pru=byT[ev.ticker].q>0?byT[ev.ticker].inv/byT[ev.ticker].q:0;
+          byT[ev.ticker].q=Math.max(0,byT[ev.ticker].q-ev.qty);
+          byT[ev.ticker].inv=Math.max(0,byT[ev.ticker].inv-ev.qty*pru);
+          if(byT[ev.ticker].q<=1e-9)delete byT[ev.ticker];
+        }
       }
+      // Advance livret step-function
+      while(livIdx<sortedLiv.length&&(sortedLiv[livIdx].date??"")<= dateStr){
+        const l=sortedLiv[livIdx++];
+        if(!latestLivByPoche[l.poche]||(l.date??"")<=(latestLivByPoche[l.poche].date??""))
+          latestLivByPoche[l.poche]=l;
+        else latestLivByPoche[l.poche]=l; // always take latest
+      }
+      const livTotal=Object.values(latestLivByPoche).reduce((s,l)=>s+l.montant,0);
+      const invTotal=Object.entries(byT).reduce((s,[t,d])=>{
+        if(d.q<=1e-9)return s;
+        const pru=d.q>0?d.inv/d.q:0;
+        return s+d.q*getPriceForDateGlobal(t,dateStr,pru);
+      },0);
+      return{date:dateStr,month:dateStr.slice(0,7),Livrets:livTotal,Investissements:invTotal};
     });
-    const invTotal=Object.entries(byT).reduce((s,[t,d])=>s+d.q*getPriceGlobal(t,m,d.q>0?d.inv/d.q:0),0);
-    return{mois:m,Livrets:livTotal,Investissements:invTotal};
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }),[evoMonths,livrets,positions,ventes,getPriceGlobal]);
+  },[livrets,positions,ventes,getPriceForDateGlobal]);
 
   const pieNode=(h:number,_isExp?:boolean)=>inner.length===0?<div className="empty">Aucune donnée</div>:(
     <NestedPie inner={inner} outer={outer} total={grandTotal} fmt={fmt} h={h}
-      toggleLabel={pieToggle==="versements"?"↔ Versements":"↔ Valeur"}
+      toggleLabel={pieToggle==="versements"?"↔ Versements":"↔ Valorisation"}
       onToggle={()=>setPieToggle(v=>v==="versements"?"valeur":"versements")}/>
   );
 
@@ -544,33 +581,50 @@ function GlobalRecap({livrets,positions,ventes,dividendes,versements,mois,scpiVa
     brushIdxG?evoData.slice(brushIdxG.start,brushIdxG.end+1):evoData,
   [evoData,brushIdxG]);
 
+  const xTicksG=useMemo(()=>{
+    const seen=new Set<string>();const firsts:string[]=[];
+    visibleEvoData.forEach((d:any)=>{const m=(d.date as string).slice(0,7);if(!seen.has(m)){seen.add(m);firsts.push(d.date as string);}});
+    const step=Math.max(1,Math.ceil(firsts.length/8));
+    return firsts.filter((_,i)=>i%step===0);
+  },[visibleEvoData]);
+
+  const monthRangeG=useMemo(()=>{
+    const inM=visibleEvoData.filter((d:any)=>d.month===mois);
+    if(!inM.length)return null;
+    return{x1:(inM[0] as any).date as string,x2:(inM[inM.length-1] as any).date as string};
+  },[visibleEvoData,mois]);
+
+  const MN_SHORT_G=["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
+
   const stackNode=(h:number,isExp?:boolean)=>evoData.length===0?<div className="empty">Aucune donnée</div>:(()=>{
     const d=isExp?evoData:visibleEvoData;
     return(
       <ResponsiveContainer width="100%" height={h}>
         <ComposedChart data={d} margin={{left:0,right:5,top:5,bottom:isExp?28:0}}>
           <defs>
-            <linearGradient id="gGL4" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#e6a817" stopOpacity={.7}/><stop offset="95%" stopColor="#e6a817" stopOpacity={.05}/></linearGradient>
-            <linearGradient id="gGI4" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3a7bd5" stopOpacity={.7}/><stop offset="95%" stopColor="#3a7bd5" stopOpacity={.05}/></linearGradient>
+            <linearGradient id="gGL4" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={GLOBAL_GROUP_COLORS.livrets} stopOpacity={.7}/><stop offset="95%" stopColor={GLOBAL_GROUP_COLORS.livrets} stopOpacity={.05}/></linearGradient>
+            <linearGradient id="gGI4" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={GLOBAL_GROUP_COLORS.investissements} stopOpacity={.7}/><stop offset="95%" stopColor={GLOBAL_GROUP_COLORS.investissements} stopOpacity={.05}/></linearGradient>
           </defs>
           <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
-          <XAxis dataKey="mois" tick={{fontSize:8,fontFamily:"JetBrains Mono"}}
-            interval={Math.max(0,Math.floor(d.length/7)-1)}/>
+          <XAxis dataKey="date" ticks={xTicksG} tick={{fontSize:8,fontFamily:"JetBrains Mono"}}
+            tickFormatter={dd=>{const mo=parseInt(dd.slice(5,7));return MN_SHORT_G[mo-1];}}/>
           <YAxis tick={{fontSize:8,fontFamily:"JetBrains Mono"}} tickFormatter={v=>v>=1000?`${(v/1000).toFixed(0)}k€`:`${v}€`} width={45}/>
           <Tooltip content={<GlobalTooltip/>}/>
-          <Area type="monotone" dataKey="Livrets" stackId="g" stroke="#e6a817" strokeWidth={1.5} fill="url(#gGL4)"/>
-          <Area type="monotone" dataKey="Investissements" stackId="g" stroke="#3a7bd5" strokeWidth={1.5} fill="url(#gGI4)"/>
-          <Customized component={(p:any)=>{
-            const bS=isExp?(brushIdxG?.start??0):0;
-            const bE=isExp?(brushIdxG?.end??evoData.length-1):visibleEvoData.length-1;
-            const r=idxPx(d,mois,mois,p.offset,bS,bE,"mois");
-            if(!r)return null;
-            return<g><rect x={r.rx1-r.step/2} y={p.offset.top} width={Math.max(4,r.step)}
-              height={p.offset.height}
-              fill="var(--gold)" fillOpacity={0.18} stroke="var(--gold)" strokeOpacity={0.6}
-              strokeDasharray="4 2" strokeWidth={1} pointerEvents="none"/></g>;
-          }}/>
-          {isExp&&<Brush dataKey="mois" height={22} travellerWidth={6}
+          <Area type="monotone" dataKey="Livrets" stackId="g" stroke={GLOBAL_GROUP_COLORS.livrets} strokeWidth={1.5} fill="url(#gGL4)"/>
+          <Area type="monotone" dataKey="Investissements" stackId="g" stroke={GLOBAL_GROUP_COLORS.investissements} strokeWidth={1.5} fill="url(#gGI4)"/>
+          {monthRangeG&&(
+            <Customized component={(p:any)=>{
+              const bS=isExp?(brushIdxG?.start??0):0;
+              const bE=isExp?(brushIdxG?.end??evoData.length-1):visibleEvoData.length-1;
+              const r=idxPx(d,monthRangeG.x1,monthRangeG.x2,p.offset,bS,bE,"date");
+              if(!r)return null;
+              return<g><rect x={r.rx1-r.step/2} y={p.offset.top} width={Math.max(4,r.rx2-r.rx1+r.step)}
+                height={p.offset.height}
+                fill="var(--gold)" fillOpacity={0.18} stroke="var(--gold)" strokeOpacity={0.6}
+                strokeDasharray="4 2" strokeWidth={1} pointerEvents="none"/></g>;
+            }}/>
+          )}
+          {isExp&&<Brush dataKey="date" height={22} travellerWidth={6}
             stroke="var(--border)" fill="var(--bg-2)"
             startIndex={brushIdxG?.start??0}
             endIndex={brushIdxG?.end??evoData.length-1}
@@ -594,7 +648,7 @@ function GlobalRecap({livrets,positions,ventes,dividendes,versements,mois,scpiVa
     </div>
     <ChartGrid charts={[
       {key:"global_pie",   title:`Répartition globale · ${mois}`,  node:pieNode},
-      {key:"global_stack", title:"Évolution mensuelle globale",     node:stackNode,
+      {key:"global_stack", title:"Évolution globale / jour",          node:stackNode,
         onResetZoom:()=>setBrushIdxG(null), brushActive:!!brushIdxG},
     ]}/>
   </div>);

@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
 import {
-  PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
+  Tooltip, ResponsiveContainer,
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Brush,
 } from "recharts";
 import { useDevise, curMonth } from "../context/DeviseContext";
 import { DEPENSE_CATEGORIES, TOOLTIP_STYLE, depenseSubColor, defaultDateForMonth } from "../constants";
 import MonthSelector from "../components/MonthSelector";
+import { NestedPie } from "./patrimoine/shared";
 
 interface Depense {
   id?: number; date: string; categorie: string;
@@ -120,8 +121,6 @@ export default function Depenses() {
   const [editing, setEditing]       = useState<Depense | null>(null);
   const [loading, setLoading]       = useState(false);
   const [firstMonth, setFirstMonth] = useState<string | undefined>(undefined);
-  const [selectedDepCat, setSelectedDepCat] = useState<string | null>(null);
-
   const load = useCallback(async (m: string) => {
     setLoading(true);
     try { setDepenses(await invoke<Depense[]>("get_depenses", { mois: m })); }
@@ -209,63 +208,14 @@ export default function Depenses() {
   // Ordered grouped (same order as CAT_KEYS)
   const orderedCats = CAT_KEYS.filter(c => grouped[c]);
 
-  const CT = ({ active, payload }: any) => {
-    if (!active || !payload?.length) return null;
-    const p = payload[0];
-    return (
-      <div style={{ ...TOOLTIP_STYLE, padding: "8px 12px" }}>
-        <div style={{ color: "var(--text-0)", fontWeight: 500, marginBottom: 4 }}>{p.name}</div>
-        <div style={{ color: "var(--gold)" }}>{fmt(p.value)}</div>
-        {total > 0 && <div style={{ color: "var(--text-1)", fontSize: 10, marginTop: 2 }}>{((p.value/total)*100).toFixed(1)} %</div>}
-      </div>
-    );
-  };
-
   const emptyDep: Depense = {
     date: defaultDateForMonth(mois),
     categorie: CAT_KEYS[0], sous_categorie: CATEGORIES[CAT_KEYS[0]]?.[0] ?? "Autre", libelle: "", montant: 0,
   };
 
-  const filteredPieOuter = selectedDepCat
-    ? pieOuter.filter(o => o.group === selectedDepCat)
-    : pieOuter;
-
   const pieNode = (h: number, _isExp?: boolean) => pieInner.length === 0
     ? <div className="empty">Aucune dépense ce mois.</div>
-    : (
-      <div style={{ position: "relative", height: h }}>
-        <ResponsiveContainer width="100%" height={h}>
-          <PieChart>
-            <Pie data={pieInner} cx="50%" cy="50%" innerRadius={h*0.22} outerRadius={h*0.33}
-              paddingAngle={0} dataKey="value" style={{ cursor: "pointer" }}
-              onClick={(_: any, index: number) => {
-                const name = pieInner[index]?.name;
-                if (!name) return;
-                setSelectedDepCat(v => v === name ? null : name);
-              }}>
-              {pieInner.map((e,i) => (
-                <Cell key={i} fill={e.color} stroke="var(--bg-1)"
-                  strokeWidth={selectedDepCat === e.name ? 3 : 2}
-                  opacity={selectedDepCat && selectedDepCat !== e.name ? 0.25 : 1}/>
-              ))}
-            </Pie>
-            <Pie data={filteredPieOuter} cx="50%" cy="50%" innerRadius={h*0.33} outerRadius={h*0.42}
-              paddingAngle={0} dataKey="value">
-              {filteredPieOuter.map((e,i) => <Cell key={i} fill={e.color} stroke="var(--bg-1)" strokeWidth={1}/>)}
-            </Pie>
-            <Tooltip content={<CT/>}/>
-            <text x="50%" y="47%" textAnchor="middle" dominantBaseline="middle"
-              style={{fontFamily:"Playfair Display",fontSize:Math.max(12,h*0.055),fill:"var(--text-0)",fontWeight:"bold"}}>
-              {fmt(total)}
-            </text>
-            <text x="50%" y="56%" textAnchor="middle" dominantBaseline="middle"
-              style={{fontFamily:"JetBrains Mono",fontSize:8,fill:"var(--text-2)",letterSpacing:"0.08em"}}>
-              TOTAL
-            </text>
-          </PieChart>
-        </ResponsiveContainer>
-      </div>
-    );
+    : <NestedPie inner={pieInner} outer={pieOuter} total={total} fmt={fmt} h={h}/>;
 
   const barNode = (h: number, _isExp?: boolean) => (
     <ResponsiveContainer width="100%" height={h}>

@@ -1,13 +1,14 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
 import {
-  AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine,
-  PieChart, Pie, Cell, Brush,
+  AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Customized,
+  Brush,
 } from "recharts";
 import { useDevise } from "../context/DeviseContext";
 const curMonth = new Date().toISOString().slice(0, 7);
 import MonthSelector from "../components/MonthSelector";
-import { TOOLTIP_STYLE, TOOLTIP_LABEL_STYLE, TOOLTIP_ITEM_STYLE, monthsBetween, DEPENSE_CATEGORIES, depenseSubColor, tickerColor, PRIME_TYPE_COLORS } from "../constants";
+import { TOOLTIP_STYLE, TOOLTIP_LABEL_STYLE, TOOLTIP_ITEM_STYLE, monthsBetween, DEPENSE_CATEGORIES, DEPENSE_CAT_KEYS, depenseSubColor, tickerColor, PRIME_TYPE_COLORS } from "../constants";
+import { NestedPie } from "./patrimoine/shared";
 
 interface Salaire { id?: number; date: string; salaire_brut: number; salaire_net: number; primes?: number; employeur: string; notes?: string; }
 interface Depense { date: string; categorie: string; sous_categorie: string; montant: number; }
@@ -43,7 +44,6 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
   const [positions, setPositions] = useState<Position[]>([]);
   const [expSal, setExpSal]       = useState(false);
   const [brushDash, setBrushDash] = useState<{start:number;end:number}|null>(null);
-  const [selectedDashCat, setSelectedDashCat] = useState<string | null>(null);
 
   const loadDepenses = useCallback((m: string) => {
     invoke<Depense[]>("get_depenses", { mois: m }).then(setDepenses).catch(() => setDepenses([]));
@@ -128,12 +128,18 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
       catMap[d.categorie].total += d.montant;
       catMap[d.categorie].subs[d.sous_categorie] = (catMap[d.categorie].subs[d.sous_categorie] ?? 0) + d.montant;
     });
-    const inner = Object.entries(catMap)
-      .map(([cat, v]) => ({ name: cat, value: v.total, color: CAT_COLOR[cat] ?? "#888" }))
-      .sort((a, b) => b.value - a.value);
-    const outer = Object.entries(catMap).flatMap(([cat, v]) =>
-      Object.entries(v.subs).map(([sub, val]) => ({ name: sub, group: cat, value: val, color: depenseSubColor(cat, sub) }))
-    );
+    // Inner: in DEPENSE_CAT_KEYS order (same as Dépenses page)
+    const inner = DEPENSE_CAT_KEYS
+      .filter(cat => catMap[cat])
+      .map(cat => ({ name: cat, value: catMap[cat].total, color: CAT_COLOR[cat] ?? "#888" }));
+    // Outer: subcats in DEPENSE_CATEGORIES[cat].subs order (same as Dépenses page)
+    const outer = DEPENSE_CAT_KEYS.flatMap(cat => {
+      const v = catMap[cat];
+      if (!v) return [];
+      return (DEPENSE_CATEGORIES[cat]?.subs ?? Object.keys(v.subs))
+        .filter(sub => v.subs[sub] !== undefined)
+        .map(sub => ({ name: sub, group: cat, value: v.subs[sub], color: depenseSubColor(cat, sub) }));
+    });
     return { depPieInner: inner, depPieOuter: outer };
   }, [depenses]);
 
@@ -215,9 +221,14 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
                   if (!active || !payload?.length) return null;
                   const items = payload.filter((p: any) => p.value != null && p.value > 0);
                   if (!items.length) return null;
+                  const total = items.reduce((s: number, p: any) => s + Number(p.value), 0);
                   return (
                     <div style={{ ...TOOLTIP_STYLE, padding: "10px 14px", minWidth: 180 }}>
-                      {label && <div style={{ color: "var(--text-2)", fontSize: 9, marginBottom: 8, letterSpacing: ".05em" }}>{label}</div>}
+                      {label && <div style={{ color: "var(--text-2)", fontSize: 9, marginBottom: 6, letterSpacing: ".05em" }}>{label}</div>}
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 8, paddingBottom: 6, borderBottom: "1px solid var(--border)" }}>
+                        <span style={{ color: "var(--text-1)", fontSize: 10 }}>Total revenus</span>
+                        <span style={{ color: "var(--text-0)", fontSize: 11, fontWeight: 700 }}>{fmt(total)}</span>
+                      </div>
                       {items.map((p: any, i: number) => {
                         const col = p.dataKey === "net" ? "var(--teal)" : (PRIME_TYPE_COLORS[p.dataKey] ?? p.stroke ?? tickerColor(p.dataKey));
                         const lbl = p.dataKey === "net" ? "Salaire net" : p.dataKey;
@@ -231,9 +242,18 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
                     </div>
                   );
                 }}/>
-                <ReferenceLine x={mois} stroke="var(--gold)" strokeDasharray="4 2"/>
-                <Area type="monotone" dataKey="net" stackId="s" stroke="#5fa89e" strokeWidth={2} fill="url(#gSal)"
-                  dot={renderIsolatedDot(salChartData, "net", "#5fa89e")} connectNulls={false}/>
+                <Customized component={(p: any) => {
+                  const N = salChartData.length;
+                  if (N === 0) return null;
+                  const idx = salChartData.findIndex((d: any) => d.mois === mois);
+                  if (idx < 0) return null;
+                  const step = N > 1 ? p.offset.width / (N - 1) : p.offset.width;
+                  const x = p.offset.left + idx * step;
+                  return <g><rect x={x - step / 2} y={p.offset.top} width={Math.max(4, step)}
+                    height={p.offset.height}
+                    fill="var(--gold)" fillOpacity={0.18} stroke="var(--gold)" strokeOpacity={0.6}
+                    strokeDasharray="4 2" strokeWidth={1} pointerEvents="none"/></g>;
+                }}/>
                 {activePrimeTypesDash.map(type => {
                   const c = PRIME_TYPE_COLORS[type] ?? tickerColor(type);
                   return (
@@ -242,6 +262,8 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
                       dot={renderIsolatedDot(salChartData, type, c)} connectNulls={false}/>
                   );
                 })}
+                <Area type="monotone" dataKey="net" stackId="s" stroke="#5fa89e" strokeWidth={2} fill="url(#gSal)"
+                  dot={renderIsolatedDot(salChartData, "net", "#5fa89e")} connectNulls={false}/>
                 {expSal && <Brush dataKey="mois" height={22} travellerWidth={6}
                   stroke="var(--border)" fill="var(--bg-2)"
                   startIndex={brushDash?.start??0}
@@ -261,44 +283,10 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
         {/* Dépenses du mois — camembert 2 anneaux dynamique */}
         <div className="chart-card">
           <div className="chart-title">Dépenses par catégorie · {mois}</div>
-          {depPieInner.length === 0 ? <div className="empty">Aucune dépense ce mois.</div> : (() => {
-            const filteredOuter = selectedDashCat
-              ? depPieOuter.filter(o => o.group === selectedDashCat)
-              : depPieOuter;
-            return (
-            <ResponsiveContainer width="100%" height={260}>
-              <PieChart>
-                <Pie data={depPieInner} cx="50%" cy="50%" innerRadius={48} outerRadius={73}
-                  paddingAngle={0} dataKey="value" style={{ cursor: "pointer" }}
-                  onClick={(_: any, index: number) => {
-                    const name = depPieInner[index]?.name;
-                    if (!name) return;
-                    setSelectedDashCat(v => v === name ? null : name);
-                  }}>
-                  {depPieInner.map((e, i) => (
-                    <Cell key={i} fill={e.color} stroke="var(--bg-1)"
-                      strokeWidth={selectedDashCat === e.name ? 3 : 2}
-                      opacity={selectedDashCat && selectedDashCat !== e.name ? 0.25 : 1}/>
-                  ))}
-                </Pie>
-                <Pie data={filteredOuter} cx="50%" cy="50%" innerRadius={73} outerRadius={92}
-                  paddingAngle={0} dataKey="value">
-                  {filteredOuter.map((e, i) => <Cell key={i} fill={e.color} stroke="var(--bg-1)" strokeWidth={1}/>)}
-                </Pie>
-                <Tooltip contentStyle={TOOLTIP_STYLE} labelStyle={TOOLTIP_LABEL_STYLE} itemStyle={TOOLTIP_ITEM_STYLE}
-                  formatter={(v: number, name: string) => [fmt(v), name]}/>
-                <text x="50%" y="46%" textAnchor="middle" dominantBaseline="middle"
-                  style={{ fontFamily: "var(--serif)", fontSize: 14, fill: "var(--text-0)" }}>
-                  {fmt(totalDepenses)}
-                </text>
-                <text x="50%" y="56%" textAnchor="middle" dominantBaseline="middle"
-                  style={{ fontFamily: "JetBrains Mono", fontSize: 8, fill: "var(--text-2)", letterSpacing: "0.08em" }}>
-                  TOTAL
-                </text>
-              </PieChart>
-            </ResponsiveContainer>
-            );
-          })()}
+          {depPieInner.length === 0
+            ? <div className="empty">Aucune dépense ce mois.</div>
+            : <NestedPie inner={depPieInner} outer={depPieOuter} total={totalDepenses} fmt={fmt}/>
+          }
         </div>
       </div>
 
