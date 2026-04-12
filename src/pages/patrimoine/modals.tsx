@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
-import { LIVRETS_DEF, POCHES, INVEST_SUBCATS, defaultDateForMonth } from "../../constants";
+import { LIVRETS_DEF, POCHES, INVEST_SUBCATS, TRADEABLE_SUBCATS, defaultDateForMonth } from "../../constants";
 import { curMonth } from "../../context/DeviseContext";
 import { useDevise } from "../../context/DeviseContext";
 import type { Livret, Position, Vente, Dividende, Versement, ScpiValuation } from "./types";
@@ -151,46 +151,133 @@ export function VersementModal({poche,mois=curMonth,onClose,onSave}:{poche:strin
 }
 
 // ── Sell Modal — prix TOTAL de vente ──────────────────────────────────────────
-export function SellModal({poche,ticker,nom,maxQty,pru,mois=curMonth,onClose,onSave}:{
-  poche:string;ticker:string;nom:string;maxQty:number;pru:number;mois?:string;
-  onClose:()=>void;onSave:()=>void;
+
+function addDays(dateStr: string, n: number): string {
+  const d = new Date(dateStr + "T00:00:00");
+  d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+// Replay all buy/sell events for a ticker chronologically up to dateStr
+// to get remaining quantity and PRU at that date.
+function computeAtSellDate(
+  tickerPositions: Position[],
+  tickerVentes: Vente[],
+  dateStr: string,
+): { qty: number; pru: number } {
+  type Ev = { date: string; type: "buy"; qty: number; price: number } | { date: string; type: "sell"; qty: number };
+  const events: Ev[] = [
+    ...tickerPositions
+      .filter(p => (p.date_achat ?? "") <= dateStr)
+      .map(p => ({ date: p.date_achat ?? "", type: "buy" as const, qty: p.quantite, price: p.prix_achat })),
+    ...tickerVentes
+      .filter(v => (v.date_vente ?? "") < dateStr)
+      .map(v => ({ date: v.date_vente ?? "", type: "sell" as const, qty: v.quantite })),
+  ].sort((a, b) => a.date.localeCompare(b.date));
+
+  let q = 0, inv = 0;
+  for (const ev of events) {
+    if (ev.type === "buy") { q += ev.qty; inv += ev.qty * ev.price; }
+    else { const pru = q > 0 ? inv / q : 0; q = Math.max(0, q - ev.qty); inv = Math.max(0, inv - ev.qty * pru); }
+  }
+  return { qty: q, pru: q > 0 ? inv / q : 0 };
+}
+
+export function SellModal({poche,ticker,nom,tickerPositions,tickerVentes,getPriceForDate,mois=curMonth,onClose,onSave}:{
+  poche:string;ticker:string;nom:string;
+  tickerPositions:Position[];tickerVentes:Vente[];
+  getPriceForDate:(ticker:string,date:string,pru?:number)=>number;
+  mois?:string;onClose:()=>void;onSave:()=>void;
 }) {
   const {fmt}=useDevise();
-  const [qty,setQty]=useState(maxQty);
-  const [totalVente,setTotalVente]=useState(parseFloat((pru*maxQty).toFixed(2)));
-  const [date,setDate]=useState(defaultDateForMonth(mois));
-  const [notes,setNotes]=useState("");
-  const [err,setErr]=useState("");
 
-  const prixUnitaire=qty>0?totalVente/qty:0;
-  const estPnl=(prixUnitaire-pru)*qty;
+  // Min selectable date = day after the most recent existing vente for this ticker
+  const minDate = useMemo(() => {
+    const max = tickerVentes.reduce((m,v) => (v.date_vente??'') > m ? (v.date_vente??'') : m, '');
+    return max ? addDays(max, 1) : '';
+  }, [tickerVentes]);
+
+  const clamp = (d: string) => (minDate && d < minDate) ? minDate : d;
+
+  const [date, setDate] = useState(() => clamp(defaultDateForMonth(mois)));
+  const [notes, setNotes] = useState('');
+  const [err, setErr] = useState('');
+
+  // Qty available and PRU at the selected date (chronological replay)
+  const { qty: availQty, pru } = useMemo(
+    () => computeAtSellDate(tickerPositions, tickerVentes, date),
+    [tickerPositions, tickerVentes, date],
+  );
+
+  // Estimated price at selected date (falls back to PRU if quote unavailable)
+  const priceAtDate = useMemo(
+    () => availQty > 0 ? getPriceForDate(ticker, date, pru) : 0,
+    [ticker, date, pru, availQty, getPriceForDate],
+  );
+
+  const [qty, setQty] = useState(availQty);
+  const [totalVente, setTotalVente] = useState(parseFloat((priceAtDate * availQty).toFixed(2)));
+
+  // When date changes → reset qty to max available and totalVente to estimated
+  const prevDateRef = useRef(date);
+  useEffect(() => {
+    if (prevDateRef.current !== date) {
+      prevDateRef.current = date;
+      setQty(availQty);
+      setTotalVente(parseFloat((priceAtDate * availQty).toFixed(2)));
+    }
+  }, [date, availQty, priceAtDate]);
+
+  const prixUnitaire = qty > 0 ? totalVente / qty : 0;
+  const estPnl = (prixUnitaire - pru) * qty;
 
   return(<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
     <div className="sell-header">
       <span className="sell-icon">📤</span>
-      <div><div className="modal-title" style={{marginBottom:2}}>Vendre · {ticker}</div>
-        <div style={{color:"var(--text-1)",fontSize:12}}>{nom} · PRU {fmt(pru)} · {maxQty.toFixed(4)} parts</div></div>
+      <div>
+        <div className="modal-title" style={{marginBottom:2}}>Vendre · {ticker}</div>
+        <div style={{color:"var(--text-1)",fontSize:12}}>{nom}</div>
+      </div>
     </div>
     <div className="form-grid">
-      <div className="field"><label>Quantité (max {maxQty.toFixed(4)})</label>
-        <input type="number" step="0.0001" min="0.0001" max={maxQty} value={qty}
-          onChange={e=>{const q=parseFloat(e.target.value)||0;setQty(q);setTotalVente(parseFloat((pru*q).toFixed(2)));}}/></div>
+      <div className="field">
+        <label>Date{minDate&&<span style={{color:"var(--text-2)",fontSize:9,marginLeft:4}}>min {minDate}</span>}</label>
+        <input type="date" value={date} min={minDate||undefined}
+          onChange={e=>setDate(clamp(e.target.value))}/>
+      </div>
+      <div className="field">
+        <label>Disponible à cette date</label>
+        <div style={{padding:"8px 11px",borderRadius:6,border:"1px solid var(--border-l)",background:"var(--bg-0)",
+          color:availQty>0?"var(--text-0)":"var(--rose)",fontSize:12,fontFamily:availQty>0?"var(--mono)":undefined}}>
+          {availQty > 0
+            ? <>{availQty.toFixed(4)} parts · PRU <span style={{color:"var(--gold)"}}>{fmt(pru)}</span></>
+            : "Aucune position à cette date"}
+        </div>
+      </div>
+      <div className="field">
+        <label>Quantité (max {availQty.toFixed(4)})</label>
+        <input type="number" step="0.0001" min="0.0001" max={availQty} value={qty} disabled={availQty<=0}
+          onChange={e=>{const q=Math.min(parseFloat(e.target.value)||0,availQty);setQty(q);setTotalVente(parseFloat((priceAtDate*q).toFixed(2)));}}/>
+      </div>
       <div className="field">
         <label>Total vente (€) <span style={{color:"var(--text-2)",fontSize:9}}>montant global</span></label>
-        <input type="number" step="0.01" value={totalVente} onChange={e=>setTotalVente(parseFloat(e.target.value)||0)}/>
+        <input type="number" step="0.01" value={totalVente} disabled={availQty<=0}
+          onChange={e=>setTotalVente(parseFloat(e.target.value)||0)}/>
         {qty>0&&<div style={{fontSize:10,color:"var(--text-1)",marginTop:3}}>→ Prix unitaire : {prixUnitaire.toFixed(6)} €</div>}
       </div>
-      <div className="field"><label>Date</label><input type="date" value={date} onChange={e=>setDate(e.target.value)}/></div>
-      <div className="field"><label>PnL estimé</label>
+      <div className="field">
+        <label>PnL estimé</label>
         <div style={{padding:"8px 11px",borderRadius:6,border:"1px solid var(--border-l)",background:"var(--bg-0)",
           color:estPnl>=0?"var(--teal)":"var(--rose)",fontSize:13}}>
-          {estPnl>=0?"+":""}{fmt(estPnl)}</div></div>
-      <div className="field span2"><label>Notes</label><textarea rows={2} value={notes} onChange={e=>setNotes(e.target.value)}/></div>
+          {estPnl>=0?"+":""}{fmt(estPnl)}
+        </div>
+      </div>
+      <div className="field"><label>Notes</label><textarea rows={2} value={notes} onChange={e=>setNotes(e.target.value)}/></div>
     </div>
     {err&&<div style={{color:"var(--rose)",fontSize:12,marginBottom:12}}>⚠ {err}</div>}
     <div className="form-actions">
       <button className="btn btn-ghost" onClick={onClose}>Annuler</button>
-      <button className="btn btn-danger" onClick={async()=>{
+      <button className="btn btn-danger" disabled={availQty<=0||qty<=0} onClick={async()=>{
         setErr("");
         try{await invoke("sell_position",{poche,ticker,nom,quantiteVendue:qty,prixVente:prixUnitaire,dateVente:date,notes:notes||null});onSave();}
         catch(e:any){setErr(String(e));}
@@ -270,6 +357,175 @@ export function ScpiValuationModal({poche,scpiTickers,mois=curMonth,valuations,o
       <button className="btn btn-ghost" onClick={onClose}>Fermer</button>
       <button className="btn btn-primary" disabled={!ticker||valeur<=0}
         onClick={async()=>{await invoke("add_scpi_valuation",{val:{poche,ticker,mois:month,valeur_unit:valeur}});onSave();}}>Enregistrer</button>
+    </div>
+  </div></div>);
+}
+
+// ── Trade Modal — swap partiel/total sans PnL réalisé ─────────────────────────
+
+const TRADEABLE_SUBCAT_KEYS: readonly string[] = TRADEABLE_SUBCATS;
+
+export function TradeModal({poche,ticker,nom,subcat:_subcat,tickerPositions,tickerVentes,tradeablePositions,getPriceForDate:_gpfd,mois=curMonth,onClose,onSave}:{
+  poche:string;ticker:string;nom:string;subcat:string;
+  tickerPositions:Position[];tickerVentes:Vente[];
+  tradeablePositions:Position[];
+  getPriceForDate:(ticker:string,date:string,pru?:number)=>number;
+  mois?:string;onClose:()=>void;onSave:()=>void;
+}) {
+  const {fmt}=useDevise();
+
+  // Min date = day after most recent vente for this source ticker
+  const minDate=useMemo(()=>{
+    const max=tickerVentes.reduce((m,v)=>(v.date_vente??'')>m?(v.date_vente??''):m,'');
+    return max?addDays(max,1):'';
+  },[tickerVentes]);
+  const clamp=(d:string)=>(minDate&&d<minDate)?minDate:d;
+
+  const [date,setDate]=useState(()=>clamp(defaultDateForMonth(mois)));
+  const [err,setErr]=useState('');
+  const [notes,setNotes]=useState('');
+
+  // Source: available qty + PRU at selected date
+  const {qty:availQty,pru:pruSource}=useMemo(
+    ()=>computeAtSellDate(tickerPositions,tickerVentes,date),
+    [tickerPositions,tickerVentes,date],
+  );
+
+  const [qtyToTrade,setQtyToTrade]=useState(availQty);
+
+  const prevDateRef=useRef(date);
+  useEffect(()=>{
+    if(prevDateRef.current!==date){prevDateRef.current=date;setQtyToTrade(availQty);}
+  },[date,availQty]);
+
+  const costBasis=qtyToTrade*pruSource;
+
+  // Distinct destination tickers (tradeable, excluding source)
+  const destTickers=useMemo(()=>{
+    const seen=new Set<string>();
+    const out:{ticker:string;nom:string;subcat:string}[]=[];
+    for(const p of tradeablePositions){
+      if(p.ticker!==ticker&&!seen.has(p.ticker)){
+        seen.add(p.ticker);
+        out.push({ticker:p.ticker,nom:p.nom,subcat:p.sous_categorie??''});
+      }
+    }
+    return out;
+  },[tradeablePositions,ticker]);
+
+  const NEW_KEY="__NEW__";
+  const [destSel,setDestSel]=useState(()=>destTickers[0]?.ticker??NEW_KEY);
+  const [newTicker,setNewTicker]=useState('');
+  const [newNom,setNewNom]=useState('');
+  const [newSubcat,setNewSubcat]=useState<string>(TRADEABLE_SUBCATS[0]);
+
+  const isNew=destSel===NEW_KEY;
+  const destTicker=isNew?newTicker.toUpperCase():destSel;
+  const destNom=isNew?newNom:(destTickers.find(t=>t.ticker===destSel)?.nom??'');
+  const destSubcat=isNew?newSubcat:(destTickers.find(t=>t.ticker===destSel)?.subcat??'');
+
+  const [qtyDest,setQtyDest]=useState('');
+  const qtyDestNum=parseFloat(qtyDest)||0;
+  const destPru=qtyDestNum>0?costBasis/qtyDestNum:0;
+
+  const canConfirm=availQty>0&&qtyToTrade>0&&destTicker.length>0&&qtyDestNum>0;
+
+  return(<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
+    <div className="sell-header">
+      <span className="sell-icon">🔄</span>
+      <div>
+        <div className="modal-title" style={{marginBottom:2}}>Trader · {ticker}</div>
+        <div style={{color:"var(--text-1)",fontSize:12}}>{nom}</div>
+      </div>
+    </div>
+
+    <div style={{fontSize:10,color:"var(--text-2)",textTransform:"uppercase",letterSpacing:".08em",marginBottom:6}}>Source</div>
+    <div className="form-grid">
+      <div className="field">
+        <label>Date{minDate&&<span style={{color:"var(--text-2)",fontSize:9,marginLeft:4}}>min {minDate}</span>}</label>
+        <input type="date" value={date} min={minDate||undefined} onChange={e=>setDate(clamp(e.target.value))}/>
+      </div>
+      <div className="field">
+        <label>Disponible à cette date</label>
+        <div style={{padding:"8px 11px",borderRadius:6,border:"1px solid var(--border-l)",background:"var(--bg-0)",
+          color:availQty>0?"var(--text-0)":"var(--rose)",fontSize:12,fontFamily:availQty>0?"var(--mono)":undefined}}>
+          {availQty>0?<>{availQty.toFixed(4)} parts · PRU <span style={{color:"var(--gold)"}}>{fmt(pruSource)}</span></>:"Aucune position à cette date"}
+        </div>
+      </div>
+      <div className="field">
+        <label>Quantité à trader (max {availQty.toFixed(4)})</label>
+        <input type="number" step="0.0001" min="0.0001" max={availQty} value={qtyToTrade} disabled={availQty<=0}
+          onChange={e=>setQtyToTrade(Math.min(parseFloat(e.target.value)||0,availQty))}/>
+      </div>
+      <div className="field">
+        <label>Base de coût transférée</label>
+        <div style={{padding:"8px 11px",borderRadius:6,border:"1px solid var(--border-l)",background:"var(--bg-0)",
+          fontSize:13,color:"var(--gold)",fontFamily:"var(--mono)"}}>
+          {fmt(costBasis)}
+        </div>
+      </div>
+    </div>
+
+    <div style={{fontSize:10,color:"var(--text-2)",textTransform:"uppercase",letterSpacing:".08em",margin:"12px 0 6px"}}>Destination</div>
+    <div className="form-grid">
+      <div className="field span2">
+        <label>Ticker destination</label>
+        <select value={destSel} onChange={e=>setDestSel(e.target.value)}>
+          {destTickers.map(t=><option key={t.ticker} value={t.ticker}>{t.ticker} — {t.nom}</option>)}
+          <option value={NEW_KEY}>+ Nouveau ticker…</option>
+        </select>
+      </div>
+      {isNew&&<>
+        <div className="field"><label>Ticker</label>
+          <input value={newTicker} placeholder="BTC-USD" onChange={e=>setNewTicker(e.target.value.toUpperCase())}/>
+        </div>
+        <div className="field"><label>Nom</label>
+          <input value={newNom} placeholder="Bitcoin" onChange={e=>setNewNom(e.target.value)}/>
+        </div>
+        <div className="field span2"><label>Sous-catégorie</label>
+          <select value={newSubcat} onChange={e=>setNewSubcat(e.target.value)}>
+            {INVEST_SUBCATS.filter(s=>TRADEABLE_SUBCAT_KEYS.includes(s.key)).map(s=>
+              <option key={s.key} value={s.key}>{s.label}</option>
+            )}
+          </select>
+        </div>
+      </>}
+      <div className="field">
+        <label>Quantité reçue</label>
+        <input type="number" step="0.00000001" min="0.00000001" value={qtyDest} disabled={availQty<=0}
+          onChange={e=>setQtyDest(e.target.value)}/>
+      </div>
+      <div className="field">
+        <label>PRU calculé</label>
+        <div style={{padding:"8px 11px",borderRadius:6,border:"1px solid var(--border-l)",background:"var(--bg-0)",
+          fontSize:13,color:"var(--teal)",fontFamily:"var(--mono)"}}>
+          {qtyDestNum>0?fmt(destPru):"—"}
+        </div>
+      </div>
+      <div className="field span2"><label>Notes</label><textarea rows={2} value={notes} onChange={e=>setNotes(e.target.value)}/></div>
+    </div>
+
+    {err&&<div style={{color:"var(--rose)",fontSize:12,marginBottom:12}}>⚠ {err}</div>}
+    <div className="form-actions">
+      <button className="btn btn-ghost" onClick={onClose}>Annuler</button>
+      <button className="btn btn-primary" disabled={!canConfirm} onClick={async()=>{
+        setErr("");
+        const notesSuffix=notes?` ${notes}`:"";
+        try{
+          // 1. Retirer la source à son PRU → PnL = 0
+          await invoke("sell_position",{
+            poche,ticker,nom,quantiteVendue:qtyToTrade,prixVente:pruSource,
+            dateVente:date,notes:`[TRADE → ${destTicker}]${notesSuffix}`,
+          });
+          // 2. Ajouter la destination avec la base de coût transférée
+          await invoke("add_position",{position:{
+            poche,ticker:destTicker,nom:destNom,sous_categorie:destSubcat,
+            quantite:qtyDestNum,prix_achat:destPru,date_achat:date,
+            notes:`[TRADE ← ${ticker}]${notesSuffix}`,
+          }});
+          onSave();
+        }catch(e:any){setErr(String(e));}
+      }}>Confirmer le trade</button>
     </div>
   </div></div>);
 }

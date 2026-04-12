@@ -59,7 +59,7 @@ function scpiPrice(map: Record<string, Record<string, number>>, ticker: string, 
 function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiValuations}:{positions:Position[];ventes:Vente[];dividendes:Dividende[];versements:Versement[];mois:string;scpiValuations:ScpiValuation[]}) {
   const {fmt}=useDevise();
   const MN_SHORT=["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
-  const [pieToggle,setPieToggle]=useState<"investi"|"valeur">("valeur");
+  const [pieToggle,setPieToggle]=useState<"versements"|"investi"|"valeur">("valeur");
   const [brushIdxR,setBrushIdxR]=useState<{start:number;end:number}|null>(null);
 
   // SCPI price map
@@ -98,54 +98,101 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
     return _getPrice(ticker,month,pru);
   },[subcatByTicker,scpiPriceMap,_getPrice]);
 
-  // ── Pie data ──────────────────────────────────────────────────────────────
-  // outer ring: grouped by poche+subcat so CTO Actions ≠ PEA Actions, and subcat color used
-  const pocheMap:Record<string,{value:number;color:string}>={};
-  const outerMap:Record<string,{value:number;color:string}>={};
-  POCHES.forEach(p=>{
-    const byT:Record<string,{q:number;inv:number;subcat:string}>={};
-    positions.filter(pos=>pos.poche===p.key&&(pos.date_achat??"").slice(0,7)<=mois).forEach(pos=>{
-      if(!byT[pos.ticker])byT[pos.ticker]={q:0,inv:0,subcat:pos.sous_categorie??"actions"};
-      byT[pos.ticker].q+=pos.quantite;byT[pos.ticker].inv+=pos.quantite*pos.prix_achat;
+  // ── Pie data — chronological aggregation, 3-state toggle ─────────────────
+  const {inner,outer,grandTotal}=useMemo(()=>{
+    const pocheMap:Record<string,{value:number;color:string}>={};
+    const outerMap:Record<string,{value:number;color:string}>={};
+
+    POCHES.forEach(p=>{
+      // Chronological buy/sell replay (same as PocheSection.aggregateByTicker)
+      type Ev={date:string;type:"buy"|"sell";ticker:string;subcat:string;qty:number;price:number};
+      const evs:Ev[]=[
+        ...positions
+          .filter(pos=>pos.poche===p.key&&(pos.date_achat??"").slice(0,7)<=mois)
+          .map(pos=>({date:pos.date_achat??"",type:"buy" as const,ticker:pos.ticker,subcat:pos.sous_categorie??"actions",qty:pos.quantite,price:pos.prix_achat})),
+        ...ventes
+          .filter(v=>v.poche===p.key&&(v.date_vente??"").slice(0,7)<=mois)
+          .map(v=>({date:v.date_vente??"",type:"sell" as const,ticker:v.ticker,subcat:"",qty:v.quantite,price:0})),
+      ].sort((a,b)=>a.date.localeCompare(b.date));
+
+      const byT:Record<string,{q:number;inv:number;subcat:string}>={};
+      evs.forEach(ev=>{
+        if(ev.type==="buy"){
+          if(!byT[ev.ticker])byT[ev.ticker]={q:0,inv:0,subcat:ev.subcat};
+          byT[ev.ticker].q+=ev.qty;byT[ev.ticker].inv+=ev.qty*ev.price;
+          if(ev.subcat)byT[ev.ticker].subcat=ev.subcat;
+        } else if(byT[ev.ticker]){
+          const pru=byT[ev.ticker].q>0?byT[ev.ticker].inv/byT[ev.ticker].q:0;
+          byT[ev.ticker].q=Math.max(0,byT[ev.ticker].q-ev.qty);
+          byT[ev.ticker].inv=Math.max(0,byT[ev.ticker].inv-ev.qty*pru);
+          if(byT[ev.ticker].q<=1e-9)delete byT[ev.ticker];
+        }
+      });
+
+      if(pieToggle==="versements"){
+        // Inner = versements per poche; outer = versements distributed proportionally by subcat invested
+        const versP=versements.filter(v=>v.poche===p.key&&(v.date??"").slice(0,7)<=mois).reduce((s,v)=>s+v.montant,0);
+        if(versP>0){
+          if(!pocheMap[p.key])pocheMap[p.key]={value:0,color:p.color};
+          pocheMap[p.key].value+=versP;
+          const totalInv=Object.values(byT).reduce((s,d)=>s+d.inv,0);
+          if(totalInv>0){
+            Object.entries(byT).forEach(([,d])=>{
+              const prop=d.inv/totalInv;
+              const outKey=`${p.key}||${d.subcat}`;
+              const subcatColor=(INVEST_SUBCAT_COLOR[d.subcat]??p.color)+"cc";
+              if(!outerMap[outKey])outerMap[outKey]={value:0,color:subcatColor};
+              outerMap[outKey].value+=versP*prop;
+            });
+          } else {
+            const cashKey=`${p.key}||especes`;
+            if(!outerMap[cashKey])outerMap[cashKey]={value:0,color:(INVEST_SUBCAT_COLOR["especes"]??"#78909c")+"cc"};
+            outerMap[cashKey].value+=versP;
+          }
+        }
+      } else {
+        // "investi" or "valeur"
+        let pocheCost=0;
+        Object.entries(byT).forEach(([ticker,d])=>{
+          if(d.q<=1e-9)return;
+          const pru=d.q>0?d.inv/d.q:0;
+          const val=pieToggle==="investi"?d.inv:d.q*getPrice(ticker,mois,pru);
+          if(!pocheMap[p.key])pocheMap[p.key]={value:0,color:p.color};
+          pocheMap[p.key].value+=val;
+          pocheCost+=d.inv;
+          const outKey=`${p.key}||${d.subcat}`;
+          const subcatColor=(INVEST_SUBCAT_COLOR[d.subcat]??p.color)+"cc";
+          if(!outerMap[outKey])outerMap[outKey]={value:0,color:subcatColor};
+          outerMap[outKey].value+=val;
+        });
+        // Espèces (uninvested cash in the poche)
+        const versTotal=versements.filter(v=>v.poche===p.key&&(v.date??"").slice(0,7)<=mois).reduce((s,v)=>s+v.montant,0);
+        const pnlReal=ventes.filter(v=>v.poche===p.key&&(v.date_vente??"").slice(0,7)<=mois).reduce((s,v)=>s+v.pnl,0);
+        const divTotal=dividendes.filter(d=>d.poche===p.key&&(d.date??"").slice(0,7)<=mois).reduce((s,d)=>s+d.montant,0);
+        const esp=Math.max(0,versTotal+pnlReal+divTotal-pocheCost);
+        if(esp>0){
+          if(!pocheMap[p.key])pocheMap[p.key]={value:0,color:p.color};
+          pocheMap[p.key].value+=esp;
+          const cashKey=`${p.key}||especes`;
+          if(!outerMap[cashKey])outerMap[cashKey]={value:0,color:(INVEST_SUBCAT_COLOR["especes"]??"#78909c")+"cc"};
+          outerMap[cashKey].value+=esp;
+        }
+      }
     });
-    ventes.filter(v=>v.poche===p.key&&(v.date_vente??"").slice(0,7)<=mois).forEach(v=>{
-      if(byT[v.ticker]){const pru2=byT[v.ticker].q>0?byT[v.ticker].inv/byT[v.ticker].q:0;byT[v.ticker].q=Math.max(0,byT[v.ticker].q-v.quantite);byT[v.ticker].inv=Math.max(0,byT[v.ticker].inv-v.quantite*pru2);}
-    });
-    let pocheCost=0;
-    Object.entries(byT).forEach(([ticker,d])=>{
-      if(d.q<=1e-9)return;
-      const pru=d.q>0?d.inv/d.q:0;
-      const val=pieToggle==="investi"?d.inv:(d.q*(getPrice(ticker,mois,pru)));
-      if(!pocheMap[p.key])pocheMap[p.key]={value:0,color:p.color};
-      pocheMap[p.key].value+=val;
-      pocheCost+=d.inv;
-      const outKey=`${p.key}||${d.subcat}`;
-      // Use INVEST_SUBCAT_COLOR for the subcat segment color (same as PocheSection pies)
-      const subcatColor=(INVEST_SUBCAT_COLOR[d.subcat]??p.color)+"cc";
-      if(!outerMap[outKey])outerMap[outKey]={value:0,color:subcatColor};
-      outerMap[outKey].value+=val;
-    });
-    // Espèces per poche
-    const versTotal=versements.filter(v=>v.poche===p.key&&(v.date??"").slice(0,7)<=mois).reduce((s,v)=>s+v.montant,0);
-    const pnlReal=ventes.filter(v=>v.poche===p.key&&(v.date_vente??"").slice(0,7)<=mois).reduce((s,v)=>s+v.pnl,0);
-    const divTotal=dividendes.filter(d=>d.poche===p.key&&(d.date??"").slice(0,7)<=mois).reduce((s,d)=>s+d.montant,0);
-    const esp=Math.max(0,versTotal+pnlReal+divTotal-pocheCost);
-    if(esp>0){
-      if(!pocheMap[p.key])pocheMap[p.key]={value:0,color:p.color};
-      pocheMap[p.key].value+=esp;
-      const cashKey=`${p.key}||especes`;
-      if(!outerMap[cashKey])outerMap[cashKey]={value:0,color:(INVEST_SUBCAT_COLOR["especes"]??"#78909c")+"cc"};
-      outerMap[cashKey].value+=esp;
-    }
-  });
-  const inner=Object.entries(pocheMap).map(([k,v])=>({name:POCHES.find(p=>p.key===k)?.label??k,...v})).filter(e=>e.value>0);
-  const outer=Object.entries(outerMap).map(([k,v])=>{
-    const [pk,...rest]=k.split("||");const sk=rest.join("||");
-    const pocheName=POCHES.find(p=>p.key===pk)?.label??pk;
-    const subcatName=sk==="especes"?"Espèces":(INVEST_SUBCATS.find(s=>s.key===sk)?.label??sk);
-    return{name:subcatName,group:pocheName,...v};
-  }).filter(e=>e.value>0);
-  const grandTotal=Object.values(pocheMap).reduce((s,v)=>s+v.value,0);
+
+    const inner=Object.entries(pocheMap)
+      .map(([k,v])=>({name:POCHES.find(p=>p.key===k)?.label??k,...v}))
+      .filter(e=>e.value>0);
+    const outer=Object.entries(outerMap).map(([k,v])=>{
+      const [pk,...rest]=k.split("||");const sk=rest.join("||");
+      const pocheName=POCHES.find(p=>p.key===pk)?.label??pk;
+      const subcatName=sk==="especes"?"Espèces":(INVEST_SUBCATS.find(s=>s.key===sk)?.label??sk);
+      return{name:subcatName,group:pocheName,...v};
+    }).filter(e=>e.value>0);
+    const grandTotal=Object.values(pocheMap).reduce((s,v)=>s+v.value,0);
+    return{inner,outer,grandTotal};
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[positions,ventes,dividendes,versements,mois,pieToggle,getPrice]);
 
   // ── Daily stacked data (all poches — each poche area includes its own espèces) ───
   const stackedData=useMemo(()=>{
@@ -281,8 +328,8 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
 
   const pieNode=(h:number,_isExp?:boolean)=>inner.length===0?<div className="empty">Aucune donnée</div>:(
     <NestedPie inner={inner} outer={outer} total={grandTotal} fmt={fmt} h={h}
-      toggleLabel={pieToggle==="investi"?"↔ Investi":"↔ Valeur"}
-      onToggle={()=>setPieToggle(v=>v==="investi"?"valeur":"investi")}/>
+      toggleLabel={pieToggle==="versements"?"↔ Versements":pieToggle==="investi"?"↔ Investi":"↔ Valeur"}
+      onToggle={()=>setPieToggle(v=>v==="versements"?"investi":v==="investi"?"valeur":"versements")}/>
   );
   const stackNode=(h:number,isExp?:boolean)=>stackedData.length===0?<div className="empty">Aucune donnée</div>:(()=>{
     const d=isExp?stackedData:visibleStackedData;
@@ -337,7 +384,7 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
 }
 
 // ── Global Recap ───────────────────────────────────────────────────────────────
-function GlobalRecap({livrets,positions,ventes,versements,mois,scpiValuations}:{livrets:Livret[];positions:Position[];ventes:Vente[];versements:Versement[];mois:string;scpiValuations:ScpiValuation[]}) {
+function GlobalRecap({livrets,positions,ventes,dividendes,versements,mois,scpiValuations}:{livrets:Livret[];positions:Position[];ventes:Vente[];dividendes:Dividende[];versements:Versement[];mois:string;scpiValuations:ScpiValuation[]}) {
   const {fmt}=useDevise();
   const [pieToggle,setPieToggle]=useState<"versements"|"valeur">("valeur");
   const [brushIdxG,setBrushIdxG]=useState<{start:number;end:number}|null>(null);
@@ -382,7 +429,7 @@ function GlobalRecap({livrets,positions,ventes,versements,mois,scpiValuations}:{
     return _getPriceGlobal(ticker,month,pru);
   },[subcatByTicker,scpiPriceMap,_getPriceGlobal]);
 
-  // Helper: chronological portfolio value per poche at a given month
+  // Portfolio value per poche at mois — market value of positions + espèces (uninvested cash)
   const portfolioParPoche=useMemo(()=>{
     const result:Record<string,number>={};
     POCHES.forEach(p=>{
@@ -406,11 +453,22 @@ function GlobalRecap({livrets,positions,ventes,versements,mois,scpiValuations}:{
           if(byT[ev.ticker].q<=1e-9)delete byT[ev.ticker];
         }
       });
-      result[p.key]=Object.entries(byT).reduce((s,[t,d])=>s+d.q*getPriceGlobal(t,mois,d.q>0?d.inv/d.q:0),0);
+      // Market value of held positions
+      const marketVal=Object.entries(byT).reduce((s,[t,d])=>{
+        if(d.q<=1e-9)return s;
+        return s+d.q*getPriceGlobal(t,mois,d.q>0?d.inv/d.q:0);
+      },0);
+      // Espèces = versements + PnL réalisé + dividendes − montant investi dans les positions ouvertes
+      const pocheCost=Object.values(byT).reduce((s,d)=>s+d.inv,0);
+      const versTotal=versements.filter(v=>v.poche===p.key&&(v.date??"").slice(0,7)<=mois).reduce((s,v)=>s+v.montant,0);
+      const pnlReal=ventes.filter(v=>v.poche===p.key&&(v.date_vente??"").slice(0,7)<=mois).reduce((s,v)=>s+v.pnl,0);
+      const divTotal=dividendes.filter(d=>d.poche===p.key&&(d.date??"").slice(0,7)<=mois).reduce((s,d)=>s+d.montant,0);
+      const esp=Math.max(0,versTotal+pnlReal+divTotal-pocheCost);
+      result[p.key]=marketVal+esp;
     });
     return result;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[positions,ventes,mois,getPriceGlobal]);
+  },[positions,ventes,dividendes,versements,mois,getPriceGlobal]);
 
   // Versements per poche up to mois
   const versParPoche=useMemo(()=>{
@@ -590,7 +648,7 @@ function PatrimoineInner() {
         <button key={k} className={`tab-btn ${tab===k?"active":""}`} onClick={()=>setTab(k as any)}>{l}</button>
       ))}
     </div>
-    {tab==="global"&&<GlobalRecap livrets={livrets} positions={positions} ventes={ventes} versements={versements} mois={mois} scpiValuations={scpiValuations}/>}
+    {tab==="global"&&<GlobalRecap livrets={livrets} positions={positions} ventes={ventes} dividendes={dividendes} versements={versements} mois={mois} scpiValuations={scpiValuations}/>}
     {tab==="livrets"&&<LivretsSection livrets={livrets} mois={mois} onRefresh={load}/>}
     {tab==="investissements"&&<RecapInvestissement positions={positions} ventes={ventes} dividendes={dividendes} versements={versements} mois={mois} scpiValuations={scpiValuations}/>}
     {tab==="investissements"&&POCHES.map((p: typeof POCHES[number])=>(

@@ -5,10 +5,10 @@ import {
   ResponsiveContainer, Tooltip, ComposedChart, Bar, Line, Brush, Customized,
 } from "recharts";
 import { useDevise, curMonth } from "../../context/DeviseContext";
-import { POCHES, INVEST_SUBCATS, INVEST_SUBCAT_COLOR, monthsBetween, tickerColor, tickerColorDim, TOOLTIP_STYLE } from "../../constants";
+import { POCHES, INVEST_SUBCATS, INVEST_SUBCAT_COLOR, TRADEABLE_SUBCATS, monthsBetween, tickerColor, tickerColorDim, TOOLTIP_STYLE } from "../../constants";
 import { useQuotes } from "../../hooks/useQuotes";
 import { ChartGrid, NestedPie, AccordionSection } from "./shared";
-import { PositionModal, VersementModal, SellModal, DividendeModal, DeletePositionModal, ScpiValuationModal } from "./modals";
+import { PositionModal, VersementModal, SellModal, TradeModal, DividendeModal, DeletePositionModal, ScpiValuationModal } from "./modals";
 import type { Position, Vente, Dividende, Versement, ScpiValuation } from "./types";
 import { SUBCAT_ORDER } from "./types";
 
@@ -298,7 +298,8 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
   const [posModal, setPosModal]   = useState(false);
   const [divModal, setDivModal]   = useState(false);
   const [verModal, setVerModal]   = useState(false);
-  const [sellTarget, setSellTarget]   = useState<{ ticker: string; nom: string; maxQty: number; pru: number } | null>(null);
+  const [sellTarget, setSellTarget]   = useState<{ ticker: string; nom: string; tickerPositions: Position[]; tickerVentes: Vente[] } | null>(null);
+  const [tradeTarget, setTradeTarget] = useState<{ ticker: string; nom: string; subcat: string; tickerPositions: Position[]; tickerVentes: Vente[] } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ ticker: string; rows: Position[] } | null>(null);
   const [pieToggle, setPieToggle] = useState<"investi" | "valeur">("valeur");
   const [pnlMode, setPnlMode]     = useState<"latent" | "realise" | "divs">("latent");
@@ -349,6 +350,25 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
     }
     return _getPrice(ticker, month, pru);
   }, [_getPrice, positions, scpiPriceMap]);
+
+  // Date-aware price lookup (for sell modal): same as getPrice but accepts a full date string
+  const getPriceForDateFull = useCallback((ticker: string, dateStr: string, pru = 0): number => {
+    const sub = positions.find(p => p.ticker === ticker)?.sous_categorie ?? "";
+    if (sub === "fond") return 1.0;
+    if (sub === "scp") {
+      const month = dateStr.slice(0, 7);
+      const mm = scpiPriceMap[ticker] ?? {};
+      const keys = Object.keys(mm).filter(k => k <= month).sort();
+      return keys.length ? mm[keys[keys.length - 1]] : pru;
+    }
+    return getPriceForDate(ticker, dateStr, pru);
+  }, [positions, scpiPriceMap, getPriceForDate]);
+
+  // All positions in this poche with tradeable subcats (for TradeModal destination dropdown)
+  const tradeablePositions = useMemo(
+    () => positions.filter(p => (TRADEABLE_SUBCATS as readonly string[]).includes(p.sous_categorie ?? '')),
+    [positions],
+  );
 
   // Load SCPI valuations for this poche
   useEffect(() => {
@@ -765,14 +785,25 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
                         <span style={{ fontSize: 10 }}>({p.pnlPct >= 0 ? "+" : ""}{p.pnlPct.toFixed(2)} %)</span>
                       </td>
                       <td style={{ whiteSpace: "nowrap" }}>
-                        <button className="btn btn-danger btn-sm"
-                          onClick={() => setSellTarget({ ticker: p.ticker, nom: p.nom, maxQty: p.quantite, pru: p.pru })}>
-                          Vendre
-                        </button>{" "}
-                        <button className="btn btn-ghost btn-sm"
-                          onClick={() => setDeleteTarget({ ticker: p.ticker, rows: positions.filter(pos => pos.ticker === p.ticker) })}>
-                          ✕
-                        </button>
+                        <div style={{ display: "flex", gap: 4 }}>
+                          <div style={{ display: "flex", flexDirection: "column" , gap: 4, alignItems: "flex-start" }}>
+                            <button className="btn btn-danger btn-sm"
+                              onClick={() => setSellTarget({ ticker: p.ticker, nom: p.nom, tickerPositions: positions.filter(pos => pos.ticker === p.ticker), tickerVentes: ventes.filter(v => v.ticker === p.ticker) })}>
+                              Vendre
+                            </button>
+                            {(TRADEABLE_SUBCATS as readonly string[]).includes(p.subcat) && (
+                            <button className="btn btn-ghost btn-sm" style={{ fontSize: 10, color: "var(--lavender)", borderColor: "var(--lavender)" }}
+                              onClick={() => setTradeTarget({ ticker: p.ticker, nom: p.nom, subcat: p.subcat, tickerPositions: positions.filter(pos => pos.ticker === p.ticker), tickerVentes: ventes.filter(v => v.ticker === p.ticker) })}>
+                              Trader
+                            </button>
+                          )}
+                            
+                          </div>
+                          <button className="btn btn-ghost btn-sm"
+                              onClick={() => setDeleteTarget({ ticker: p.ticker, rows: positions.filter(pos => pos.ticker === p.ticker) })}>
+                              ✕
+                            </button>
+                        </div>
                       </td>
                     </tr>
                   ))}</tbody>
@@ -838,7 +869,8 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
         onClose={() => setScpiModal(false)}
         onSave={() => { invoke<ScpiValuation[]>("get_scpi_valuations", { poche: poche.key }).then(setScpiValuations); }}/>}
       {verModal    && <VersementModal poche={poche.key} mois={mois} onClose={() => setVerModal(false)}                        onSave={() => { setVerModal(false);    onRefresh(); }}/>}
-      {sellTarget  && <SellModal poche={poche.key} {...sellTarget} mois={mois} onClose={() => setSellTarget(null)}                        onSave={() => { setSellTarget(null);   onRefresh(); }}/>}
+      {sellTarget  && <SellModal  poche={poche.key} {...sellTarget} getPriceForDate={getPriceForDateFull} mois={mois} onClose={() => setSellTarget(null)}  onSave={() => { setSellTarget(null);  onRefresh(); }}/>}
+      {tradeTarget && <TradeModal poche={poche.key} {...tradeTarget} tradeablePositions={tradeablePositions} getPriceForDate={getPriceForDateFull} mois={mois} onClose={() => setTradeTarget(null)} onSave={() => { setTradeTarget(null); onRefresh(); }}/>}
       {deleteTarget && <DeletePositionModal {...deleteTarget} onClose={() => setDeleteTarget(null)}                           onSave={() => { setDeleteTarget(null); onRefresh(); }}/>}
     </div>
   );

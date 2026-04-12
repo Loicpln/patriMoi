@@ -49,6 +49,9 @@ export const INVEST_SUBCATS = [
 
 export type InvestSubcatKey = typeof INVEST_SUBCATS[number]["key"];
 
+// Subcategories eligible for the "Trader" (cost-basis swap) operation
+export const TRADEABLE_SUBCATS = ["fond", "digital_cash", "smart_contract", "stable_coin", "meme_coin"] as const;
+
 export const INVEST_SUBCAT_COLOR: Record<string, string> = Object.fromEntries(
   INVEST_SUBCATS.map(s => [s.key, s.color])
 );
