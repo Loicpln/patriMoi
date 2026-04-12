@@ -561,13 +561,20 @@ function GlobalRecap({livrets,positions,ventes,dividendes,versements,mois,scpiVa
       onToggle={()=>setPieToggle(v=>v==="versements"?"valeur":"versements")}/>
   );
 
-  // Custom tooltip for GlobalRecap — versements first line
+  // Custom tooltip for GlobalRecap
   const GlobalTooltip=({active,payload,label}:any)=>{
     if(!active||!payload?.length)return null;
+    const items=payload.filter((p:any)=>p.value!=null&&Number(p.value)>0);
+    if(!items.length)return null;
+    const total=items.reduce((s:number,p:any)=>s+Number(p.value),0);
     return(
       <div style={{...TOOLTIP_STYLE,padding:"10px 14px",minWidth:160}}>
-        <div style={{color:"var(--text-1)",fontSize:9,marginBottom:6,letterSpacing:".05em"}}>{label}</div>
-        {payload.map((p:any,i:number)=>(
+        {label&&<div style={{color:"var(--text-2)",fontSize:9,marginBottom:6,letterSpacing:".05em"}}>{label}</div>}
+        <div style={{display:"flex",justifyContent:"space-between",gap:12,marginBottom:8,paddingBottom:6,borderBottom:"1px solid var(--border)"}}>
+          <span style={{color:"var(--text-1)",fontSize:10}}>Total</span>
+          <span style={{color:"var(--text-0)",fontSize:11,fontWeight:700}}>{fmt(total)}</span>
+        </div>
+        {items.map((p:any,i:number)=>(
           <div key={i} style={{display:"flex",justifyContent:"space-between",gap:8,marginBottom:2}}>
             <span style={{color:p.stroke||p.fill||"var(--text-1)",fontSize:10}}>{p.name||p.dataKey}</span>
             <span style={{color:"var(--text-0)",fontSize:10}}>{fmt(Number(p.value))}</span>

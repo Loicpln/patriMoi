@@ -110,14 +110,19 @@ export function LivretsSection({livrets,mois,onRefresh}:{livrets:Livret[];mois:s
   // History entries for selected month (non-intérêts)
   const histMois=livrets.filter(l=>!isInteret(l)&&(l.date??"").slice(0,7)===mois);
 
-  // Custom tooltip — clean style, no versements/PnL header
+  // Custom tooltip
   const LivretTooltip=({active,payload,label}:any)=>{
     if(!active||!payload?.length)return null;
     const items=payload.filter((p:any)=>p.value>0);
     if(!items.length)return null;
+    const total=items.reduce((s:number,p:any)=>s+Number(p.value),0);
     return(
       <div style={{...TOOLTIP_STYLE,padding:"10px 14px",minWidth:160}}>
-        {label&&<div style={{color:"var(--text-2)",fontSize:9,marginBottom:8,letterSpacing:".05em"}}>{label}</div>}
+        {label&&<div style={{color:"var(--text-2)",fontSize:9,marginBottom:6,letterSpacing:".05em"}}>{label}</div>}
+        <div style={{display:"flex",justifyContent:"space-between",gap:12,marginBottom:8,paddingBottom:6,borderBottom:"1px solid var(--border)"}}>
+          <span style={{color:"var(--text-1)",fontSize:10}}>Total</span>
+          <span style={{color:"var(--text-0)",fontSize:11,fontWeight:700}}>{fmt(total)}</span>
+        </div>
         {items.map((p:any,i:number)=>(
           <div key={i} style={{display:"flex",justifyContent:"space-between",gap:8,marginBottom:2}}>
             <span style={{color:p.stroke??p.color??"var(--text-1)",fontSize:10}}>{p.name||p.dataKey}</span>
