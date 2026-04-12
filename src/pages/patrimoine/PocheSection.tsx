@@ -725,7 +725,7 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
           <button className="btn btn-ghost btn-sm" onClick={() => setVerModal(true)}>+ Versement</button>
           {positions.length > 0 && <button className="btn btn-teal btn-sm" onClick={() => setDivModal(true)}>+ Dividende</button>}
           {positions.some(p => p.sous_categorie === "scp") && (
-            <button className="btn btn-sm btn-ghost" onClick={() => setScpiModal(true)} style={{ fontSize: 10 }}>📊 SCPI</button>
+            <button className="btn btn-amber btn-sm" onClick={() => setScpiModal(true)} style={{ fontSize: 10 }}>+ SCPI</button>
           )}
           <button className="btn btn-primary btn-sm" onClick={() => setPosModal(true)}>+ Position</button>
         </div>

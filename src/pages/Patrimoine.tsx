@@ -300,22 +300,29 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
     return{x1:inM[0].date as string,x2:inM[inM.length-1].date as string};
   },[visibleStackedData,mois]);
 
-  // Custom tooltip: versements first + PnL beside it, then poche values
+  // Custom tooltip: total › versements+PnL › poche values
   const RecapTooltip=({active,payload,label}:any)=>{
     if(!active||!payload?.length)return null;
     const row=payload[0]?.payload;
     if(!row)return null;
     const vers=row._versTotal??0;
     const pnl=row._pnlTotal??0;
-    const items=payload.filter((p:any)=>p.dataKey!=="_versTotal"&&p.dataKey!=="_pnlTotal");
+    const items=payload.filter((p:any)=>p.dataKey!=="_versTotal"&&p.dataKey!=="_pnlTotal"&&p.value!==0);
+    const total=items.reduce((s:number,p:any)=>s+Number(p.value),0);
     return(
-      <div style={{...TOOLTIP_STYLE,padding:"10px 14px",minWidth:180}}>
-        <div style={{color:"var(--text-1)",fontSize:9,marginBottom:8,letterSpacing:".05em"}}>{label}</div>
-        {/* Versements first with PnL on same row */}
+      <div style={{...TOOLTIP_STYLE,padding:"10px 14px",minWidth:190}}>
+        <div style={{color:"var(--text-1)",fontSize:9,marginBottom:6,letterSpacing:".05em"}}>{label}</div>
+        {/* Grand total */}
+        <div style={{display:"flex",justifyContent:"space-between",gap:12,marginBottom:6,paddingBottom:5,borderBottom:"1px solid var(--border)"}}>
+          <span style={{color:"var(--text-1)",fontSize:10}}>Total</span>
+          <span style={{color:"var(--text-0)",fontSize:11,fontWeight:700}}>{fmt(total)}</span>
+        </div>
+        {/* Versements + PnL */}
         <div style={{display:"flex",justifyContent:"space-between",gap:16,marginBottom:6,borderBottom:"1px solid var(--border)",paddingBottom:5}}>
           <span style={{color:"#e63946",fontSize:10}}>Versements&nbsp;{fmt(vers)}</span>
           <span style={{color:pnl>=0?"var(--teal)":"var(--rose)",fontSize:11,fontWeight:700}}>{pnl>=0?"+":" −"}{fmt(Math.abs(pnl))}</span>
         </div>
+        {/* Per-poche */}
         {items.map((p:any,i:number)=>(
           <div key={i} style={{display:"flex",justifyContent:"space-between",gap:8,marginBottom:2}}>
             <span style={{color:p.stroke||p.fill||"var(--text-1)",fontSize:10}}>{p.name||p.dataKey}</span>
@@ -496,7 +503,7 @@ function GlobalRecap({livrets,positions,ventes,dividendes,versements,mois,scpiVa
   ].filter(p=>p.value>0);
   const grandTotal=totalLivrets+investVal;
 
-  // ── Daily evo data (incremental) ─────────────────────────────────────────────
+  // ── Daily evo data — one series per livret + one per poche ───────────────────
   const evoData=useMemo(()=>{
     const allRaw=[
       ...livrets.filter(l=>!isInteret(l)).map(l=>(l.date??"").slice(0,7)),
@@ -508,52 +515,89 @@ function GlobalRecap({livrets,positions,ventes,dividendes,versements,mois,scpiVa
     const cur=new Date(firstDay);const now=new Date();now.setHours(23,59,59,999);
     while(cur<=now){dayDates.push(cur.toISOString().slice(0,10));cur.setDate(cur.getDate()+1);}
 
-    // Pre-sort events
-    type Ev2={date:string;type:"buy"|"sell";ticker:string;subcat:string;qty:number;price:number};
+    // Pre-sort events with poche info
+    type Ev2={date:string;type:"buy"|"sell";poche:string;ticker:string;subcat:string;qty:number;price:number};
     const allEvs:Ev2[]=[
-      ...positions.map(p=>({date:p.date_achat??"",type:"buy" as const,ticker:p.ticker,subcat:p.sous_categorie??"actions",qty:p.quantite,price:p.prix_achat})),
-      ...ventes.map(v=>({date:v.date_vente??"",type:"sell" as const,ticker:v.ticker,subcat:"",qty:v.quantite,price:0})),
+      ...positions.map(p=>({date:p.date_achat??"",type:"buy" as const,poche:p.poche,ticker:p.ticker,subcat:p.sous_categorie??"actions",qty:p.quantite,price:p.prix_achat})),
+      ...ventes.map(v=>({date:v.date_vente??"",type:"sell" as const,poche:v.poche,ticker:v.ticker,subcat:"",qty:v.quantite,price:0})),
     ].sort((a,b)=>a.date.localeCompare(b.date));
 
-    // Pre-sort livrets (non-intérêts) for incremental step-function
-    const sortedLiv=livrets.filter(l=>!isInteret(l)).sort((a,b)=>(a.date??"").localeCompare(b.date??""));
+    // Per-poche espèces tracking
+    const versPerP:Record<string,Versement[]>={};
+    const ventPerP:Record<string,Vente[]>={};
+    const divsPerP:Record<string,Dividende[]>={};
+    const pVI:Record<string,number>={};const pPI:Record<string,number>={};const pDI:Record<string,number>={};
+    const pCV:Record<string,number>={};const pCP:Record<string,number>={};const pCD:Record<string,number>={};
+    POCHES.forEach(p=>{
+      versPerP[p.key]=[...versements].filter(v=>v.poche===p.key).sort((a,b)=>(a.date??"").localeCompare(b.date??""));
+      ventPerP[p.key]=[...ventes].filter(v=>v.poche===p.key).sort((a,b)=>(a.date_vente??"").localeCompare(b.date_vente??""));
+      divsPerP[p.key]=[...dividendes].filter(d=>d.poche===p.key).sort((a,b)=>(a.date??"").localeCompare(b.date??""));
+      pVI[p.key]=0;pPI[p.key]=0;pDI[p.key]=0;pCV[p.key]=0;pCP[p.key]=0;pCD[p.key]=0;
+    });
 
-    const byT:Record<string,{q:number;inv:number;subcat:string}>={};
-    const latestLivByPoche:Record<string,Livret>={};
-    let evIdx=0,livIdx=0;
+    // Per-livret step-function tracking
+    const livByKey:Record<string,{date:string;montant:number}[]>={};
+    const livIdx:Record<string,number>={};
+    const livVal:Record<string,number>={};
+    LIVRETS_DEF.forEach(l=>{
+      livByKey[l.key]=livrets.filter(lv=>!isInteret(lv)&&lv.poche===l.key).sort((a,b)=>(a.date??"").localeCompare(b.date??""));
+      livIdx[l.key]=0;livVal[l.key]=0;
+    });
 
+    // Per-poche position tracker
+    const byPocheG:Record<string,Record<string,{q:number;inv:number;subcat:string}>>={};
+    POCHES.forEach(p=>{byPocheG[p.key]={};});
+
+    let evIdx=0;
     return dayDates.map(dateStr=>{
       // Advance portfolio events
       while(evIdx<allEvs.length&&allEvs[evIdx].date<=dateStr){
         const ev=allEvs[evIdx++];
+        const map=byPocheG[ev.poche];if(!map)continue;
         if(ev.type==="buy"){
-          if(!byT[ev.ticker])byT[ev.ticker]={q:0,inv:0,subcat:ev.subcat};
-          byT[ev.ticker].q+=ev.qty;byT[ev.ticker].inv+=ev.qty*ev.price;
-          if(ev.subcat)byT[ev.ticker].subcat=ev.subcat;
-        } else if(byT[ev.ticker]){
-          const pru=byT[ev.ticker].q>0?byT[ev.ticker].inv/byT[ev.ticker].q:0;
-          byT[ev.ticker].q=Math.max(0,byT[ev.ticker].q-ev.qty);
-          byT[ev.ticker].inv=Math.max(0,byT[ev.ticker].inv-ev.qty*pru);
-          if(byT[ev.ticker].q<=1e-9)delete byT[ev.ticker];
+          if(!map[ev.ticker])map[ev.ticker]={q:0,inv:0,subcat:ev.subcat};
+          map[ev.ticker].q+=ev.qty;map[ev.ticker].inv+=ev.qty*ev.price;
+          if(ev.subcat)map[ev.ticker].subcat=ev.subcat;
+        }else if(map[ev.ticker]){
+          const pru=map[ev.ticker].q>0?map[ev.ticker].inv/map[ev.ticker].q:0;
+          map[ev.ticker].q=Math.max(0,map[ev.ticker].q-ev.qty);
+          map[ev.ticker].inv=Math.max(0,map[ev.ticker].inv-ev.qty*pru);
+          if(map[ev.ticker].q<=1e-9)delete map[ev.ticker];
         }
       }
-      // Advance livret step-function
-      while(livIdx<sortedLiv.length&&(sortedLiv[livIdx].date??"")<= dateStr){
-        const l=sortedLiv[livIdx++];
-        if(!latestLivByPoche[l.poche]||(l.date??"")<=(latestLivByPoche[l.poche].date??""))
-          latestLivByPoche[l.poche]=l;
-        else latestLivByPoche[l.poche]=l; // always take latest
-      }
-      const livTotal=Object.values(latestLivByPoche).reduce((s,l)=>s+l.montant,0);
-      const invTotal=Object.entries(byT).reduce((s,[t,d])=>{
-        if(d.q<=1e-9)return s;
-        const pru=d.q>0?d.inv/d.q:0;
+      // Advance per-poche espèces counters
+      POCHES.forEach(p=>{
+        while(pVI[p.key]<versPerP[p.key].length&&(versPerP[p.key][pVI[p.key]].date??"")<= dateStr)pCV[p.key]+=versPerP[p.key][pVI[p.key]++].montant;
+        while(pPI[p.key]<ventPerP[p.key].length&&(ventPerP[p.key][pPI[p.key]].date_vente??"")<= dateStr)pCP[p.key]+=ventPerP[p.key][pPI[p.key]++].pnl;
+        while(pDI[p.key]<divsPerP[p.key].length&&(divsPerP[p.key][pDI[p.key]].date??"")<= dateStr)pCD[p.key]+=divsPerP[p.key][pDI[p.key]++].montant;
+      });
+      // Advance livret step-function per key
+      LIVRETS_DEF.forEach(l=>{
+        while(livIdx[l.key]<livByKey[l.key].length&&(livByKey[l.key][livIdx[l.key]].date??"")<= dateStr)
+          livVal[l.key]=livByKey[l.key][livIdx[l.key]++].montant;
+      });
+
+      const row:any={date:dateStr,month:dateStr.slice(0,7)};
+      // Livrets (bottom of stack) — capital
+      LIVRETS_DEF.forEach(l=>{row[l.label]=livVal[l.key];});
+      // Poches (top of stack) — valorisation + espèces
+      // Use monthly price (same logic as the pie in "valorisation" mode)
+      const monthStr=dateStr.slice(0,7);
+      POCHES.forEach(p=>{
+        const map=byPocheG[p.key];
+        const pocheInvest=Object.values(map).reduce((s,d)=>s+d.inv,0);
+        const marketVal=Object.entries(map).reduce((s,[t,d])=>{
+          if(d.q<=1e-9)return s;
+          const pru=d.q>0?d.inv/d.q:0;
         return s+d.q*getPriceForDateGlobal(t,dateStr,pru);
-      },0);
-      return{date:dateStr,month:dateStr.slice(0,7),Livrets:livTotal,Investissements:invTotal};
+        },0);
+        const esp=Math.max(0,pCV[p.key]+pCP[p.key]+pCD[p.key]-pocheInvest);
+        row[p.label]=marketVal+esp;
+      });
+      return row;
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[livrets,positions,ventes,getPriceForDateGlobal]);
+  },[livrets,positions,ventes,dividendes,versements,getPriceForDateGlobal]);
 
   const pieNode=(h:number,_isExp?:boolean)=>inner.length===0?<div className="empty">Aucune donnée</div>:(
     <NestedPie inner={inner} outer={outer} total={grandTotal} fmt={fmt} h={h}
@@ -561,25 +605,52 @@ function GlobalRecap({livrets,positions,ventes,dividendes,versements,mois,scpiVa
       onToggle={()=>setPieToggle(v=>v==="versements"?"valeur":"versements")}/>
   );
 
-  // Custom tooltip for GlobalRecap
+  // Custom tooltip for GlobalRecap — total › investissements › livrets › detail
+  const _livLabels=new Set(LIVRETS_DEF.map(l=>l.label));
+  const _pocheLabels=new Set(POCHES.map(p=>p.label));
   const GlobalTooltip=({active,payload,label}:any)=>{
     if(!active||!payload?.length)return null;
     const items=payload.filter((p:any)=>p.value!=null&&Number(p.value)>0);
     if(!items.length)return null;
-    const total=items.reduce((s:number,p:any)=>s+Number(p.value),0);
+    const livItems=items.filter((p:any)=>_livLabels.has(p.dataKey||p.name));
+    const invItems=items.filter((p:any)=>_pocheLabels.has(p.dataKey||p.name));
+    const totalLiv=livItems.reduce((s:number,p:any)=>s+Number(p.value),0);
+    const totalInv=invItems.reduce((s:number,p:any)=>s+Number(p.value),0);
+    const total=totalLiv+totalInv;
     return(
-      <div style={{...TOOLTIP_STYLE,padding:"10px 14px",minWidth:160}}>
+      <div style={{...TOOLTIP_STYLE,padding:"10px 14px",minWidth:190}}>
         {label&&<div style={{color:"var(--text-2)",fontSize:9,marginBottom:6,letterSpacing:".05em"}}>{label}</div>}
-        <div style={{display:"flex",justifyContent:"space-between",gap:12,marginBottom:8,paddingBottom:6,borderBottom:"1px solid var(--border)"}}>
+        {/* Grand total */}
+        <div style={{display:"flex",justifyContent:"space-between",gap:12,marginBottom:6,paddingBottom:6,borderBottom:"1px solid var(--border)"}}>
           <span style={{color:"var(--text-1)",fontSize:10}}>Total</span>
           <span style={{color:"var(--text-0)",fontSize:11,fontWeight:700}}>{fmt(total)}</span>
         </div>
-        {items.map((p:any,i:number)=>(
-          <div key={i} style={{display:"flex",justifyContent:"space-between",gap:8,marginBottom:2}}>
-            <span style={{color:p.stroke||p.fill||"var(--text-1)",fontSize:10}}>{p.name||p.dataKey}</span>
-            <span style={{color:"var(--text-0)",fontSize:10}}>{fmt(Number(p.value))}</span>
+        {/* Investissements */}
+        {totalInv>0&&<>
+          <div style={{display:"flex",justifyContent:"space-between",gap:12,marginBottom:3}}>
+            <span style={{color:GLOBAL_GROUP_COLORS.investissements,fontSize:10,fontWeight:600}}>Investissements</span>
+            <span style={{color:"var(--text-0)",fontSize:10,fontWeight:600}}>{fmt(totalInv)}</span>
           </div>
-        ))}
+          {invItems.map((p:any,i:number)=>(
+            <div key={i} style={{display:"flex",justifyContent:"space-between",gap:8,marginBottom:2,paddingLeft:10}}>
+              <span style={{color:p.stroke||"var(--text-1)",fontSize:10}}>{p.name||p.dataKey}</span>
+              <span style={{color:"var(--text-0)",fontSize:10}}>{fmt(Number(p.value))}</span>
+            </div>
+          ))}
+        </>}
+        {/* Livrets */}
+        {totalLiv>0&&<>
+          <div style={{display:"flex",justifyContent:"space-between",gap:12,marginTop:4,marginBottom:3}}>
+            <span style={{color:GLOBAL_GROUP_COLORS.livrets,fontSize:10,fontWeight:600}}>Livrets</span>
+            <span style={{color:"var(--text-0)",fontSize:10,fontWeight:600}}>{fmt(totalLiv)}</span>
+          </div>
+          {livItems.map((p:any,i:number)=>(
+            <div key={i} style={{display:"flex",justifyContent:"space-between",gap:8,marginBottom:2,paddingLeft:10}}>
+              <span style={{color:p.stroke||"var(--text-1)",fontSize:10}}>{p.name||p.dataKey}</span>
+              <span style={{color:"var(--text-0)",fontSize:10}}>{fmt(Number(p.value))}</span>
+            </div>
+          ))}
+        </>}
       </div>
     );
   };
@@ -609,16 +680,18 @@ function GlobalRecap({livrets,positions,ventes,dividendes,versements,mois,scpiVa
       <ResponsiveContainer width="100%" height={h}>
         <ComposedChart data={d} margin={{left:0,right:5,top:5,bottom:isExp?28:0}}>
           <defs>
-            <linearGradient id="gGL4" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={GLOBAL_GROUP_COLORS.livrets} stopOpacity={.7}/><stop offset="95%" stopColor={GLOBAL_GROUP_COLORS.livrets} stopOpacity={.05}/></linearGradient>
-            <linearGradient id="gGI4" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={GLOBAL_GROUP_COLORS.investissements} stopOpacity={.7}/><stop offset="95%" stopColor={GLOBAL_GROUP_COLORS.investissements} stopOpacity={.05}/></linearGradient>
+            {LIVRETS_DEF.map(l=>(<linearGradient key={l.key} id={`gGL_${l.key}`} x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={l.color} stopOpacity={.7}/><stop offset="95%" stopColor={l.color} stopOpacity={.05}/></linearGradient>))}
+            {POCHES.map(p=>(<linearGradient key={p.key} id={`gGP_${p.key}`} x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={p.color} stopOpacity={.7}/><stop offset="95%" stopColor={p.color} stopOpacity={.05}/></linearGradient>))}
           </defs>
           <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
           <XAxis dataKey="date" ticks={xTicksG} tick={{fontSize:8,fontFamily:"JetBrains Mono"}}
             tickFormatter={dd=>{const mo=parseInt(dd.slice(5,7));return MN_SHORT_G[mo-1];}}/>
           <YAxis tick={{fontSize:8,fontFamily:"JetBrains Mono"}} tickFormatter={v=>v>=1000?`${(v/1000).toFixed(0)}k€`:`${v}€`} width={45}/>
           <Tooltip content={<GlobalTooltip/>}/>
-          <Area type="monotone" dataKey="Livrets" stackId="g" stroke={GLOBAL_GROUP_COLORS.livrets} strokeWidth={1.5} fill="url(#gGL4)"/>
-          <Area type="monotone" dataKey="Investissements" stackId="g" stroke={GLOBAL_GROUP_COLORS.investissements} strokeWidth={1.5} fill="url(#gGI4)"/>
+          {/* Livrets — stacked at bottom, one area per livret */}
+          {LIVRETS_DEF.map(l=><Area key={l.key} type="monotone" dataKey={l.label} stackId="g" name={l.label} stroke={l.color} strokeWidth={1.5} fill={`url(#gGL_${l.key})`}/>)}
+          {/* Investissements — stacked on top, one area per poche */}
+          {POCHES.map(p=><Area key={p.key} type="monotone" dataKey={p.label} stackId="g" name={p.label} stroke={p.color} strokeWidth={1.5} fill={`url(#gGP_${p.key})`}/>)}
           {monthRangeG&&(
             <Customized component={(p:any)=>{
               const bS=isExp?(brushIdxG?.start??0):0;

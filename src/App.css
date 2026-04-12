@@ -253,6 +253,8 @@ tbody tr:hover td { background: var(--bg-2); }
 .btn-ghost:hover  { background: var(--bg-2); color: var(--text-0); }
 .btn-danger   { background: transparent;   color: var(--rose);   border-color: var(--rose); }
 .btn-danger:hover { background: var(--rose-dim); }
+.btn-amber     { background: var(--amber);   color: var(--bg-0);   border-color: var(--amber);  }
+.btn-amber:hover   { filter: brightness(1.1); }
 .btn-teal     { background: var(--teal);   color: var(--bg-0);   border-color: var(--teal);  }
 .btn-teal:hover   { filter: brightness(1.1); }
 .btn-sm { padding: 4px 10px; font-size: 10px; }
