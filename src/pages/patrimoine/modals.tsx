@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
 import { LIVRETS_DEF, POCHES, INVEST_SUBCATS, TRADEABLE_SUBCATS, defaultDateForMonth } from "../../constants";
-import { curMonth } from "../../context/DeviseContext";
-import { useDevise } from "../../context/DeviseContext";
+import { curMonth, useDevise } from "../../context/DeviseContext";
 import type { Livret, Position, Vente, Dividende, Versement, ScpiValuation } from "./types";
 
 // ── Livret Modal ───────────────────────────────────────────────────────────────
@@ -57,21 +56,41 @@ export function InteretModal({mois,onClose,onSave}:{mois:string;onClose:()=>void
 }
 
 // ── Delete Position Rows Modal ─────────────────────────────────────────────────
+const DEL_PAGE_SIZE = 10;
+
 export function DeletePositionModal({ticker,rows,onClose,onSave}:{ticker:string;rows:Position[];onClose:()=>void;onSave:()=>void}) {
+  const {fmt}=useDevise();
   const [sel,setSel]=useState<Set<number>>(new Set());
+  const [page,setPage]=useState(0);
   const tog=(id:number)=>setSel(s=>{const n=new Set(s);n.has(id)?n.delete(id):n.add(id);return n;});
+
+  const sorted=useMemo(()=>[...rows].sort((a,b)=>(b.date_achat??"").localeCompare(a.date_achat??"")), [rows]);
+  const pages=Math.ceil(sorted.length/DEL_PAGE_SIZE);
+  const pageRows=sorted.slice(page*DEL_PAGE_SIZE,(page+1)*DEL_PAGE_SIZE);
+
   return(<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
-    <div className="modal-title">Supprimer des achats · {ticker}</div>
+    <div className="modal-title">Récap achats · {ticker}</div>
     <p style={{fontSize:12,color:"var(--text-1)",marginBottom:16}}>Sélectionne les lignes à supprimer :</p>
-    <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:20}}>
-      {rows.map(r=>(
+    <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:12}}>
+      {pageRows.map(r=>(
         <label key={r.id} style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",padding:"8px 12px",borderRadius:6,
           background:sel.has(r.id!)?"var(--rose-dim)":"var(--bg-2)",border:`1px solid ${sel.has(r.id!)?"var(--rose)":"var(--border)"}`}}>
           <input type="checkbox" checked={sel.has(r.id!)} onChange={()=>tog(r.id!)}/>
-          <span style={{fontSize:12}}>{r.date_achat} — {r.quantite.toFixed(8)} × {r.prix_achat.toFixed(6)} € = {(r.quantite*r.prix_achat).toFixed(2)} €</span>
+          <span style={{fontSize:12}}>
+            {r.date_achat??""} — {r.quantite.toFixed(8)} × {r.prix_achat.toFixed(6)} € = {fmt(r.quantite*r.prix_achat)}
+          </span>
         </label>
       ))}
     </div>
+    {pages>1&&(
+      <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,marginBottom:12,userSelect:"none"}}>
+        <button className="btn btn-ghost btn-sm" disabled={page===0} onClick={()=>setPage(0)} style={{padding:"2px 6px",fontSize:11}}>«</button>
+        <button className="btn btn-ghost btn-sm" disabled={page===0} onClick={()=>setPage(p=>p-1)} style={{padding:"2px 6px",fontSize:11}}>‹</button>
+        <span style={{fontSize:10,color:"var(--text-2)",minWidth:60,textAlign:"center"}}>{page+1} / {pages}</span>
+        <button className="btn btn-ghost btn-sm" disabled={page>=pages-1} onClick={()=>setPage(p=>p+1)} style={{padding:"2px 6px",fontSize:11}}>›</button>
+        <button className="btn btn-ghost btn-sm" disabled={page>=pages-1} onClick={()=>setPage(pages-1)} style={{padding:"2px 6px",fontSize:11}}>»</button>
+      </div>
+    )}
     <div className="form-actions">
       <button className="btn btn-ghost" onClick={onClose}>Annuler</button>
       <button className="btn btn-danger" disabled={sel.size===0} onClick={async()=>{
