@@ -23,6 +23,17 @@ import { LivretsSection } from "./patrimoine/LivretsSection";
 import { PocheSection } from "./patrimoine/PocheSection";
 import type { Livret, Position, Vente, Dividende, Versement, ScpiValuation } from "./patrimoine/types";
 
+// Renders a dot only when the data point is isolated (no neighbours with a value)
+function renderIsolatedDot(isolated: Set<string>, color: string) {
+  return (props: any) => {
+    const { cx, cy, payload } = props;
+    if (cx == null || cy == null) return <g/>;
+    const key = payload?.date ?? payload?.mois ?? "";
+    if (!key || !isolated.has(key)) return <g/>;
+    return <circle cx={cx} cy={cy} r={2.5} fill={color} stroke="var(--bg-0)" strokeWidth={1.5}/>;
+  };
+}
+
 // Index-based pixel: avoids Recharts scale domain truncation (ticks-only domain bug)
 function idxPx(data: any[], x1: string, x2: string, offset: any, bStart = 0, bEnd?: number, key = "date") {
   const end = bEnd ?? data.length - 1;
@@ -304,6 +315,22 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
     return{x1:inM[0].date as string,x2:inM[inM.length-1].date as string};
   },[visibleStackedData,mois]);
 
+  // Isolated dots per poche (daily): day with value but neighbours = 0
+  const isolatedByPoche=useMemo(()=>{
+    const result:Record<string,Set<string>>={};
+    POCHES.forEach(p=>{
+      const s=new Set<string>();
+      stackedData.forEach((row:any,i:number)=>{
+        const cur =(stackedData[i]  as any)?.[p.label]??0;
+        const prev=(stackedData[i-1] as any)?.[p.label]??0;
+        const next=(stackedData[i+1] as any)?.[p.label]??0;
+        if(cur>0&&prev===0&&next===0)s.add(row.date as string);
+      });
+      result[p.label]=s;
+    });
+    return result;
+  },[stackedData]);
+
   // Custom tooltip: total › versements › pnl réalisé (si ≠0) › poche values
   const RECAP_SKIP=new Set(["_versTotal","_pnlTotal","_pnlReal","_lossArea"]);
   const RecapTooltip=({active,payload,label}:any)=>{
@@ -367,7 +394,7 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
             tickFormatter={dd=>{const mo=parseInt(dd.slice(5,7));return MN_SHORT[mo-1];}}/>
           <YAxis tick={{fontSize:8,fontFamily:"JetBrains Mono"}} tickFormatter={v=>v>=1000?`${(v/1000).toFixed(0)}k€`:`${v}€`} width={45} domain={[0,"auto"]}/>
           <Tooltip content={<RecapTooltip/>}/>
-          {POCHES.map(p=><Area key={p.key} type="monotone" dataKey={p.label} stackId="r" name={p.label} stroke={p.color} strokeWidth={1.5} fill={`url(#gr_${p.key})`}/>)}
+          {POCHES.map(p=><Area key={p.key} type="monotone" dataKey={p.label} stackId="r" name={p.label} stroke={p.color} strokeWidth={1.5} fill={`url(#gr_${p.key})`} dot={renderIsolatedDot(isolatedByPoche[p.label]??new Set(),p.color)}/>)}
           {/* Loss zone: stacked on top, fills gap to versements line when portfolio < versements */}
           <Area type="monotone" dataKey="_lossArea" stackId="r" name="_lossArea"
             stroke="none" strokeWidth={0} fill="url(#gr_loss_r)" legendType="none"/>
@@ -691,6 +718,22 @@ function GlobalRecap({livrets,positions,ventes,dividendes,versements,mois,scpiVa
     return{x1:(inM[0] as any).date as string,x2:(inM[inM.length-1] as any).date as string};
   },[visibleEvoData,mois]);
 
+  // Isolated dots per livret/poche (daily) for global chart
+  const isolatedByGlobal=useMemo(()=>{
+    const result:Record<string,Set<string>>={};
+    [...LIVRETS_DEF,...POCHES].forEach(s=>{
+      const set=new Set<string>();
+      evoData.forEach((row:any,i:number)=>{
+        const cur =(evoData[i]  as any)?.[s.label]??0;
+        const prev=(evoData[i-1] as any)?.[s.label]??0;
+        const next=(evoData[i+1] as any)?.[s.label]??0;
+        if(cur>0&&prev===0&&next===0)set.add(row.date as string);
+      });
+      result[s.label]=set;
+    });
+    return result;
+  },[evoData]);
+
   const MN_SHORT_G=["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
 
   const stackNode=(h:number,isExp?:boolean)=>evoData.length===0?<div className="empty">Aucune donnée</div>:(()=>{
@@ -708,9 +751,9 @@ function GlobalRecap({livrets,positions,ventes,dividendes,versements,mois,scpiVa
           <YAxis tick={{fontSize:8,fontFamily:"JetBrains Mono"}} tickFormatter={v=>v>=1000?`${(v/1000).toFixed(0)}k€`:`${v}€`} width={45}/>
           <Tooltip content={<GlobalTooltip/>}/>
           {/* Livrets — stacked at bottom, one area per livret */}
-          {LIVRETS_DEF.map(l=><Area key={l.key} type="monotone" dataKey={l.label} stackId="g" name={l.label} stroke={l.color} strokeWidth={1.5} fill={`url(#gGL_${l.key})`}/>)}
+          {LIVRETS_DEF.map(l=><Area key={l.key} type="monotone" dataKey={l.label} stackId="g" name={l.label} stroke={l.color} strokeWidth={1.5} fill={`url(#gGL_${l.key})`} dot={renderIsolatedDot(isolatedByGlobal[l.label]??new Set(),l.color)}/>)}
           {/* Investissements — stacked on top, one area per poche */}
-          {POCHES.map(p=><Area key={p.key} type="monotone" dataKey={p.label} stackId="g" name={p.label} stroke={p.color} strokeWidth={1.5} fill={`url(#gGP_${p.key})`}/>)}
+          {POCHES.map(p=><Area key={p.key} type="monotone" dataKey={p.label} stackId="g" name={p.label} stroke={p.color} strokeWidth={1.5} fill={`url(#gGP_${p.key})`} dot={renderIsolatedDot(isolatedByGlobal[p.label]??new Set(),p.color)}/>)}
           {monthRangeG&&(
             <Customized component={(p:any)=>{
               const bS=isExp?(brushIdxG?.start??0):0;
