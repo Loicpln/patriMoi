@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/tauri";
 import {
   Tooltip, ResponsiveContainer,
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Brush,
+  ComposedChart, Customized,
 } from "recharts";
 import { useDevise, curMonth } from "../context/DeviseContext";
 import { DEPENSE_CATEGORIES, TOOLTIP_STYLE, depenseSubColor, defaultDateForMonth } from "../constants";
@@ -21,6 +22,17 @@ const CAT_COLOR: Record<string, string> = Object.fromEntries(
   Object.entries(DEPENSE_CATEGORIES).map(([k,v]) => [k, v.color])
 );
 const CAT_KEYS = Object.keys(DEPENSE_CATEGORIES);
+
+// Returns a dot renderer that shows a point only for months pre-computed as isolated.
+// Using payload.mois avoids any index/offset arithmetic.
+function isolatedDotByMois(isolated: Set<string>, color: string) {
+  return (props: any) => {
+    const { cx, cy, payload } = props;
+    if (cx == null || cy == null || !payload?.mois) return <g/>;
+    if (!isolated.has(payload.mois)) return <g/>;
+    return <circle cx={cx} cy={cy} r={3.5} fill={color} stroke="var(--bg-0)" strokeWidth={1.5}/>;
+  };
+}
 
 // ── Chart grid (same as Patrimoine) ──────────────────────────────────────────
 function ChartGrid({charts}:{charts:{key:string;title:string;node:(h:number,isExp:boolean)=>React.ReactNode;onResetZoom?:()=>void;brushActive?:boolean}[]}) {
@@ -115,12 +127,15 @@ function Modal({ initial, libelles, onClose, onSave, title }: {
 
 export default function Depenses() {
   const { fmt } = useDevise();
-  const [depenses, setDepenses]     = useState<Depense[]>([]);
-  const [mois, setMois]             = useState(curMonth);
-  const [modal, setModal]           = useState(false);
-  const [editing, setEditing]       = useState<Depense | null>(null);
-  const [loading, setLoading]       = useState(false);
-  const [firstMonth, setFirstMonth] = useState<string | undefined>(undefined);
+  const [depenses, setDepenses]         = useState<Depense[]>([]);
+  const [allDepenses, setAllDepenses]   = useState<Depense[]>([]);
+  const [mois, setMois]                 = useState(curMonth);
+  const [modal, setModal]               = useState(false);
+  const [editing, setEditing]           = useState<Depense | null>(null);
+  const [loading, setLoading]           = useState(false);
+  const [firstMonth, setFirstMonth]     = useState<string | undefined>(undefined);
+  const [brushIdxD, setBrushIdxD]       = useState<{start:number;end:number}|null>(null);
+
   const load = useCallback(async (m: string) => {
     setLoading(true);
     try { setDepenses(await invoke<Depense[]>("get_depenses", { mois: m })); }
@@ -128,13 +143,16 @@ export default function Depenses() {
   }, []);
   useEffect(() => { load(mois); }, [mois, load]);
 
-  // Fetch earliest depense date once on mount
-  useEffect(() => {
-    invoke<Depense[]>("get_depenses", { mois: null }).then(all => {
+  // Fetch all depenses once on mount (for the global chart)
+  const loadAll = useCallback(async () => {
+    try {
+      const all = await invoke<Depense[]>("get_depenses", { mois: null });
+      setAllDepenses(all);
       const dates = all.map(d => d.date.slice(0, 7)).filter(Boolean).sort();
       if (dates[0]) setFirstMonth(dates[0]);
-    }).catch(() => {});
+    } catch {}
   }, []);
+  useEffect(() => { loadAll(); }, [loadAll]);
 
   const libelles = useMemo<Record<string, string[]>>(() => {
     const map: Record<string, Set<string>> = {};
@@ -193,6 +211,142 @@ export default function Depenses() {
       montant: byDay[i + 1] ?? 0,
     }));
   }, [depenses, mois]);
+
+  // ── Monthly stacked data (all months, one entry per month) ──────────────────
+  const monthlyStackData = useMemo(() => {
+    if (!allDepenses.length) return [];
+    const months = [...new Set(allDepenses.map(d => d.date.slice(0, 7)))].sort();
+    // Fill gaps up to curMonth
+    const first = months[0]; const last = curMonth;
+    const full: string[] = [];
+    const [fy, fm] = first.split("-").map(Number);
+    const [ly, lm] = last.split("-").map(Number);
+    let y = fy, m = fm;
+    while (y < ly || (y === ly && m <= lm)) {
+      full.push(`${y}-${String(m).padStart(2,"0")}`);
+      m++; if (m > 12) { m = 1; y++; }
+    }
+    return full.map(mo => {
+      const row: any = { mois: mo };
+      const moDepenses = allDepenses.filter(d => d.date.slice(0, 7) === mo);
+      CAT_KEYS.forEach(cat => {
+        const v = moDepenses.filter(d => d.categorie === cat).reduce((s, d) => s + d.montant, 0);
+        row[cat] = v > 0 ? v : null;
+      });
+      return row;
+    });
+  }, [allDepenses]);
+
+  const MN_SHORT_D = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
+
+  // Pre-compute which months are isolated per category (no data in adjacent months)
+  const isolatedMois = useMemo(() => {
+    const result: Record<string, Set<string>> = {};
+    CAT_KEYS.forEach(cat => {
+      result[cat] = new Set<string>();
+      monthlyStackData.forEach((row, i) => {
+        const cur  = monthlyStackData[i]?.[cat] ?? null;
+        const prev = monthlyStackData[i - 1]?.[cat] ?? null;
+        const next = monthlyStackData[i + 1]?.[cat] ?? null;
+        if (cur != null && prev == null && next == null) result[cat].add(row.mois);
+      });
+    });
+    return result;
+  }, [monthlyStackData]);
+
+  const visibleMonthlyData = useMemo(() =>
+    brushIdxD ? monthlyStackData.slice(brushIdxD.start, brushIdxD.end + 1) : monthlyStackData,
+  [monthlyStackData, brushIdxD]);
+
+  const selectedMonthIdxD = useMemo(() => {
+    const d = visibleMonthlyData;
+    return d.findIndex((r: any) => r.mois === mois);
+  }, [visibleMonthlyData, mois]);
+
+  // ── Monthly chart node ────────────────────────────────────────────────────────
+  const MonthlyDepTooltip = ({ active, payload, label }: any) => {
+    if (!active || !payload?.length) return null;
+    const items = payload.filter((p: any) => p.value != null && Number(p.value) > 0);
+    if (!items.length) return null;
+    const total = items.reduce((s: number, p: any) => s + Number(p.value), 0);
+    return (
+      <div style={{ ...TOOLTIP_STYLE, padding: "10px 14px", minWidth: 170 }}>
+        {label && <div style={{ color: "var(--text-2)", fontSize: 9, marginBottom: 6, letterSpacing: ".05em" }}>{label}</div>}
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 6, paddingBottom: 5, borderBottom: "1px solid var(--border)" }}>
+          <span style={{ color: "var(--text-1)", fontSize: 10 }}>Total</span>
+          <span style={{ color: "var(--text-0)", fontSize: 11, fontWeight: 700 }}>{fmt(total)}</span>
+        </div>
+        {items.map((p: any, i: number) => (
+          <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 2 }}>
+            <span style={{ color: p.stroke || "var(--text-1)", fontSize: 10 }}>{p.name || p.dataKey}</span>
+            <span style={{ color: "var(--text-0)", fontSize: 10 }}>{fmt(Number(p.value))}</span>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  const monthlyNode = (h: number, isExp?: boolean) => monthlyStackData.length === 0
+    ? <div className="empty">Aucune dépense.</div>
+    : (() => {
+      const d = isExp ? monthlyStackData : visibleMonthlyData;
+      return (
+        <ResponsiveContainer width="100%" height={h}>
+          <ComposedChart data={d} margin={{ left: 0, right: 5, top: 5, bottom: isExp ? 28 : 0 }}>
+            <defs>
+              {CAT_KEYS.map(cat => (
+                <linearGradient key={cat} id={`dmg_${cat.replace(/\W/g,"_")}`} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%"  stopColor={CAT_COLOR[cat]} stopOpacity={.8}/>
+                  <stop offset="95%" stopColor={CAT_COLOR[cat]} stopOpacity={.15}/>
+                </linearGradient>
+              ))}
+            </defs>
+            <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
+            <XAxis dataKey="mois" tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
+              tickFormatter={mo => { const n = parseInt(mo.slice(5,7)); return MN_SHORT_D[n-1]; }}
+              interval={Math.max(0, Math.ceil(d.length / 8) - 1)}/>
+            <YAxis tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
+              tickFormatter={v => v >= 1000 ? `${(v/1000).toFixed(1)}k€` : `${v}€`} width={45}/>
+            <Tooltip content={<MonthlyDepTooltip/>}/>
+            {CAT_KEYS.map(cat => (
+              <Area key={cat} type="monotone" dataKey={cat} stackId="d" name={cat}
+                stroke={CAT_COLOR[cat]} strokeWidth={1.5}
+                fill={`url(#dmg_${cat.replace(/\W/g,"_")})`}
+                connectNulls={false}
+                dot={isolatedDotByMois(isolatedMois[cat] ?? new Set(), CAT_COLOR[cat])}
+                activeDot={{ r: 4 }}/>
+            ))}
+            {/* Selected-month highlight zone */}
+            {selectedMonthIdxD >= 0 && (
+              <Customized component={(p: any) => {
+                const N = d.length; if (N === 0) return null;
+                const slotW = p.offset.width / N;
+                const x = p.offset.left + selectedMonthIdxD * slotW;
+                return (
+                  <g>
+                    <rect x={x} y={p.offset.top} width={slotW}
+                      height={p.offset.height}
+                      fill="var(--gold)" fillOpacity={0.18}
+                      stroke="var(--gold)" strokeOpacity={0.6}
+                      strokeDasharray="4 2" strokeWidth={1} pointerEvents="none"/>
+                  </g>
+                );
+              }}/>
+            )}
+            {isExp && <Brush dataKey="mois" height={22} travellerWidth={6}
+              stroke="var(--border)" fill="var(--bg-2)"
+              startIndex={brushIdxD?.start ?? 0}
+              endIndex={brushIdxD?.end ?? monthlyStackData.length - 1}
+              onChange={(range: any) => {
+                const { startIndex: s, endIndex: e } = range ?? {};
+                if (s === undefined || e === undefined) return;
+                setBrushIdxD(s === 0 && e === monthlyStackData.length - 1 ? null : { start: s, end: e });
+              }}
+              tickFormatter={() => ""}/>}
+          </ComposedChart>
+        </ResponsiveContainer>
+      );
+    })();
 
   // Grouped for accordion display
   const grouped = useMemo(() => {
@@ -328,8 +482,9 @@ export default function Depenses() {
 
       {/* Charts */}
       <ChartGrid charts={[
-        { key:"pie",   title:"Répartition par catégorie / sous-catégorie", node: pieNode },
-        { key:"daily", title:`Dépenses par jour · ${mois}`,                node: stackedBarNode },
+        { key:"pie",     title:"Répartition par catégorie / sous-catégorie",  node: pieNode },
+        { key:"monthly", title:"Évolution des dépenses / mois",               node: monthlyNode,
+          onResetZoom: () => setBrushIdxD(null), brushActive: !!brushIdxD },
       ]}/>
 
       {/* Detail by category — accordion */}
@@ -339,7 +494,7 @@ export default function Depenses() {
         return (
           <CatAccordion key={cat} cat={cat} subs={subs} catTotal={catTotal} fmt={fmt}
             onEdit={d => setEditing(d)}
-            onDelete={async (d) => { await invoke("delete_depense",{id:d.id}); load(mois); }}/>
+            onDelete={async (d) => { await invoke("delete_depense",{id:d.id}); load(mois); loadAll(); }}/>
         );
       })}
 
@@ -350,12 +505,12 @@ export default function Depenses() {
       {modal && (
         <Modal initial={emptyDep} libelles={libelles} title="Ajouter une dépense"
           onClose={() => setModal(false)}
-          onSave={async form => { await invoke("add_depense",{depense:form}); load(mois); }}/>
+          onSave={async form => { await invoke("add_depense",{depense:form}); load(mois); loadAll(); }}/>
       )}
       {editing && (
         <Modal initial={editing} libelles={libelles} title="Modifier la dépense"
           onClose={() => setEditing(null)}
-          onSave={async form => { await invoke("update_depense",{depense:form}); load(mois); }}/>
+          onSave={async form => { await invoke("update_depense",{depense:form}); load(mois); loadAll(); }}/>
       )}
     </div>
   );

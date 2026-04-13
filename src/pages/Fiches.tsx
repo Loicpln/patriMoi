@@ -16,17 +16,12 @@ function xPixel(scale: any, value: string): number | null {
   return range[0] + (idx / (domain.length - 1)) * (range[1] - range[0]);
 }
 
-function renderIsolatedDot(data: any[], dataKey: string, color: string) {
+function renderIsolatedDot(isolated: Set<string>, color: string) {
   return (props: any) => {
-    const { cx, cy, index } = props;
-    if (cx == null || cy == null) return <g/>;
-    const prev1 = data[index - 1]?.[dataKey] ?? null;
-    const next1 = data[index + 1]?.[dataKey] ?? null;
-    const cur   = data[index]?.[dataKey] ?? null;
-    if (cur != null && prev1 == null && next1 == null) {
-      return <circle cx={cx} cy={cy} r={3.5} fill={color} stroke="var(--bg-0)" strokeWidth={1.5}/>;
-    }
-    return <g/>;
+    const { cx, cy, payload } = props;
+    if (cx == null || cy == null || !payload?.mois) return <g/>;
+    if (!isolated.has(payload.mois)) return <g/>;
+    return <circle cx={cx} cy={cy} r={3.5} fill={color} stroke="var(--bg-0)" strokeWidth={1.5}/>;
   };
 }
 
@@ -397,6 +392,22 @@ export default function Fiches() {
     brushFiches ? evoData.slice(brushFiches.start, brushFiches.end + 1) : evoData,
   [evoData, brushFiches]);
 
+  // Pre-compute isolated months per series
+  const isolatedFiches = useMemo(() => {
+    const keys = ["net", ...activePrimeTypes];
+    const result: Record<string, Set<string>> = {};
+    keys.forEach(key => {
+      result[key] = new Set<string>();
+      evoData.forEach((row: any, i: number) => {
+        const cur  = evoData[i]?.[key] ?? null;
+        const prev = evoData[i - 1]?.[key] ?? null;
+        const next = evoData[i + 1]?.[key] ?? null;
+        if (cur != null && prev == null && next == null) result[key].add(row.mois);
+      });
+    });
+    return result;
+  }, [evoData, activePrimeTypes]);
+
   // Map YYYY-MM → Salaire
   const byMonth: Record<string, Salaire[]> = {};
   fichesNormales.forEach(s => {
@@ -498,12 +509,12 @@ export default function Fiches() {
 
       {/* Stacked area chart: net + prime types */}
       {evoData.length > 0 && (() => {
-        const h = expChart ? 520 : 220;
+        const h = expChart ? 520 : 260;
         // Compact: render sliced data so zoom is preserved without the Brush DOM element.
         // Isolated-dot renderer must also close over the same slice to keep index alignment.
         const chartData = expChart ? evoData : visibleEvoData;
         return (
-          <div className="chart-card" style={{ marginBottom: 20 }}>
+          <div className="chart-card" style={{ marginBottom: 20, height:h+52 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
               <div className="chart-title" style={{ marginBottom: 0 }}>Évolution du salaire net + primes</div>
               <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
@@ -543,12 +554,12 @@ export default function Fiches() {
                   return (
                     <Area key={type} type="monotone" dataKey={type} stackId="s" name={type}
                       stroke={c} strokeWidth={1.5} fill={`url(#gFP_${type.replace(/[^a-zA-Z0-9]/g,"_")})`}
-                      dot={renderIsolatedDot(chartData, type, c)} connectNulls={false}/>
+                      dot={renderIsolatedDot(isolatedFiches[type] ?? new Set(), c)} connectNulls={false}/>
                   );
                 })}
                 <Area type="monotone" dataKey="net" stackId="s" name="net"
                   stroke="#5fa89e" strokeWidth={2} fill="url(#gFNet)"
-                  dot={renderIsolatedDot(chartData, "net", "#5fa89e")} connectNulls={false}/>
+                  dot={renderIsolatedDot(isolatedFiches["net"] ?? new Set(), "#5fa89e")} connectNulls={false}/>
                 {yearRange && (
                   <Customized component={(p: any) => {
                     const Nv = chartData.length; if (Nv <= 0) return null;

@@ -33,17 +33,12 @@ function scpiPriceD(map: Record<string, Record<string, number>>, ticker: string,
 
 type Page = "dashboard" | "depenses" | "fiches" | "patrimoine" | "parametres";
 
-function renderIsolatedDot(data: any[], dataKey: string, color: string) {
+function renderIsolatedDot(isolated: Set<string>, color: string) {
   return (props: any) => {
-    const { cx, cy, index } = props;
-    if (cx == null || cy == null) return <g/>;
-    const prev1 = data[index - 1]?.[dataKey] ?? null;
-    const next1 = data[index + 1]?.[dataKey] ?? null;
-    const cur   = data[index]?.[dataKey] ?? null;
-    if (cur != null && prev1 == null&& next1 == null) {
-      return <circle cx={cx} cy={cy} r={3.5} fill={color} stroke="var(--bg-0)" strokeWidth={1.5}/>;
-    }
-    return <g/>;
+    const { cx, cy, payload } = props;
+    if (cx == null || cy == null || !payload?.mois) return <g/>;
+    if (!isolated.has(payload.mois)) return <g/>;
+    return <circle cx={cx} cy={cy} r={3.5} fill={color} stroke="var(--bg-0)" strokeWidth={1.5}/>;
   };
 }
 
@@ -62,8 +57,10 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
   const [versements, setVersements]   = useState<Versement[]>([]);
   const [dividendes, setDividendes]   = useState<Dividende[]>([]);
   const [scpiVals, setScpiVals]       = useState<ScpiVal[]>([]);
-  const [expSal, setExpSal]           = useState(false);
+  const [expChart, setExpChart]       = useState<"sal"|"pie"|null>(null);
   const [brushDash, setBrushDash]     = useState<{start:number;end:number}|null>(null);
+  const expSal = expChart === "sal";
+  const expPie = expChart === "pie";
 
   const loadDepenses = useCallback((m: string) => {
     invoke<Depense[]>("get_depenses", { mois: m }).then(setDepenses).catch(() => setDepenses([]));
@@ -202,6 +199,22 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
     brushDash ? evoSal.slice(brushDash.start, brushDash.end + 1) : evoSal,
   [evoSal, brushDash]);
 
+  // Pre-compute isolated months per series (no adjacent data)
+  const isolatedSal = useMemo(() => {
+    const keys = ["net", ...activePrimeTypesDash];
+    const result: Record<string, Set<string>> = {};
+    keys.forEach(key => {
+      result[key] = new Set<string>();
+      evoSal.forEach((row, i) => {
+        const cur  = evoSal[i]?.[key] ?? null;
+        const prev = evoSal[i - 1]?.[key] ?? null;
+        const next = evoSal[i + 1]?.[key] ?? null;
+        if (cur != null && prev == null && next == null) result[key].add(row.mois);
+      });
+    });
+    return result;
+  }, [evoSal, activePrimeTypesDash]);
+
   // Pie dépenses du mois sélectionné — 2 anneaux
   const { depPieInner, depPieOuter } = useMemo(() => {
     const catMap: Record<string, { total: number; subs: Record<string, number> }> = {};
@@ -224,7 +237,10 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
     });
     return { depPieInner: inner, depPieOuter: outer };
   }, [depenses]);
-
+  
+  const hSal = expSal ? 520 : 260;
+  const hPie = expPie ? 520 : 260;
+  
   return (
     <div>
       <div className="page-header">
@@ -261,23 +277,22 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
 
       <div className="two-col">
         {/* Évolution salaire net + prime types empilées */}
-        <div className="chart-card" style={expSal ? { gridColumn: "1 / -1" } : {}}>
+        {expChart !== "pie" && <div className="chart-card" style={{marginBottom: 20, height:hSal+52, gridColumn: expSal?"1 / -1":"" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
             <div className="chart-title" style={{ marginBottom: 0 }}>Évolution du salaire net + primes</div>
             <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
               <button className="btn btn-ghost btn-sm" style={{ fontSize: 10, opacity: brushDash ? 1 : 0.35, cursor: brushDash ? "pointer" : "default" }}
                 onClick={() => brushDash && setBrushDash(null)} title="Réinitialiser le zoom">↺</button>
               <button className="btn btn-ghost btn-sm" style={{ fontSize: 10 }}
-                onClick={() => setExpSal(v => !v)}>
+                onClick={() => setExpChart(v => v === "sal" ? null : "sal")}>
                 {expSal ? "-" : "+"}
               </button>
             </div>
           </div>
           {evoSal.length === 0 ? <div className="empty">Aucune fiche de paie.</div> : (() => {
-            // Compact: slice so zoom is preserved without Brush in DOM. Dot renderer must close over same slice.
             const salChartData = expSal ? evoSal : visibleEvoSal;
             return (
-            <ResponsiveContainer width="100%" height={expSal ? 460 : 220}>
+            <ResponsiveContainer width="100%" height={hSal}>
               <AreaChart data={salChartData} margin={{left:0,right:5,top:5,bottom:expSal?28:0}}>
                 <defs>
                   <linearGradient id="gSal" x1="0" y1="0" x2="0" y2="1">
@@ -341,11 +356,11 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
                   return (
                     <Area key={type} type="monotone" dataKey={type} stackId="s" name={type}
                       stroke={c} strokeWidth={1.5} fill={`url(#gDP_${type.replace(/[^a-zA-Z0-9]/g,"_")})`}
-                      dot={renderIsolatedDot(salChartData, type, c)} connectNulls={false}/>
+                      dot={renderIsolatedDot(isolatedSal[type] ?? new Set(), c)} connectNulls={false}/>
                   );
                 })}
                 <Area type="monotone" dataKey="net" stackId="s" stroke="#5fa89e" strokeWidth={2} fill="url(#gSal)"
-                  dot={renderIsolatedDot(salChartData, "net", "#5fa89e")} connectNulls={false}/>
+                  dot={renderIsolatedDot(isolatedSal["net"] ?? new Set(), "#5fa89e")} connectNulls={false}/>
                 {expSal && <Brush dataKey="mois" height={22} travellerWidth={6}
                   stroke="var(--border)" fill="var(--bg-2)"
                   startIndex={brushDash?.start??0}
@@ -360,16 +375,22 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
             </ResponsiveContainer>
             );
           })()}
-        </div>
+        </div>}
 
         {/* Dépenses du mois — camembert 2 anneaux dynamique */}
-        <div className="chart-card">
-          <div className="chart-title">Dépenses par catégorie · {mois}</div>
+        {expChart !== "sal" && <div className="chart-card" style={{marginBottom: 20, height:hPie+52, gridColumn: expPie?"1 / -1":""}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+            <div className="chart-title" style={{marginBottom:0}}>Dépenses par catégorie · {mois}</div>
+            <button className="btn btn-ghost btn-sm" style={{fontSize:10}}
+              onClick={() => setExpChart(v => v === "pie" ? null : "pie")}>
+              {expPie ? "-" : "+"}
+            </button>
+          </div>
           {depPieInner.length === 0
             ? <div className="empty">Aucune dépense ce mois.</div>
-            : <NestedPie inner={depPieInner} outer={depPieOuter} total={totalDepenses} fmt={fmt}/>
+            : <NestedPie inner={depPieInner} outer={depPieOuter} total={totalDepenses} fmt={fmt} h={hPie}/>
           }
-        </div>
+        </div>}
       </div>
 
       <div className="section-sep">
