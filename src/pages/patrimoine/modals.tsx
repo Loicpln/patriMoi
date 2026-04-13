@@ -287,33 +287,76 @@ export function SellModal({poche,ticker,nom,tickerPositions,tickerVentes,getPric
 }
 
 // ── Dividende Modal ────────────────────────────────────────────────────────────
+const REINVEST_SUBCATS: readonly string[] = TRADEABLE_SUBCATS;
+
 export function DividendeModal({poche,positions,mois=curMonth,onClose,onSave}:{
   poche:string;positions:Position[];mois?:string;onClose:()=>void;onSave:()=>void;
 }) {
   const tickers=[...new Set(positions.map(p=>p.ticker))];
   const allOptions=[...tickers,"_INTERETS_"];
   const nomByTicker=Object.fromEntries(positions.map(p=>[p.ticker,p.nom]));
+  const subcatByTicker=Object.fromEntries(positions.map(p=>[p.ticker,p.sous_categorie??""]));
   const [form,setForm]=useState<Dividende>({ticker:tickers[0]??"_INTERETS_",poche,montant:0,date:defaultDateForMonth(mois)});
+  const [quantite,setQuantite]=useState<number>(0);
   const s=(k:keyof Dividende,v:string|number)=>setForm(f=>({...f,[k]:v}));
+
   const selectedNom=form.ticker==="_INTERETS_"?"Intérêts / Cash":(nomByTicker[form.ticker]??"");
+  const selectedSubcat=subcatByTicker[form.ticker]??"";
+  const isReinvest=REINVEST_SUBCATS.includes(selectedSubcat);
+  const prixUnitaire=quantite>0?form.montant/quantite:0;
+
+  const handleSave=async()=>{
+    await invoke("add_dividende",{dividende:form});
+    if(isReinvest&&quantite>0){
+      const pos:Position={
+        poche,
+        ticker:form.ticker,
+        nom:nomByTicker[form.ticker]??"",
+        sous_categorie:selectedSubcat,
+        quantite,
+        prix_achat:prixUnitaire,
+        date_achat:form.date,
+        notes:"[REINVEST_DIV]",
+      };
+      await invoke("add_position",{position:pos});
+    }
+    onSave();
+  };
+
   return(<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
     <div className="modal-title">Ajouter un dividende / intérêt</div>
     <div className="form-grid">
       <div className="field"><label>Ticker</label>
-        <select value={form.ticker} onChange={e=>s("ticker",e.target.value)}>
+        <select value={form.ticker} onChange={e=>{s("ticker",e.target.value);setQuantite(0);}}>
           {allOptions.map(t=><option key={t} value={t}>{t==="_INTERETS_"?"Intérêts":t}</option>)}
         </select></div>
       <div className="field"><label>Nom</label>
         <input value={selectedNom} readOnly tabIndex={-1}
           style={{background:"var(--bg-2)",color:"var(--text-2)",cursor:"default"}}/>
       </div>
-      <div className="field"><label>Montant (€)</label><input type="number" step="0.01" value={form.montant} onChange={e=>s("montant",parseFloat(e.target.value)||0)}/></div>
-      <div className="field"><label>Date</label><input type="date" value={form.date} onChange={e=>s("date",e.target.value)}/></div>
-      <div className="field span2"><label>Notes</label><textarea rows={2} value={form.notes??""} onChange={e=>s("notes",e.target.value)}/></div>
+      <div className="field"><label>Montant (€)</label>
+        <input type="number" step="0.01" value={form.montant} onChange={e=>s("montant",parseFloat(e.target.value)||0)}/>
+      </div>
+      <div className="field"><label>Date</label>
+        <input type="date" value={form.date} onChange={e=>s("date",e.target.value)}/>
+      </div>
+      {isReinvest&&<>
+        <div className="field"><label>Quantité reçue (réinvesti)</label>
+          <input type="number" step="any" min="0" value={quantite||""} placeholder="0"
+            onChange={e=>setQuantite(parseFloat(e.target.value)||0)}/>
+        </div>
+        <div className="field"><label>Prix unitaire calculé</label>
+          <input value={quantite>0?`${prixUnitaire.toFixed(6)} €/unité`:"—"} readOnly tabIndex={-1}
+            style={{background:"var(--bg-2)",color:"var(--text-2)",cursor:"default"}}/>
+        </div>
+      </>}
+      <div className="field span2"><label>Notes</label>
+        <textarea rows={2} value={form.notes??""} onChange={e=>s("notes",e.target.value)}/>
+      </div>
     </div>
     <div className="form-actions">
       <button className="btn btn-ghost" onClick={onClose}>Annuler</button>
-      <button className="btn btn-primary" onClick={async()=>{await invoke("add_dividende",{dividende:form});onSave();}}>Enregistrer</button>
+      <button className="btn btn-primary" onClick={handleSave}>Enregistrer</button>
     </div>
   </div></div>);
 }
