@@ -135,6 +135,30 @@ function priceForDate(
   return priceForMonth("", dateStr.slice(0, 7), monthlyMap, liveQuote, pru);
 }
 
+// ── USD→EUR conversion ─────────────────────────────────────────────────────────
+// Tickers ending with "-USD" are quoted in USD by Yahoo Finance.
+// We fetch EURUSD=X (number of USD per 1 EUR) and divide to get the EUR price.
+export const FX_TICKER = "EURUSD=X";
+export function isUsdTicker(ticker: string): boolean {
+  return ticker.trimEnd().toUpperCase().endsWith("-USD");
+}
+
+/** Returns the EUR/USD rate at `dateStr` using cached maps, or `fallback` if unavailable. */
+export async function eurusdAtDate(dateStr: string): Promise<number> {
+  const fromMonth = dateStr.slice(0, 7);
+  const [live, maps] = await Promise.all([
+    fetchLiveQuote(FX_TICKER),
+    fetchPriceMaps(FX_TICKER, fromMonth),
+  ]);
+  const today = new Date().toISOString().slice(0, 10);
+  if (dateStr >= today) return live?.price ?? 1;
+  const keys = Object.keys(maps.weekly).filter(k => k <= dateStr).sort();
+  if (keys.length) return maps.weekly[keys[keys.length - 1]];
+  const mkeys = Object.keys(maps.monthly).filter(k => k <= fromMonth).sort();
+  if (mkeys.length) return maps.monthly[mkeys[mkeys.length - 1]];
+  return live?.price ?? 1;
+}
+
 // ── Hook: live quotes + full history for a set of tickers ─────────────────────
 export function useQuotes(tickers: string[], fromMonth: string) {
   const [liveQuotes,    setLiveQuotes]    = useState<Record<string, Quote>>({});
@@ -147,20 +171,23 @@ export function useQuotes(tickers: string[], fromMonth: string) {
   const refresh = useCallback(async () => {
     if (!tickers.length) { setLiveQuotes({}); setHistMaps({}); setHistWeekMaps({}); return; }
     setLoading(true);
+    // Include EURUSD=X whenever any ticker is USD-quoted
+    const needsFx  = tickers.some(isUsdTicker);
+    const allTicks = needsFx ? [...new Set([...tickers, FX_TICKER])] : tickers;
     try {
       const [lives, maps] = await Promise.all([
-        Promise.allSettled(tickers.map(t => fetchLiveQuote(t))).then(rs => {
+        Promise.allSettled(allTicks.map(t => fetchLiveQuote(t))).then(rs => {
           const out: Record<string, Quote> = {};
-          rs.forEach((r, i) => { if (r.status === "fulfilled" && r.value) out[tickers[i]] = r.value; });
+          rs.forEach((r, i) => { if (r.status === "fulfilled" && r.value) out[allTicks[i]] = r.value; });
           return out;
         }),
-        Promise.allSettled(tickers.map(t => fetchPriceMaps(t, fromMonth))).then(rs => {
+        Promise.allSettled(allTicks.map(t => fetchPriceMaps(t, fromMonth))).then(rs => {
           const monthly: Record<string, MonthlyPriceMap> = {};
           const weekly:  Record<string, WeeklyPriceMap>  = {};
           rs.forEach((r, i) => {
             if (r.status === "fulfilled") {
-              monthly[tickers[i]] = r.value.monthly;
-              weekly[tickers[i]]  = r.value.weekly;
+              monthly[allTicks[i]] = r.value.monthly;
+              weekly[allTicks[i]]  = r.value.weekly;
             }
           });
           return { monthly, weekly };
@@ -180,22 +207,37 @@ export function useQuotes(tickers: string[], fromMonth: string) {
     return () => { if (timer.current) clearInterval(timer.current); };
   }, [refresh]);
 
-  // getPrice: price for a given YYYY-MM (backward compat)
+  // getPrice: price for a given YYYY-MM, converted to EUR when ticker is USD-quoted
   const getPrice = useCallback((ticker: string, month: string, pru = 0): number => {
     const curMonth = new Date().toISOString().slice(0, 7);
-    if (month >= curMonth) return liveQuotes[ticker]?.price ?? pru;
-    return priceForMonth(ticker, month, histMaps[ticker] ?? {}, liveQuotes[ticker] ?? null, pru);
+    const raw = month >= curMonth
+      ? (liveQuotes[ticker]?.price ?? pru)
+      : priceForMonth(ticker, month, histMaps[ticker] ?? {}, liveQuotes[ticker] ?? null, pru);
+    if (!isUsdTicker(ticker)) return raw;
+    const fxRate = month >= curMonth
+      ? (liveQuotes[FX_TICKER]?.price ?? 1)
+      : priceForMonth(FX_TICKER, month, histMaps[FX_TICKER] ?? {}, liveQuotes[FX_TICKER] ?? null, 1);
+    return fxRate > 0 ? raw / fxRate : raw;
   }, [liveQuotes, histMaps]);
 
-  // getPriceForDate: price at (or just before) a YYYY-MM-DD date — uses weekly candles
+  // getPriceForDate: price at (or just before) a YYYY-MM-DD date, converted to EUR when needed
   const getPriceForDate = useCallback((ticker: string, dateStr: string, pru = 0): number => {
-    return priceForDate(
+    const raw = priceForDate(
       dateStr,
       histWeekMaps[ticker] ?? {},
       histMaps[ticker] ?? {},
       liveQuotes[ticker] ?? null,
       pru,
     );
+    if (!isUsdTicker(ticker)) return raw;
+    const fxRate = priceForDate(
+      dateStr,
+      histWeekMaps[FX_TICKER] ?? {},
+      histMaps[FX_TICKER] ?? {},
+      liveQuotes[FX_TICKER] ?? null,
+      1,
+    );
+    return fxRate > 0 ? raw / fxRate : raw;
   }, [liveQuotes, histMaps, histWeekMaps]);
 
   const quotes = liveQuotes;
