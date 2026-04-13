@@ -14,6 +14,23 @@ import { SUBCAT_ORDER } from "./types";
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 const MN_SHORT = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
+const PAGE_SIZE = 10;
+
+function Pager({ page, total, onPage }: { page: number; total: number; onPage: (p: number) => void }) {
+  const pages = Math.ceil(total / PAGE_SIZE);
+  if (pages <= 1) return null;
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "6px 4px", userSelect: "none" }}>
+      <button className="btn btn-ghost btn-sm" disabled={page === 0} onClick={() => onPage(0)} style={{ padding: "2px 6px", fontSize: 11 }}>«</button>
+      <button className="btn btn-ghost btn-sm" disabled={page === 0} onClick={() => onPage(page - 1)} style={{ padding: "2px 6px", fontSize: 11 }}>‹</button>
+      <span style={{ fontSize: 10, color: "var(--text-2)", minWidth: 60, textAlign: "center" }}>
+        {page + 1} / {pages}
+      </span>
+      <button className="btn btn-ghost btn-sm" disabled={page >= pages - 1} onClick={() => onPage(page + 1)} style={{ padding: "2px 6px", fontSize: 11 }}>›</button>
+      <button className="btn btn-ghost btn-sm" disabled={page >= pages - 1} onClick={() => onPage(pages - 1)} style={{ padding: "2px 6px", fontSize: 11 }}>»</button>
+    </div>
+  );
+}
 
 function renderIsolatedDot(isolated: Set<string>, color: string) {
   return (props: any) => {
@@ -316,6 +333,9 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
   const [brushIdx, setBrushIdx] = useState<{ start: number; end: number } | null>(null);
   const [scpiModal, setScpiModal] = useState(false);
   const [scpiValuations, setScpiValuations] = useState<ScpiValuation[]>([]);
+  const [pageDivs,  setPageDivs]  = useState(0);
+  const [pageVers,  setPageVers]  = useState(0);
+  const [pageVentes, setPageVentes] = useState(0);
 
   const positions  = useMemo(() => allPositions.filter(p => p.poche === poche.key),  [allPositions, poche.key]);
   const ventes     = useMemo(() => allVentes.filter(v => v.poche === poche.key),      [allVentes, poche.key]);
@@ -858,9 +878,9 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
           </AccordionSection>
 
           <AccordionSection label="Dividendes" count={dividendes.length} color="var(--gold)">
-            {dividendes.length === 0 ? <div className="empty">Aucun dividende</div> : (
+            {dividendes.length === 0 ? <div className="empty">Aucun dividende</div> : (<>
               <table><thead><tr><th>Ticker</th><th>Montant</th><th>Date</th><th></th></tr></thead>
-              <tbody>{dividendes.map(d => (
+              <tbody>{dividendes.slice(pageDivs * PAGE_SIZE, (pageDivs + 1) * PAGE_SIZE).map(d => (
                 <tr key={d.id}>
                   <td><span className="badge b-neutral">{d.ticker}</span></td>
                   <td style={{ color: "var(--gold)" }}>{fmt(d.montant)}</td>
@@ -868,13 +888,14 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
                   <td><button className="btn btn-danger btn-sm" onClick={async () => { await invoke("delete_dividende", { id: d.id }); onRefresh(); }}>✕</button></td>
                 </tr>
               ))}</tbody></table>
-            )}
+              <Pager page={pageDivs} total={dividendes.length} onPage={setPageDivs}/>
+            </>)}
           </AccordionSection>
 
           <AccordionSection label="Versements" count={versements.length}>
-            {versements.length === 0 ? <div className="empty">Aucun versement</div> : (
+            {versements.length === 0 ? <div className="empty">Aucun versement</div> : (<>
               <table><thead><tr><th>Montant</th><th>Date</th><th>Notes</th><th></th></tr></thead>
-              <tbody>{versements.map(v => (
+              <tbody>{versements.slice(pageVers * PAGE_SIZE, (pageVers + 1) * PAGE_SIZE).map(v => (
                 <tr key={v.id}>
                   <td>{fmt(v.montant)}</td>
                   <td style={{ color: "var(--text-1)" }}>{v.date}</td>
@@ -882,13 +903,14 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
                   <td><button className="btn btn-danger btn-sm" onClick={async () => { await invoke("delete_versement", { id: v.id }); onRefresh(); }}>✕</button></td>
                 </tr>
               ))}</tbody></table>
-            )}
+              <Pager page={pageVers} total={versements.length} onPage={setPageVers}/>
+            </>)}
           </AccordionSection>
 
           <AccordionSection label="Historique ventes" count={ventes.length} color="var(--rose)">
-            {ventes.length === 0 ? <div className="empty">Aucune vente</div> : (
+            {ventes.length === 0 ? <div className="empty">Aucune vente</div> : (<>
               <table><thead><tr><th>Ticker</th><th>Qté</th><th>PRU</th><th>Px vente</th><th>PnL</th><th>Date</th><th></th></tr></thead>
-              <tbody>{ventes.map(v => (
+              <tbody>{ventes.slice(pageVentes * PAGE_SIZE, (pageVentes + 1) * PAGE_SIZE).map(v => (
                 <tr key={v.id}>
                   <td><span className="badge b-neutral">{v.ticker}</span></td>
                   <td style={{ fontFamily: "var(--mono)", fontSize: 11 }}>{v.quantite.toFixed(ventPrec)}</td>
@@ -899,7 +921,8 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
                   <td><button className="btn btn-danger btn-sm" onClick={async () => { await invoke("delete_vente", { id: v.id }); onRefresh(); }}>✕</button></td>
                 </tr>
               ))}</tbody></table>
-            )}
+              <Pager page={pageVentes} total={ventes.length} onPage={setPageVentes}/>
+            </>)}
           </AccordionSection>
         </div>
       )}
