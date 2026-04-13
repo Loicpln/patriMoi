@@ -208,7 +208,7 @@ pub fn sell_position(poche: String, ticker: String, nom: String, quantite_vendue
 
     // PRU of the remaining (currently held) shares
     let pru: f64 = if cur_q > 1e-12 { cur_inv / cur_q } else { 0.0 };
-    let pnl = (prix_vente - pru) * quantite_vendue;
+    let pnl = ((prix_vente - pru) * quantite_vendue * 1e10).round() / 1e10;
 
     conn.execute(
         "INSERT INTO ventes (poche,ticker,nom,quantite,prix_achat,prix_vente,date_vente,pnl,notes) \

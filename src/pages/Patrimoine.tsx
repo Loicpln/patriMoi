@@ -275,6 +275,10 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
       });
       // _pnlTotal = unrealized + realized + divs (espèces not double-counted)
       row._pnlTotal=(totalInvestMarket-totalInvested)+cumPnl+cumDivs;
+      row._pnlReal=cumPnl;
+      // Loss zone: gap between versements line and total portfolio value
+      const totalPocheVal=POCHES.reduce((s,p)=>s+(row[p.label]??0),0);
+      row._lossArea=Math.max(0,cumVers-totalPocheVal);
       return row;
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -300,14 +304,15 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
     return{x1:inM[0].date as string,x2:inM[inM.length-1].date as string};
   },[visibleStackedData,mois]);
 
-  // Custom tooltip: total › versements+PnL › poche values
+  // Custom tooltip: total › versements › pnl réalisé (si ≠0) › poche values
+  const RECAP_SKIP=new Set(["_versTotal","_pnlTotal","_pnlReal","_lossArea"]);
   const RecapTooltip=({active,payload,label}:any)=>{
     if(!active||!payload?.length)return null;
     const row=payload[0]?.payload;
     if(!row)return null;
     const vers=row._versTotal??0;
-    const pnl=row._pnlTotal??0;
-    const items=payload.filter((p:any)=>p.dataKey!=="_versTotal"&&p.dataKey!=="_pnlTotal"&&p.value!==0);
+    const pnlReal=row._pnlReal??0;
+    const items=payload.filter((p:any)=>!RECAP_SKIP.has(p.dataKey)&&p.value!==0);
     const total=items.reduce((s:number,p:any)=>s+Number(p.value),0);
     return(
       <div style={{...TOOLTIP_STYLE,padding:"10px 14px",minWidth:190}}>
@@ -317,11 +322,18 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
           <span style={{color:"var(--text-1)",fontSize:10}}>Total</span>
           <span style={{color:"var(--text-0)",fontSize:11,fontWeight:700}}>{fmt(total)}</span>
         </div>
-        {/* Versements + PnL */}
-        <div style={{display:"flex",justifyContent:"space-between",gap:16,marginBottom:6,borderBottom:"1px solid var(--border)",paddingBottom:5}}>
-          <span style={{color:"#e63946",fontSize:10}}>Versements&nbsp;{fmt(vers)}</span>
-          <span style={{color:pnl>=0?"var(--teal)":"var(--rose)",fontSize:11,fontWeight:700}}>{pnl>=0?"+":" −"}{fmt(Math.abs(pnl))}</span>
+        {/* Versements */}
+        <div style={{display:"flex",justifyContent:"space-between",gap:16,marginBottom:pnlReal!==0?3:6,paddingBottom:pnlReal!==0?0:5,borderBottom:pnlReal!==0?"none":"1px solid var(--border)"}}>
+          <span style={{color:"#e63946",fontSize:10}}>Versements</span>
+          <span style={{color:"var(--text-0)",fontSize:10}}>{fmt(vers)}</span>
         </div>
+        {/* PnL réalisé — masqué si 0 */}
+        {pnlReal!==0&&(
+          <div style={{display:"flex",justifyContent:"space-between",gap:16,marginBottom:6,paddingBottom:5,borderBottom:"1px solid var(--border)"}}>
+            <span style={{color:"var(--text-2)",fontSize:10}}>PnL réalisé</span>
+            <span style={{color:pnlReal>=0?"var(--teal)":"var(--rose)",fontSize:10,fontWeight:600}}>{pnlReal>=0?"+":" −"}{fmt(Math.abs(pnlReal))}</span>
+          </div>
+        )}
         {/* Per-poche */}
         {items.map((p:any,i:number)=>(
           <div key={i} style={{display:"flex",justifyContent:"space-between",gap:8,marginBottom:2}}>
@@ -345,6 +357,10 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
         <ComposedChart data={d} margin={{left:0,right:5,top:5,bottom:isExp?28:0}}>
           <defs>
             {POCHES.map(p=>(<linearGradient key={p.key} id={`gr_${p.key}`} x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={p.color} stopOpacity={.7}/><stop offset="95%" stopColor={p.color} stopOpacity={.05}/></linearGradient>))}
+            <linearGradient id="gr_loss_r" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%"   stopColor="#e63946" stopOpacity={.55}/>
+              <stop offset="100%" stopColor="#e63946" stopOpacity={.15}/>
+            </linearGradient>
           </defs>
           <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
           <XAxis dataKey="date" ticks={xTicks} tick={{fontSize:8,fontFamily:"JetBrains Mono"}}
@@ -352,6 +368,9 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
           <YAxis tick={{fontSize:8,fontFamily:"JetBrains Mono"}} tickFormatter={v=>v>=1000?`${(v/1000).toFixed(0)}k€`:`${v}€`} width={45} domain={[0,"auto"]}/>
           <Tooltip content={<RecapTooltip/>}/>
           {POCHES.map(p=><Area key={p.key} type="monotone" dataKey={p.label} stackId="r" name={p.label} stroke={p.color} strokeWidth={1.5} fill={`url(#gr_${p.key})`}/>)}
+          {/* Loss zone: stacked on top, fills gap to versements line when portfolio < versements */}
+          <Area type="monotone" dataKey="_lossArea" stackId="r" name="_lossArea"
+            stroke="none" strokeWidth={0} fill="url(#gr_loss_r)" legendType="none"/>
           <Line type="monotone" dataKey="_versTotal" name="Versements"
             stroke="#e63946" strokeWidth={1.5} dot={false} strokeDasharray="4 3" legendType="none"/>
           {monthRange&&(
