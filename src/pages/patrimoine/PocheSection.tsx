@@ -15,6 +15,16 @@ import { SUBCAT_ORDER } from "./types";
 // ── Helpers ────────────────────────────────────────────────────────────────────
 const MN_SHORT = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
 
+function renderIsolatedDot(isolated: Set<string>, color: string) {
+  return (props: any) => {
+    const { cx, cy, payload } = props;
+    if (cx == null || cy == null) return <g/>;
+    const key = payload?.date ?? payload?.mois ?? "";
+    if (!key || !isolated.has(key)) return <g/>;
+    return <circle cx={cx} cy={cy} r={2.5} fill={color} stroke="var(--bg-0)" strokeWidth={1.5}/>;
+  };
+}
+
 function subcatIdx(key: string) {
   const i = SUBCAT_ORDER.indexOf(key as any);
   return i >= 0 ? i : 99;
@@ -506,6 +516,39 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
     return { x1: inM[0].date as string, x2: inM[inM.length - 1].date as string };
   }, [pnlVisibleData, mois]);
 
+  // Isolated dots: ticker positions in daily chart (isolated = single day with value, neighbours at 0)
+  const isolatedByTicker = useMemo(() => {
+    const result: Record<string, Set<string>> = {};
+    tickers.forEach(tk => {
+      const s = new Set<string>();
+      chartData.forEach((row: any, i: number) => {
+        const cur  = (chartData[i]  as any)?.[tk] ?? 0;
+        const prev = (chartData[i-1] as any)?.[tk] ?? 0;
+        const next = (chartData[i+1] as any)?.[tk] ?? 0;
+        if (cur > 0 && prev === 0 && next === 0) s.add(row.date as string);
+      });
+      result[tk] = s;
+    });
+    return result;
+  }, [chartData, tickers]);
+
+  // Isolated dots: PnL latent lines in weekly chart
+  const isolatedPnlLat = useMemo(() => {
+    const result: Record<string, Set<string>> = {};
+    tickers.forEach(tk => {
+      const key = `_pnlLat_${tk}`;
+      const s = new Set<string>();
+      weeklyPnlData.forEach((row: any, i: number) => {
+        const cur  = weeklyPnlData[i]?.[key]  ?? 0;
+        const prev = weeklyPnlData[i-1]?.[key] ?? 0;
+        const next = weeklyPnlData[i+1]?.[key] ?? 0;
+        if (cur !== 0 && prev === 0 && next === 0) s.add(row.date as string);
+      });
+      result[tk] = s;
+    });
+    return result;
+  }, [weeklyPnlData, tickers]);
+
   const onPnlBrushChange = (range: any) => {
     const { startIndex: s, endIndex: e } = range ?? {};
     if (s === undefined || e === undefined) return;
@@ -603,7 +646,8 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
             {sortedTickers.map(t => (
               <Area key={t.ticker} type="monotone" dataKey={t.ticker} stackId="v" name={t.nom}
                 stroke={t.color} strokeWidth={1.5}
-                fill={`url(#gs_${poche.key}_${t.ticker.replace(/\W/g, "_")})`}/>
+                fill={`url(#gs_${poche.key}_${t.ticker.replace(/\W/g, "_")})`}
+                dot={renderIsolatedDot(isolatedByTicker[t.ticker] ?? new Set(), t.color)}/>
             ))}
             {/* Loss zone: stacked on top of portfolio, fills gap up to versements line */}
             <Area type="monotone" dataKey="_lossArea" stackId="v" name="_lossArea"
@@ -667,7 +711,8 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
                 <ReferenceLine y={0} stroke="var(--border-l)"/>
                 {pnlMode === "latent" && sortedTickers.map(t => (
                   <Line key={t.ticker} type="monotone" dataKey={`_pnlLat_${t.ticker}`} name={t.nom}
-                    stroke={t.color} strokeWidth={1.5} dot={false}/>
+                    stroke={t.color} strokeWidth={1.5}
+                    dot={renderIsolatedDot(isolatedPnlLat[t.ticker] ?? new Set(), t.color)}/>
                 ))}
                 {pnlMode === "realise" && sortedTickers.map(t => (
                   <Bar key={t.ticker} dataKey={`_pnlReal_${t.ticker}`} name={t.nom}

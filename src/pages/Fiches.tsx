@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/tauri";
 import { useDevise } from "../context/DeviseContext";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Customized, Brush } from "recharts";
 import { TOOLTIP_STYLE, tickerColor, PRIME_TYPE_COLORS, monthsBetween, curMonthStr } from "../constants";
+import YearSelector from "../components/YearSelector";
 
 function xPixel(scale: any, value: string): number | null {
   if (!scale) return null;
@@ -21,7 +22,7 @@ function renderIsolatedDot(isolated: Set<string>, color: string) {
     const { cx, cy, payload } = props;
     if (cx == null || cy == null || !payload?.mois) return <g/>;
     if (!isolated.has(payload.mois)) return <g/>;
-    return <circle cx={cx} cy={cy} r={3.5} fill={color} stroke="var(--bg-0)" strokeWidth={1.5}/>;
+    return <circle cx={cx} cy={cy} r={2.5} fill={color} stroke="var(--bg-0)" strokeWidth={1.5}/>;
   };
 }
 
@@ -66,66 +67,6 @@ function calcStreak(salaires: Salaire[]): number {
 const PRIME_TYPES = ["Bourse", "Prime d'activité", "Prime de Noël", "Aide au logement", "Allocation familiale",
   "Prime vacances", "Aides activités sportives", "Remboursement impôts", "Prime de parainnage", "Cours particuliers", "Autre aide"];
 
-// ── Sélecteur d'année horizontal (style MonthSelector) ────────────────────
-function YearSelector({ value, onChange, years }: { value: number; onChange: (y: number) => void; years: number[] }) {
-  const curYear = new Date().getFullYear();
-
-  // Visible = ±3 autour de la valeur sélectionnée, parmi les années avec données
-  // L'année en cours est toujours épinglée à droite (exclue du strip)
-  const visible = useMemo(() => {
-    const set = new Set(years);
-    const out: number[] = [];
-    for (let y = value - 3; y <= value + 3; y++) {
-      if (y === curYear) continue; // épinglée séparément
-      if (set.has(y) || y === value) out.push(y);
-    }
-    return out;
-  }, [value, years, curYear]);
-
-  const btnStyle = (y: number): React.CSSProperties => {
-    const isSel = y === value;
-    const isCur = y === curYear;
-    return {
-      flex: 1, minWidth: 0, padding: "6px 8px",
-      borderRadius: 6,
-      border: isSel ? "1px solid var(--gold)" : isCur ? "1px solid var(--border-l)" : "1px solid transparent",
-      cursor: "pointer", fontFamily: "var(--mono)", fontSize: 12, lineHeight: 1.3,
-      background: isSel ? "var(--gold)" : isCur ? "var(--bg-3)" : "transparent",
-      color: isSel ? "var(--bg-0)" : isCur ? "var(--text-0)" : "var(--text-1)",
-      fontWeight: isSel ? 600 : 400,
-    };
-  };
-
-  return (
-    <div style={{
-      position: "sticky",
-      top: 0,
-      zIndex: 20,
-      background: "var(--bg-1)",
-      border: "1px solid var(--border)",
-      borderRadius: "var(--r)",
-      padding: "4px 6px",
-      width: "100%",
-      marginBottom: 24,
-      boxSizing: "border-box",
-      display: "flex",
-      alignItems: "center",
-      gap: 4,
-      boxShadow: "0 2px 8px rgba(0,0,0,0.18)",
-    }}>
-      {/* Strip scrollable sans l'année en cours */}
-      <div style={{ display: "flex", gap: 2, flex: 1 }}>
-        {visible.map(y => (
-          <button key={y} style={btnStyle(y)} onClick={() => onChange(y)}>{y}</button>
-        ))}
-      </div>
-      {/* Année en cours — toujours épinglée à droite */}
-      <button style={{ ...btnStyle(curYear), flex: "none", flexShrink: 0 }} onClick={() => onChange(curYear)}>
-        {curYear}
-      </button>
-    </div>
-  );
-}
 
 // ── Date par défaut selon l'année sélectionnée ────────────────────────────
 function defaultDateForYear(year: number): string {

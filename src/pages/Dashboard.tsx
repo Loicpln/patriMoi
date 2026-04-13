@@ -38,7 +38,7 @@ function renderIsolatedDot(isolated: Set<string>, color: string) {
     const { cx, cy, payload } = props;
     if (cx == null || cy == null || !payload?.mois) return <g/>;
     if (!isolated.has(payload.mois)) return <g/>;
-    return <circle cx={cx} cy={cy} r={3.5} fill={color} stroke="var(--bg-0)" strokeWidth={1.5}/>;
+    return <circle cx={cx} cy={cy} r={2.5} fill={color} stroke="var(--bg-0)" strokeWidth={1.5}/>;
   };
 }
 

@@ -76,7 +76,7 @@ export default function MonthSelector({ value, onChange, firstMonth, range = 6 }
       top: 0,
       zIndex: 20,
       background: "var(--bg-1)",
-      border: "1px solid var(--border)",
+      border: "2px solid var(--gold)",
       borderRadius: "var(--r)",
       padding: "4px 6px",
       width: "100%",
