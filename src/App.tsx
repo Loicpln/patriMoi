@@ -18,14 +18,16 @@ const NAV = [
 
 function Shell() {
   const [page, setPage] = useState<Page>("dashboard");
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const { devise, setDevise } = useDevise();
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
+      <aside className={`sidebar${sidebarOpen ? "" : " collapsed"}`}>
         <div className="brand">
           <span className="brand-hex">⬡</span>
           <span className="brand-name">Patrimo</span>
+          <button className="sidebar-close-btn" onClick={() => setSidebarOpen(false)} title="Masquer la barre">‹</button>
         </div>
 
         <span className="nav-section-label">Navigation</span>
@@ -60,6 +62,10 @@ function Shell() {
 
         <div className="sidebar-bottom">v0.3.0 · Patrimo</div>
       </aside>
+
+      {!sidebarOpen && (
+        <button className="sidebar-open-btn" onClick={() => setSidebarOpen(true)} title="Afficher la barre">›</button>
+      )}
 
       <main className="main-content">
         {page === "dashboard"  && <Dashboard  onNavigate={setPage} />}

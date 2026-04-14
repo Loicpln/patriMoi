@@ -47,8 +47,9 @@ const CAT_COLOR: Record<string, string> = Object.fromEntries(
 );
 
 export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => void }) {
-  const { fmt } = useDevise();
+  const { fmt, setMois: setCtxMois } = useDevise();
   const [mois, setMois]           = useState(curMonth);
+  useEffect(()=>{ setCtxMois(mois); },[mois,setCtxMois]);
   const [salaires, setSalaires]   = useState<Salaire[]>([]);
   const [depenses, setDepenses]   = useState<Depense[]>([]);
   const [livrets, setLivrets]         = useState<Livret[]>([]);

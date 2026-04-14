@@ -800,6 +800,8 @@ function GlobalRecap({livrets,positions,ventes,dividendes,versements,mois,scpiVa
 function PatrimoineInner() {
   const [tab,setTab]=useState<"global"|"livrets"|"investissements">("global");
   const [mois,setMois]=useState(curMonth);
+  const { setMois: setCtxMois } = useDevise();
+  useEffect(()=>{ setCtxMois(mois); },[mois,setCtxMois]);
   const [livrets,setLivrets]=useState<Livret[]>([]);
   const [positions,setPositions]=useState<Position[]>([]);
   const [ventes,setVentes]=useState<Vente[]>([]);

@@ -60,6 +60,14 @@ body {
   flex-direction: column;
   padding: 28px 14px 20px;
   gap: 0;
+  transition: width 0.25s ease, padding 0.25s ease;
+  overflow: hidden;
+}
+.sidebar.collapsed {
+  width: 0;
+  padding-left: 0;
+  padding-right: 0;
+  border-right: none;
 }
 
 .brand {
@@ -69,7 +77,38 @@ body {
   padding: 0 6px 32px;
 }
 .brand-hex { font-size: 20px; color: var(--gold); }
-.brand-name { font-family: var(--serif); font-size: 19px; letter-spacing: .02em; color: var(--text-0); }
+.brand-name { font-family: var(--serif); font-size: 19px; letter-spacing: .02em; color: var(--text-0); flex: 1; }
+
+.sidebar-close-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: var(--text-2);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 1px 5px;
+  line-height: 1;
+  transition: all .15s;
+  flex-shrink: 0;
+}
+.sidebar-close-btn:hover { color: var(--text-1); border-color: var(--border); }
+
+.sidebar-open-btn {
+  position: fixed;
+  top: 14px;
+  left: 8px;
+  z-index: 200;
+  background: var(--bg-2);
+  border: 1px solid var(--border-l);
+  border-radius: 6px;
+  color: var(--text-1);
+  cursor: pointer;
+  font-size: 15px;
+  padding: 4px 9px;
+  line-height: 1;
+  transition: all .15s;
+}
+.sidebar-open-btn:hover { color: var(--text-0); background: var(--bg-3); }
 
 .nav-section-label {
   font-size: 9px;

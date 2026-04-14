@@ -126,10 +126,11 @@ function Modal({ initial, libelles, onClose, onSave, title }: {
 }
 
 export default function Depenses() {
-  const { fmt } = useDevise();
+  const { fmt, setMois: setCtxMois } = useDevise();
   const [depenses, setDepenses]         = useState<Depense[]>([]);
   const [allDepenses, setAllDepenses]   = useState<Depense[]>([]);
   const [mois, setMois]                 = useState(curMonth);
+  useEffect(()=>{ setCtxMois(mois); },[mois,setCtxMois]);
   const [modal, setModal]               = useState(false);
   const [editing, setEditing]           = useState<Depense | null>(null);
   const [loading, setLoading]           = useState(false);
