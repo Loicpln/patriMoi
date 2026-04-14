@@ -336,11 +336,20 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
   const [pageDivs,  setPageDivs]  = useState(0);
   const [pageVers,  setPageVers]  = useState(0);
   const [pageVentes, setPageVentes] = useState(0);
+  const [filterDivs,   setFilterDivs]   = useState<Set<string>>(new Set());
+  const [filterVentes, setFilterVentes] = useState<Set<string>>(new Set());
 
   const positions  = useMemo(() => allPositions.filter(p => p.poche === poche.key),  [allPositions, poche.key]);
   const ventes     = useMemo(() => allVentes.filter(v => v.poche === poche.key),      [allVentes, poche.key]);
   const dividendes = useMemo(() => allDividendes.filter(d => d.poche === poche.key),  [allDividendes, poche.key]);
   const versements = useMemo(() => allVersements.filter(v => v.poche === poche.key),  [allVersements, poche.key]);
+
+  const tickersDivs   = useMemo(() => [...new Set(dividendes.map(d => d.ticker))].sort(), [dividendes]);
+  const tickersVentes = useMemo(() => [...new Set(ventes.map(v => v.ticker))].sort(),     [ventes]);
+  const filteredDivs   = useMemo(() => filterDivs.size   ? dividendes.filter(d => filterDivs.has(d.ticker))   : dividendes, [dividendes, filterDivs]);
+  const filteredVentes = useMemo(() => filterVentes.size ? ventes.filter(v => filterVentes.has(v.ticker))     : ventes,     [ventes, filterVentes]);
+  const togDivTicker   = (t: string) => { setFilterDivs(s => { const n=new Set(s); n.has(t)?n.delete(t):n.add(t); return n; }); setPageDivs(0); };
+  const togVentTicker  = (t: string) => { setFilterVentes(s => { const n=new Set(s); n.has(t)?n.delete(t):n.add(t); return n; }); setPageVentes(0); };
 
   const fromMonth = useMemo(() => {
     const dates = positions.map(p => (p.date_achat ?? "").slice(0, 7)).filter(Boolean).sort();
@@ -879,8 +888,18 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
 
           <AccordionSection label="Dividendes" count={dividendes.length} color="var(--gold)">
             {dividendes.length === 0 ? <div className="empty">Aucun dividende</div> : (<>
+              {tickersDivs.length&& (
+                <div style={{display:"flex",alignItems:"center",gap:6,marginInline:4,overflowX:"auto"}}>
+                  {tickersDivs.map(t=>(
+                    <button key={t} className={`btn btn-sm ${filterDivs.has(t)?"btn-primary":"btn-ghost"}`}
+                      style={{fontSize:10,padding:"2px 8px"}} onClick={()=>togDivTicker(t)}>
+                      {t} ({dividendes.filter(d=>d.ticker===t).length})
+                    </button>
+                  ))}
+                </div>
+              )}
               <table><thead><tr><th>Ticker</th><th>Montant</th><th>Date</th><th></th></tr></thead>
-              <tbody>{dividendes.slice(pageDivs * PAGE_SIZE, (pageDivs + 1) * PAGE_SIZE).map(d => (
+              <tbody>{filteredDivs.slice(pageDivs * PAGE_SIZE, (pageDivs + 1) * PAGE_SIZE).map(d => (
                 <tr key={d.id}>
                   <td><span className="badge b-neutral">{d.ticker}</span></td>
                   <td style={{ color: "var(--gold)" }}>{fmt(d.montant)}</td>
@@ -888,7 +907,7 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
                   <td><button className="btn btn-danger btn-sm" onClick={async () => { await invoke("delete_dividende", { id: d.id }); onRefresh(); }}>✕</button></td>
                 </tr>
               ))}</tbody></table>
-              <Pager page={pageDivs} total={dividendes.length} onPage={setPageDivs}/>
+              <Pager page={pageDivs} total={filteredDivs.length} onPage={setPageDivs}/>
             </>)}
           </AccordionSection>
 
@@ -909,8 +928,18 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
 
           <AccordionSection label="Historique ventes" count={ventes.length} color="var(--rose)">
             {ventes.length === 0 ? <div className="empty">Aucune vente</div> : (<>
+              {tickersVentes.length&& (
+                <div style={{display:"flex",alignItems:"center",gap:6,marginInline:4,overflowX:"auto"}}>
+                  {tickersVentes.map(t=>(
+                    <button key={t} className={`btn btn-sm ${filterVentes.has(t)?"btn-primary":"btn-ghost"}`}
+                      style={{fontSize:10,padding:"2px 8px"}} onClick={()=>togVentTicker(t)}>
+                      {t} ({ventes.filter(v=>v.ticker===t).length})
+                    </button>
+                  ))}
+                </div>
+              )}
               <table><thead><tr><th>Ticker</th><th>Qté</th><th>PRU</th><th>Px vente</th><th>PnL</th><th>Date</th><th></th></tr></thead>
-              <tbody>{ventes.slice(pageVentes * PAGE_SIZE, (pageVentes + 1) * PAGE_SIZE).map(v => (
+              <tbody>{filteredVentes.slice(pageVentes * PAGE_SIZE, (pageVentes + 1) * PAGE_SIZE).map(v => (
                 <tr key={v.id}>
                   <td><span className="badge b-neutral">{v.ticker}</span></td>
                   <td style={{ fontFamily: "var(--mono)", fontSize: 11 }}>{v.quantite.toFixed(ventPrec)}</td>
@@ -921,7 +950,7 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
                   <td><button className="btn btn-danger btn-sm" onClick={async () => { await invoke("delete_vente", { id: v.id }); onRefresh(); }}>✕</button></td>
                 </tr>
               ))}</tbody></table>
-              <Pager page={pageVentes} total={ventes.length} onPage={setPageVentes}/>
+              <Pager page={pageVentes} total={filteredVentes.length} onPage={setPageVentes}/>
             </>)}
           </AccordionSection>
         </div>
