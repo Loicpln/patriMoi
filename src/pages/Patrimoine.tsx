@@ -331,16 +331,16 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
     return result;
   },[stackedData]);
 
-  // Custom tooltip: total › versements › pnl réalisé (si ≠0) › poche values
+  // Custom tooltip: total › versements (+ diff) › poche values
   const RECAP_SKIP=new Set(["_versTotal","_pnlTotal","_pnlReal","_lossArea"]);
   const RecapTooltip=({active,payload,label}:any)=>{
     if(!active||!payload?.length)return null;
     const row=payload[0]?.payload;
     if(!row)return null;
     const vers=row._versTotal??0;
-    const pnlReal=row._pnlReal??0;
     const items=payload.filter((p:any)=>!RECAP_SKIP.has(p.dataKey)&&p.value!==0);
     const total=items.reduce((s:number,p:any)=>s+Number(p.value),0);
+    const diff=total-vers;
     return(
       <div style={{...TOOLTIP_STYLE,padding:"10px 14px",minWidth:190}}>
         <div style={{color:"var(--text-1)",fontSize:9,marginBottom:6,letterSpacing:".05em"}}>{label}</div>
@@ -349,18 +349,14 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
           <span style={{color:"var(--text-1)",fontSize:10}}>Total</span>
           <span style={{color:"var(--text-0)",fontSize:11,fontWeight:700}}>{fmt(total)}</span>
         </div>
-        {/* Versements */}
-        <div style={{display:"flex",justifyContent:"space-between",gap:16,marginBottom:pnlReal!==0?3:6,paddingBottom:pnlReal!==0?0:5,borderBottom:pnlReal!==0?"none":"1px solid var(--border)"}}>
+        {/* Versements + différence total−versements */}
+        <div style={{display:"flex",justifyContent:"space-between",gap:16,marginBottom:6,paddingBottom:5,borderBottom:"1px solid var(--border)"}}>
           <span style={{color:"#e63946",fontSize:10}}>Versements</span>
-          <span style={{color:"var(--text-0)",fontSize:10}}>{fmt(vers)}</span>
+          <span style={{display:"flex",gap:6,alignItems:"baseline"}}>
+            <span style={{color:"var(--text-0)",fontSize:10}}>{fmt(vers)}</span>
+            <span style={{color:diff>=0?"var(--teal)":"var(--rose)",fontSize:9,fontWeight:600}}>{diff>=0?"+":" −"}{fmt(Math.abs(diff))}</span>
+          </span>
         </div>
-        {/* PnL réalisé — masqué si 0 */}
-        {pnlReal!==0&&(
-          <div style={{display:"flex",justifyContent:"space-between",gap:16,marginBottom:6,paddingBottom:5,borderBottom:"1px solid var(--border)"}}>
-            <span style={{color:"var(--text-2)",fontSize:10}}>PnL réalisé</span>
-            <span style={{color:pnlReal>=0?"var(--teal)":"var(--rose)",fontSize:10,fontWeight:600}}>{pnlReal>=0?"+":" −"}{fmt(Math.abs(pnlReal))}</span>
-          </div>
-        )}
         {/* Per-poche */}
         {items.map((p:any,i:number)=>(
           <div key={i} style={{display:"flex",justifyContent:"space-between",gap:8,marginBottom:2}}>

@@ -299,7 +299,7 @@ function PocheTooltip({ active, payload, label, fmt: fmtFn }: any) {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, marginBottom: 6, borderBottom: "1px solid var(--border)", paddingBottom: 5 }}>
           <span style={{ color: "#e63946", fontSize: 10 }}>Versements&nbsp;{fmtFn(vers)}</span>
           {pnlTotal != null && (
-            <span style={{ color: pnlTotal >= 0 ? "var(--teal)" : "var(--rose)", fontSize: 11, fontWeight: 700 }}>
+            <span style={{ color: pnlTotal >= 0 ? "var(--teal)" : "var(--rose)", fontSize: 9, fontWeight: 700 }}>
               {pnlTotal >= 0 ? "+" : "−"}{fmtFn(Math.abs(pnlTotal))}
             </span>
           )}
