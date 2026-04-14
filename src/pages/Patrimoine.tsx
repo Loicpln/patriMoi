@@ -68,7 +68,7 @@ function scpiPrice(map: Record<string, Record<string, number>>, ticker: string, 
 
 // ── Recap Investissement ───────────────────────────────────────────────────────
 function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiValuations}:{positions:Position[];ventes:Vente[];dividendes:Dividende[];versements:Versement[];mois:string;scpiValuations:ScpiValuation[]}) {
-  const {fmt}=useDevise();
+  const {fmt,fmtAxis}=useDevise();
   const MN_SHORT=["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
   const [pieToggle,setPieToggle]=useState<"versements"|"investi"|"valeur">("valeur");
   const [brushIdxR,setBrushIdxR]=useState<{start:number;end:number}|null>(null);
@@ -392,7 +392,7 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
           <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
           <XAxis dataKey="date" ticks={xTicks} tick={{fontSize:8,fontFamily:"JetBrains Mono"}}
             tickFormatter={dd=>{const mo=parseInt(dd.slice(5,7));return MN_SHORT[mo-1];}}/>
-          <YAxis tick={{fontSize:8,fontFamily:"JetBrains Mono"}} tickFormatter={v=>v>=1000?`${(v/1000).toFixed(0)}k€`:`${v}€`} width={45} domain={[0,"auto"]}/>
+          <YAxis tick={{fontSize:8,fontFamily:"JetBrains Mono"}} tickFormatter={fmtAxis} width={32} domain={[0,"auto"]}/>
           <Tooltip content={<RecapTooltip/>}/>
           {POCHES.map(p=><Area key={p.key} type="monotone" dataKey={p.label} stackId="r" name={p.label} stroke={p.color} strokeWidth={1.5} fill={`url(#gr_${p.key})`} dot={renderIsolatedDot(isolatedByPoche[p.label]??new Set(),p.color)}/>)}
           {/* Loss zone: stacked on top, fills gap to versements line when portfolio < versements */}
@@ -438,7 +438,7 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
 
 // ── Global Recap ───────────────────────────────────────────────────────────────
 function GlobalRecap({livrets,positions,ventes,dividendes,versements,mois,scpiValuations}:{livrets:Livret[];positions:Position[];ventes:Vente[];dividendes:Dividende[];versements:Versement[];mois:string;scpiValuations:ScpiValuation[]}) {
-  const {fmt}=useDevise();
+  const {fmt,fmtAxis}=useDevise();
   const [pieToggle,setPieToggle]=useState<"versements"|"valeur">("valeur");
   const [brushIdxG,setBrushIdxG]=useState<{start:number;end:number}|null>(null);
 
@@ -748,7 +748,7 @@ function GlobalRecap({livrets,positions,ventes,dividendes,versements,mois,scpiVa
           <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
           <XAxis dataKey="date" ticks={xTicksG} tick={{fontSize:8,fontFamily:"JetBrains Mono"}}
             tickFormatter={dd=>{const mo=parseInt(dd.slice(5,7));return MN_SHORT_G[mo-1];}}/>
-          <YAxis tick={{fontSize:8,fontFamily:"JetBrains Mono"}} tickFormatter={v=>v>=1000?`${(v/1000).toFixed(0)}k€`:`${v}€`} width={45}/>
+          <YAxis tick={{fontSize:8,fontFamily:"JetBrains Mono"}} tickFormatter={fmtAxis} width={32}/>
           <Tooltip content={<GlobalTooltip/>}/>
           {/* Livrets — stacked at bottom, one area per livret */}
           {LIVRETS_DEF.map(l=><Area key={l.key} type="monotone" dataKey={l.label} stackId="g" name={l.label} stroke={l.color} strokeWidth={1.5} fill={`url(#gGL_${l.key})`} dot={renderIsolatedDot(isolatedByGlobal[l.label]??new Set(),l.color)}/>)}

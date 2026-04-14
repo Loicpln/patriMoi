@@ -126,7 +126,7 @@ function Modal({ initial, libelles, onClose, onSave, title }: {
 }
 
 export default function Depenses() {
-  const { fmt, setMois: setCtxMois } = useDevise();
+  const { fmt, fmtAxis, setMois: setCtxMois } = useDevise();
   const [depenses, setDepenses]         = useState<Depense[]>([]);
   const [allDepenses, setAllDepenses]   = useState<Depense[]>([]);
   const [mois, setMois]                 = useState(curMonth);
@@ -307,7 +307,7 @@ export default function Depenses() {
               tickFormatter={mo => { const n = parseInt(mo.slice(5,7)); return MN_SHORT_D[n-1]; }}
               interval={Math.max(0, Math.ceil(d.length / 8) - 1)}/>
             <YAxis tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
-              tickFormatter={v => v >= 1000 ? `${(v/1000).toFixed(1)}k€` : `${v}€`} width={45}/>
+              tickFormatter={fmtAxis} width={32}/>
             <Tooltip content={<MonthlyDepTooltip/>}/>
             {CAT_KEYS.map(cat => (
               <Area key={cat} type="monotone" dataKey={cat} stackId="d" name={cat}
@@ -380,7 +380,7 @@ export default function Depenses() {
           tickFormatter={v => String(v)}
           interval={Math.floor(dailyData.length / 8)}/>
         <YAxis tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
-          tickFormatter={v => v >= 1000 ? `${(v/1000).toFixed(0)}k€` : `${v}€`} width={45}/>
+          tickFormatter={fmtAxis} width={32}/>
         <Tooltip contentStyle={TOOLTIP_STYLE} itemStyle={{ color: "var(--text-0)" }}
           labelStyle={{ color: "var(--text-1)" }}
           labelFormatter={v => `Jour ${v}`}
@@ -435,7 +435,7 @@ export default function Depenses() {
         <XAxis dataKey="jour" tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
           interval={Math.floor(dailyByCat.length / 8)}/>
         <YAxis tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
-          tickFormatter={v => v >= 1000 ? `${(v/1000).toFixed(1)}k€` : `${v}€`} width={45}/>
+          tickFormatter={fmtAxis} width={32}/>
         <Tooltip contentStyle={TOOLTIP_STYLE} itemStyle={{ color: "var(--text-0)" }}
           labelStyle={{ color: "var(--text-1)" }}
           labelFormatter={v => `Jour ${v}`}

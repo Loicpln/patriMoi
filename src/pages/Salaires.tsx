@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
+import { useDevise } from "../context/DeviseContext";
 import { AreaChart, Area, ComposedChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Brush, Customized } from "recharts";
 import { TOOLTIP_STYLE, PRIME_TYPE_COLORS, tickerColor } from "../constants";
 
@@ -70,6 +71,7 @@ function SalaireModal({ onClose, onSave }: { onClose: () => void; onSave: () => 
 }
 
 export default function Salaires() {
+  const { fmtAxis } = useDevise();
   const [salaires, setSalaires] = useState<Salaire[]>([]);
   const [modal, setModal] = useState(false);
   const [expChart, setExpChart] = useState<"sal"|"prime"|null>(null);
@@ -254,7 +256,7 @@ export default function Salaires() {
               interval={Math.max(0, Math.floor(d.length / 7) - 1)}
               tickFormatter={m => { const mo = parseInt(m.slice(5, 7)); return MN_SHORT[mo - 1]; }}/>
             <YAxis tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
-              tickFormatter={v => v >= 1000 ? `${(v/1000).toFixed(1)}k€` : `${v}€`} width={45}/>
+              tickFormatter={fmtAxis} width={32}/>
             <Tooltip content={({ active, payload, label }: any) => {
               if (!active || !payload?.length) return null;
               const items = payload.filter((p: any) => p.value != null && p.value > 0);
@@ -315,7 +317,7 @@ export default function Salaires() {
             interval={Math.max(0, Math.floor(primeChartData.length / 7) - 1)}
             tickFormatter={m => { const mo = parseInt(m.slice(5, 7)); return MN_SHORT[mo - 1]; }}/>
           <YAxis tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
-            tickFormatter={v => v >= 1000 ? `${(v/1000).toFixed(0)}k€` : `${v}€`} width={45}/>
+            tickFormatter={fmtAxis} width={32}/>
           <Tooltip content={<PrimeTooltip/>}/>
           {activePrimeTypes.map(type => (
             <Line key={type} type="monotone" dataKey={type} name={type}

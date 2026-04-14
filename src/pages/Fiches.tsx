@@ -261,7 +261,7 @@ function DetailModal({
 
 // ── Main page ──────────────────────────────────────────────────────────────
 export default function Fiches() {
-  const { fmt } = useDevise();
+  const { fmt, fmtAxis } = useDevise();
   const [salaires, setSalaires] = useState<Salaire[]>([]);
   const [pdfs, setPdfs]         = useState<PdfFile[]>([]);
   const [pdfFolder, setPdfFolder] = useState("");
@@ -488,7 +488,7 @@ export default function Fiches() {
                 <XAxis dataKey="mois" stroke="var(--text-2)" tick={{ fontSize: 9, fontFamily: "JetBrains Mono" }}
                   interval={Math.max(0, Math.floor(chartData.length / 8) - 1)}/>
                 <YAxis stroke="var(--text-2)" tick={{ fontSize: 9, fontFamily: "JetBrains Mono" }}
-                  tickFormatter={v => `${(v/1000).toFixed(1)}k`} width={40}/>
+                  tickFormatter={fmtAxis} width={32}/>
                 <Tooltip content={<EvoTooltip/>}/>
                 {activePrimeTypes.map(type => {
                   const c = PRIME_TYPE_COLORS[type] ?? tickerColor(type);

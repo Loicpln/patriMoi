@@ -27,7 +27,7 @@ function idxPx(data: any[], x1: string, x2: string, offset: any, bStart = 0, bEn
 }
 
 export function LivretsSection({livrets,mois,onRefresh}:{livrets:Livret[];mois:string;onRefresh:()=>void}) {
-  const {fmt}=useDevise();
+  const {fmt,fmtAxis}=useDevise();
   const [modal,setModal]=useState(false);
   const [interetModal,setInteretModal]=useState(false);
   const [brushIdxL,setBrushIdxL]=useState<{start:number;end:number}|null>(null);
@@ -151,7 +151,7 @@ export function LivretsSection({livrets,mois,onRefresh}:{livrets:Livret[];mois:s
           <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
           <XAxis dataKey="date" ticks={xTicks} tick={{fontSize:8,fontFamily:"JetBrains Mono"}}
             tickFormatter={d=>{const mo=parseInt(d.slice(5,7));return MN_SHORT[mo-1];}}/>
-          <YAxis tick={{fontSize:8,fontFamily:"JetBrains Mono"}} tickFormatter={v=>v>=1000?`${(v/1000).toFixed(0)}k€`:`${v}€`} width={45}/>
+          <YAxis tick={{fontSize:8,fontFamily:"JetBrains Mono"}} tickFormatter={fmtAxis} width={32}/>
           <Tooltip content={<LivretTooltip/>}/>
           {LIVRETS_DEF.map(l=><Area key={l.key} type="stepAfter" dataKey={l.label} stackId="a"
             stroke={l.color} strokeWidth={1.5} fill={`url(#gl_${l.key})`}/>)}

@@ -47,7 +47,7 @@ const CAT_COLOR: Record<string, string> = Object.fromEntries(
 );
 
 export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => void }) {
-  const { fmt, setMois: setCtxMois } = useDevise();
+  const { fmt, fmtAxis, setMois: setCtxMois } = useDevise();
   const [mois, setMois]           = useState(curMonth);
   useEffect(()=>{ setCtxMois(mois); },[mois,setCtxMois]);
   const [salaires, setSalaires]   = useState<Salaire[]>([]);
@@ -314,7 +314,7 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
                 <XAxis dataKey="mois" stroke="var(--text-2)" tick={{ fontSize: 9, fontFamily: "JetBrains Mono" }}
                   interval={Math.max(0, Math.floor(salChartData.length / 8) - 1)}/>
                 <YAxis stroke="var(--text-2)" tick={{ fontSize: 9, fontFamily: "JetBrains Mono" }}
-                  tickFormatter={v => `${(v / 1000).toFixed(1)}k`}/>
+                  tickFormatter={fmtAxis}/>
                 <Tooltip content={({ active, payload, label }: any) => {
                   if (!active || !payload?.length) return null;
                   const items = payload.filter((p: any) => p.value != null && p.value > 0);

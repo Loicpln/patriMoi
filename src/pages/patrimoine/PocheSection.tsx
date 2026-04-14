@@ -320,7 +320,7 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
   poche: typeof POCHES[number]; allPositions: Position[]; allVentes: Vente[];
   allDividendes: Dividende[]; allVersements: Versement[]; mois: string; onRefresh: () => void;
 }) {
-  const { fmt } = useDevise();
+  const { fmt, fmtAxis } = useDevise();
   const [open, setOpen]           = useState(false);
   const [posModal, setPosModal]   = useState(false);
   const [divModal, setDivModal]   = useState(false);
@@ -655,7 +655,7 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
               tickFormatter={d => { const mo = parseInt(d.slice(5, 7)); return MN_SHORT[mo - 1]; }}/>
             {/* Y-axis clamped to [0, auto] — portfolio value can't be negative */}
             <YAxis tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
-              tickFormatter={v => v >= 1000 ? `${(v / 1000).toFixed(0)}k€` : `${v}€`} width={45}
+              tickFormatter={fmtAxis} width={32}
               domain={[0, "auto"]}/>
             {isExp && <Tooltip content={<PocheTooltip fmt={fmt}/>}/>}
             {/* Espèces — bottom of stack */}
@@ -722,10 +722,10 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
                   tickFormatter={d => { const mo = parseInt(d.slice(5, 7)); return MN_SHORT[mo - 1]; }}/>
                 {pnlMode !== "divs" ? (
                   <YAxis tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
-                    tickFormatter={v => Math.abs(v) >= 1000 ? `${(v / 1000).toFixed(0)}k€` : `${v.toFixed(0)}€`} width={45}/>
+                    tickFormatter={fmtAxis} width={32}/>
                 ) : (
                   <YAxis tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
-                    tickFormatter={v => v === 0 ? "0€" : Math.abs(v) >= 100 ? `${v.toFixed(0)}€` : `${v.toFixed(2)}€`} width={52}/>
+                    tickFormatter={fmtAxis} width={32}/>
                 )}
                 {isExp && <Tooltip content={<PocheTooltip fmt={fmt}/>}/>}
                 <ReferenceLine y={0} stroke="var(--border-l)"/>
@@ -790,7 +790,7 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
           <button className="btn btn-ghost btn-sm" onClick={() => setVerModal(true)}>+ Versement</button>
           {positions.length > 0 && <button className="btn btn-teal btn-sm" onClick={() => setDivModal(true)}>+ Dividende</button>}
           {positions.some(p => p.sous_categorie === "scp") && (
-            <button className="btn btn-amber btn-sm" onClick={() => setScpiModal(true)} style={{ fontSize: 10 }}>+ SCPI</button>
+            <button className="btn btn-lavender btn-sm" onClick={() => setScpiModal(true)} style={{ fontSize: 10 }}>+ SCPI</button>
           )}
           <button className="btn btn-primary btn-sm" onClick={() => setPosModal(true)}>+ Position</button>
         </div>

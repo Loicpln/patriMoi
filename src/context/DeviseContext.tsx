@@ -50,6 +50,7 @@ interface DeviseCtx {
   setDevise: (d: DeviseCode) => void;
   fmt: (n: number) => string;
   fmtK: (n: number) => string;
+  fmtAxis: (v: number) => string;
   mois: string;
   setMois: (m: string) => void;
 }
@@ -57,8 +58,9 @@ interface DeviseCtx {
 const Ctx = createContext<DeviseCtx>({
   devise: DEVISES.EUR,
   setDevise: () => {},
-  fmt: (n) => `${n.toFixed(2)} €`,
-  fmtK: (n) => `${n.toFixed(2)} €`,
+  fmt: (n) => `${n.toFixed(2)}€`,
+  fmtK: (n) => `${n.toFixed(2)}€`,
+  fmtAxis: (v) => Math.abs(v) >= 1000 ? `${(v / 1000).toFixed(0)}k€` : `${v.toFixed(0)}€`,
   mois: curMonth,
   setMois: () => {},
 });
@@ -109,13 +111,21 @@ export function DeviseProvider({ children }: { children: ReactNode }) {
 
   const fmtK = fmt; // alias pour rétrocompatibilité
 
+  const fmtAxis = (v: number) => {
+    const val = v * taux;
+    const abs = Math.abs(val);
+    if (abs >= 1000) return `${(val / 1000).toFixed(0)}k${devise.symbol}`;
+    if (abs >= 1 || abs == 0) return `${val.toFixed(0)}${devise.symbol}`;
+    return `${val.toFixed(2)}${devise.symbol}`;
+  };
+
   const handleSet = async (code: DeviseCode) => {
     setDeviseCode(code);
     await invoke("set_parametre", { cle: "devise", valeur: code }).catch(() => {});
   };
 
   return (
-    <Ctx.Provider value={{ devise, setDevise: handleSet, fmt, fmtK, mois, setMois }}>
+    <Ctx.Provider value={{ devise, setDevise: handleSet, fmt, fmtK, fmtAxis, mois, setMois }}>
       {children}
     </Ctx.Provider>
   );

@@ -289,13 +289,15 @@ tbody tr:hover td { background: var(--bg-2); }
 .btn-primary  { background: var(--gold);   color: var(--bg-0);   border-color: var(--gold);  }
 .btn-primary:hover { filter: brightness(1.1); }
 .btn-ghost    { background: transparent;   color: var(--text-1); border-color: var(--border-l); }
-.btn-ghost:hover  { background: var(--bg-2); color: var(--text-0); }
+.btn-ghost:hover   { background: var(--bg-2); color: var(--text-0); }
 .btn-danger   { background: transparent;   color: var(--rose);   border-color: var(--rose); }
 .btn-danger:hover { background: var(--rose-dim); }
 .btn-amber     { background: var(--amber);   color: var(--bg-0);   border-color: var(--amber);  }
 .btn-amber:hover   { filter: brightness(1.1); }
+.btn-lavender  { background: var(--lavender);   color: var(--bg-0);   border-color: var(--lavender);  }
+.btn-lavender:hover{ filter: brightness(1.1); }
 .btn-teal     { background: var(--teal);   color: var(--bg-0);   border-color: var(--teal);  }
-.btn-teal:hover   { filter: brightness(1.1); }
+.btn-teal:hover    { filter: brightness(1.1); }
 .btn-sm { padding: 4px 10px; font-size: 10px; }
 
 /* â”€â”€ Modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
