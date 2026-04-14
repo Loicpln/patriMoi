@@ -10,6 +10,21 @@ import { LivretModal, InteretModal } from "./modals";
 import type { Livret } from "./types";
 
 const MN_SHORT = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
+const PAGE_SIZE = 10;
+
+function Pager({ page, total, onPage }: { page: number; total: number; onPage: (p: number) => void }) {
+  const pages = Math.ceil(total / PAGE_SIZE);
+  if (pages <= 1) return null;
+  return (
+    <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:6, padding:"6px 4px", userSelect:"none" }}>
+      <button className="btn btn-ghost btn-sm" disabled={page===0} onClick={()=>onPage(0)} style={{padding:"2px 6px",fontSize:11}}>«</button>
+      <button className="btn btn-ghost btn-sm" disabled={page===0} onClick={()=>onPage(page-1)} style={{padding:"2px 6px",fontSize:11}}>‹</button>
+      <span style={{fontSize:10,color:"var(--text-2)",minWidth:60,textAlign:"center"}}>{page+1} / {pages}</span>
+      <button className="btn btn-ghost btn-sm" disabled={page>=pages-1} onClick={()=>onPage(page+1)} style={{padding:"2px 6px",fontSize:11}}>›</button>
+      <button className="btn btn-ghost btn-sm" disabled={page>=pages-1} onClick={()=>onPage(pages-1)} style={{padding:"2px 6px",fontSize:11}}>»</button>
+    </div>
+  );
+}
 
 // Index-based pixel: bypasses Recharts scale domain truncation (ticks-only bug)
 function idxPx(data: any[], x1: string, x2: string, offset: any, bStart = 0, bEnd?: number) {
@@ -31,6 +46,8 @@ export function LivretsSection({livrets,mois,onRefresh}:{livrets:Livret[];mois:s
   const [modal,setModal]=useState(false);
   const [interetModal,setInteretModal]=useState(false);
   const [brushIdxL,setBrushIdxL]=useState<{start:number;end:number}|null>(null);
+  const [pageSoldes,setPageSoldes]=useState(0);
+  const [filterSoldes,setFilterSoldes]=useState<Set<string>>(new Set());
   const isInteret=(l:Livret)=>(l.notes??"").startsWith("[INTERET");
 
   const latest:Record<string,Livret>={};
@@ -109,6 +126,9 @@ export function LivretsSection({livrets,mois,onRefresh}:{livrets:Livret[];mois:s
 
   // History entries for selected month (non-intérêts)
   const histMois=livrets.filter(l=>!isInteret(l)&&(l.date??"").slice(0,7)===mois);
+  const pochesHistMois=useMemo(()=>[...new Set(histMois.map(l=>l.poche))].sort(),[histMois]);
+  const filteredSoldes=useMemo(()=>filterSoldes.size?histMois.filter(l=>filterSoldes.has(l.poche)):histMois,[histMois,filterSoldes]);
+  const togSoldePoche=(k:string)=>{setFilterSoldes(s=>{const n=new Set(s);n.has(k)?n.delete(k):n.add(k);return n;});setPageSoldes(0);};
 
   // Custom tooltip
   const LivretTooltip=({active,payload,label}:any)=>{
@@ -228,9 +248,22 @@ export function LivretsSection({livrets,mois,onRefresh}:{livrets:Livret[];mois:s
 
     {/* Accordion: solde history for selected month */}
     <AccordionSection label={`Soldes renseignés · ${mois}`} count={histMois.length}>
-      {histMois.length===0?<div className="empty">Aucune entrée ce mois</div>:(
+      {histMois.length===0?<div className="empty">Aucune entrée ce mois</div>:(<>
+        {pochesHistMois.length&&(
+          <div style={{display:"flex",alignItems:"center",gap:6,marginInline:4,overflowX:"auto"}}>
+            {pochesHistMois.map(k=>{
+              const label=LIVRETS_DEF.find(d=>d.key===k)?.label??k;
+              return(
+                <button key={k} className={`btn btn-sm ${filterSoldes.has(k)?"btn-primary":"btn-ghost"}`}
+                  style={{fontSize:10,padding:"2px 8px"}} onClick={()=>togSoldePoche(k)}>
+                  {label} ({histMois.filter(l=>l.poche===k).length})
+                </button>
+              );
+            })}
+          </div>
+        )}
         <table><thead><tr><th>Poche</th><th>Montant</th><th>Date</th><th></th></tr></thead>
-        <tbody>{histMois.map(l=>(
+        <tbody>{filteredSoldes.slice(pageSoldes*PAGE_SIZE,(pageSoldes+1)*PAGE_SIZE).map(l=>(
           <tr key={l.id}>
             <td><span className="badge b-gold">{LIVRETS_DEF.find(d=>d.key===l.poche)?.label??l.poche}</span></td>
             <td style={{color:"var(--gold)"}}>{fmt(l.montant)}</td>
@@ -238,7 +271,8 @@ export function LivretsSection({livrets,mois,onRefresh}:{livrets:Livret[];mois:s
             <td><button className="btn btn-danger btn-sm" onClick={async()=>{await invoke("delete_livret",{id:l.id});onRefresh();}}>✕</button></td>
           </tr>
         ))}</tbody></table>
-      )}
+        <Pager page={pageSoldes} total={filteredSoldes.length} onPage={setPageSoldes}/>
+      </>)}
     </AccordionSection>
 
     {/* Accordion: intérêts for selected year */}
