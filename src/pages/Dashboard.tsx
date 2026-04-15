@@ -7,7 +7,8 @@ import {
 import { useDevise } from "../context/DeviseContext";
 const curMonth = new Date().toISOString().slice(0, 7);
 import MonthSelector from "../components/MonthSelector";
-import { TOOLTIP_STYLE, TOOLTIP_LABEL_STYLE, TOOLTIP_ITEM_STYLE, monthsBetween, DEPENSE_CATEGORIES, DEPENSE_CAT_KEYS, depenseSubColor, tickerColor, PRIME_TYPE_COLORS, POCHES } from "../constants";
+import { TOOLTIP_STYLE, TOOLTIP_LABEL_STYLE, TOOLTIP_ITEM_STYLE, monthsBetween, DEPENSE_CATEGORIES, DEPENSE_CAT_KEYS, depenseSubColor, tickerColor, PRIME_TYPE_COLORS } from "../constants";
+import { usePoches } from "../context/PochesContext";
 import { NestedPie } from "./patrimoine/shared";
 import { useQuotes } from "../hooks/useQuotes";
 
@@ -48,6 +49,7 @@ const CAT_COLOR: Record<string, string> = Object.fromEntries(
 
 export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => void }) {
   const { fmt, fmtAxis, setMois: setCtxMois } = useDevise();
+  const { poches } = usePoches();
   const [mois, setMois]           = useState(curMonth);
   useEffect(()=>{ setCtxMois(mois); },[mois,setCtxMois]);
   const [salaires, setSalaires]   = useState<Salaire[]>([]);
@@ -120,7 +122,7 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
 
   const totalPortfolioValue = useMemo(() => {
     let total = 0;
-    POCHES.forEach(p => {
+    poches.forEach(p => {
       type Ev = { date: string; type: "buy" | "sell"; ticker: string; sc: string; qty: number; price: number };
       const evs: Ev[] = [
         ...positions.filter(pos => pos.poche === p.key && (pos.date_achat ?? "").slice(0, 7) <= mois)

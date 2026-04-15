@@ -27,6 +27,7 @@ fn main() {
             commands::get_scpi_valuations, commands::add_scpi_valuation, commands::delete_scpi_valuation,
             commands::import_depenses, commands::import_salaires, commands::import_livrets,
             commands::import_poche, commands::import_scpi_valuations,
+            commands::delete_poche_data,
         ])
         .run(tauri::generate_context!())
         .expect("Tauri error");

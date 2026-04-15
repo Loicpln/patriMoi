@@ -5,7 +5,8 @@ import {
   ResponsiveContainer, Tooltip, ComposedChart, Bar, Line, Brush, Customized,
 } from "recharts";
 import { useDevise, curMonth } from "../../context/DeviseContext";
-import { POCHES, INVEST_SUBCATS, INVEST_SUBCAT_COLOR, TRADEABLE_SUBCATS, monthsBetween, tickerColor, tickerColorDim, TOOLTIP_STYLE } from "../../constants";
+import { INVEST_SUBCATS, INVEST_SUBCAT_COLOR, TRADEABLE_SUBCATS, monthsBetween, tickerColor, tickerColorDim, TOOLTIP_STYLE } from "../../constants";
+import type { Poche } from "../../context/PochesContext";
 import { useQuotes } from "../../hooks/useQuotes";
 import { ChartGrid, NestedPie, AccordionSection } from "./shared";
 import { PositionModal, VersementModal, SellModal, TradeModal, DividendeModal, DeletePositionModal, ScpiValuationModal } from "./modals";
@@ -317,7 +318,7 @@ function PocheTooltip({ active, payload, label, fmt: fmtFn }: any) {
 
 // ── Main Component ─────────────────────────────────────────────────────────────
 export function PocheSection({ poche, allPositions, allVentes, allDividendes, allVersements, mois, onRefresh }: {
-  poche: typeof POCHES[number]; allPositions: Position[]; allVentes: Vente[];
+  poche: Poche; allPositions: Position[]; allVentes: Vente[];
   allDividendes: Dividende[]; allVersements: Versement[]; mois: string; onRefresh: () => void;
 }) {
   const { fmt, fmtAxis } = useDevise();
@@ -409,11 +410,11 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
     [positions],
   );
 
-  // Load SCPI valuations for this poche
+  // Load SCPI valuations (global, shared across all poches)
   useEffect(() => {
-    invoke<ScpiValuation[]>("get_scpi_valuations", { poche: poche.key })
+    invoke<ScpiValuation[]>("get_scpi_valuations")
       .then(setScpiValuations).catch(() => {});
-  }, [poche.key]);
+  }, []);
 
   const byTicker = useMemo(() => aggregateByTicker(positions, ventes, mois), [positions, ventes, mois]);
 
@@ -959,12 +960,11 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
       {posModal    && <PositionModal poche={poche.key} existing={positions} mois={mois} onClose={() => setPosModal(false)}    onSave={() => { setPosModal(false);    onRefresh(); }}/>}
       {divModal    && <DividendeModal poche={poche.key} positions={positions} mois={mois} onClose={() => setDivModal(false)}  onSave={() => { setDivModal(false);    onRefresh(); }}/>}
       {scpiModal && <ScpiValuationModal
-        poche={poche.key}
         scpiTickers={[...new Set(positions.filter(p => p.sous_categorie === "scp").map(p => p.ticker))]}
         mois={mois}
         valuations={scpiValuations}
         onClose={() => setScpiModal(false)}
-        onSave={() => { invoke<ScpiValuation[]>("get_scpi_valuations", { poche: poche.key }).then(setScpiValuations); }}/>}
+        onSave={() => { invoke<ScpiValuation[]>("get_scpi_valuations").then(setScpiValuations); }}/>}
       {verModal    && <VersementModal poche={poche.key} mois={mois} onClose={() => setVerModal(false)}                        onSave={() => { setVerModal(false);    onRefresh(); }}/>}
       {sellTarget  && <SellModal  poche={poche.key} {...sellTarget} getPriceForDate={getPriceForDateFull} mois={mois} onClose={() => setSellTarget(null)}  onSave={() => { setSellTarget(null);  onRefresh(); }}/>}
       {tradeTarget && <TradeModal poche={poche.key} {...tradeTarget} tradeablePositions={tradeablePositions} getPriceForDate={getPriceForDateFull} mois={mois} onClose={() => setTradeTarget(null)} onSave={() => { setTradeTarget(null); onRefresh(); }}/>}

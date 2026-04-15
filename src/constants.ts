@@ -18,19 +18,6 @@ export const LIVRET_COLOR: Record<string, string> = Object.fromEntries(
   LIVRETS_DEF.map(l => [l.key, l.color])
 );
 
-// ── Poches investissement ──────────────────────────────────────
-export const POCHES = [
-  { key: "pea",    label: "PEA",           color: "#3a7bd5" },
-  { key: "av",     label: "Assurance Vie", color: "#5fa89e" },
-  { key: "cto",    label: "CTO",           color: "#7c6fd4" },
-  { key: "crypto", label: "Wallet Crypto", color: "#2196a8" },
-] as const;
-
-export type PocheKey = typeof POCHES[number]["key"];
-
-export const POCHE_COLOR: Record<string, string> = Object.fromEntries(
-  POCHES.map(p => [p.key, p.color])
-);
 
 // ── Vue globale — couleurs des groupes agrégés ─────────────────
 // Utilisées dans GlobalRecap (camembert + graphique)

@@ -286,15 +286,12 @@ pub fn delete_versement(id: i64, state: State<DbState>) -> Result<(), String> {
 
 // ═══ SCPI VALUATIONS ═════════════════════════════════════════════════════════
 #[tauri::command]
-pub fn get_scpi_valuations(poche: Option<String>, state: State<DbState>) -> Result<Vec<ScpiValuation>, String> {
+pub fn get_scpi_valuations(state: State<DbState>) -> Result<Vec<ScpiValuation>, String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
-    let (sql, filtered) = match &poche {
-        Some(_) => ("SELECT id,poche,ticker,mois,valeur_unit FROM scpi_valuations WHERE poche=?1 ORDER BY mois DESC", true),
-        None    => ("SELECT id,poche,ticker,mois,valeur_unit FROM scpi_valuations ORDER BY mois DESC", false),
-    };
+    let sql = "SELECT id,ticker,mois,valeur_unit FROM scpi_valuations ORDER BY mois DESC";
     let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
-    let map = |r: &rusqlite::Row| Ok(ScpiValuation{id:r.get(0)?,poche:r.get(1)?,ticker:r.get(2)?,mois:r.get(3)?,valeur_unit:r.get(4)?});
-    let items = if filtered { stmt.query_map(params![poche.unwrap()], map) } else { stmt.query_map([], map) }
+    let map = |r: &rusqlite::Row| Ok(ScpiValuation{id:r.get(0)?,ticker:r.get(1)?,mois:r.get(2)?,valeur_unit:r.get(3)?});
+    let items = stmt.query_map([], map)
         .map_err(|e| e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e| e.to_string())?;
     Ok(items)
 }
@@ -302,8 +299,8 @@ pub fn get_scpi_valuations(poche: Option<String>, state: State<DbState>) -> Resu
 pub fn add_scpi_valuation(val: ScpiValuation, state: State<DbState>) -> Result<i64, String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     conn.execute(
-        "INSERT INTO scpi_valuations (poche,ticker,mois,valeur_unit) VALUES (?1,?2,?3,?4) ON CONFLICT(poche,ticker,mois) DO UPDATE SET valeur_unit=excluded.valeur_unit",
-        params![val.poche,val.ticker,val.mois,val.valeur_unit])
+        "INSERT INTO scpi_valuations (ticker,mois,valeur_unit) VALUES (?1,?2,?3) ON CONFLICT(ticker,mois) DO UPDATE SET valeur_unit=excluded.valeur_unit",
+        params![val.ticker,val.mois,val.valeur_unit])
         .map_err(|e| e.to_string())?;
     Ok(conn.last_insert_rowid())
 }
@@ -311,6 +308,17 @@ pub fn add_scpi_valuation(val: ScpiValuation, state: State<DbState>) -> Result<i
 pub fn delete_scpi_valuation(id: i64, state: State<DbState>) -> Result<(), String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     conn.execute("DELETE FROM scpi_valuations WHERE id=?1", params![id]).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+// ── Suppression complète d'une poche ─────────────────────────────────────────
+#[tauri::command]
+pub fn delete_poche_data(poche: String, state: State<DbState>) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    for table in &["positions", "ventes", "dividendes", "versements"] {
+        conn.execute(&format!("DELETE FROM {} WHERE poche=?1", table), params![poche])
+            .map_err(|e| e.to_string())?;
+    }
     Ok(())
 }
 
@@ -479,12 +487,12 @@ pub fn export_all_csv(subfolder: String, state: State<DbState>) -> Result<Vec<St
 
     // ── SCPI ──────────────────────────────────────────────────────────────
     {
-        let mut stmt=conn.prepare("SELECT id,poche,ticker,mois,valeur_unit FROM scpi_valuations ORDER BY poche,ticker,mois").map_err(|e|e.to_string())?;
+        let mut stmt=conn.prepare("SELECT id,ticker,mois,valeur_unit FROM scpi_valuations ORDER BY ticker,mois").map_err(|e|e.to_string())?;
         let lines:Vec<String>=stmt.query_map([],|r|{
-            let id:Option<i64>=r.get(0)?; let v:f64=r.get(4)?;
-            Ok(vec![id.map_or("".into(),|x|x.to_string()),r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,String>(3)?,format!("{}",v)])
+            let id:Option<i64>=r.get(0)?; let v:f64=r.get(3)?;
+            Ok(vec![id.map_or("".into(),|x|x.to_string()),r.get::<_,String>(1)?,r.get::<_,String>(2)?,format!("{}",v)])
         }).map_err(|e|e.to_string())?.filter_map(|r|r.ok()).map(|f|row(&f)).collect();
-        write_csv(dir,"scpi_valorisations.csv","id,poche,ticker,mois,valeur_unit",lines)?;
+        write_csv(dir,"scpi_valorisations.csv","id,ticker,mois,valeur_unit",lines)?;
         written.push("scpi_valorisations.csv".into());
     }
 
@@ -578,8 +586,8 @@ pub fn import_scpi_valuations(rows: Vec<ScpiValuation>, replace: bool, state: St
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     if replace { conn.execute("DELETE FROM scpi_valuations", []).map_err(|e| e.to_string())?; }
     for r in &rows {
-        conn.execute("INSERT INTO scpi_valuations (poche,ticker,mois,valeur_unit) VALUES (?1,?2,?3,?4) ON CONFLICT(poche,ticker,mois) DO UPDATE SET valeur_unit=excluded.valeur_unit",
-            params![r.poche,r.ticker,r.mois,r.valeur_unit])
+        conn.execute("INSERT INTO scpi_valuations (ticker,mois,valeur_unit) VALUES (?1,?2,?3) ON CONFLICT(ticker,mois) DO UPDATE SET valeur_unit=excluded.valeur_unit",
+            params![r.ticker,r.mois,r.valeur_unit])
             .map_err(|e| e.to_string())?;
     }
     Ok(rows.len())

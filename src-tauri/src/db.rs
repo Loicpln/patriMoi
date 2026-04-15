@@ -42,7 +42,7 @@ pub struct Versement {
 }
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ScpiValuation {
-    pub id: Option<i64>, pub poche: String, pub ticker: String,
+    pub id: Option<i64>, pub ticker: String,
     pub mois: String, pub valeur_unit: f64,
 }
 #[allow(dead_code)]
@@ -142,6 +142,21 @@ pub fn init_db(conn: &Connection) -> Result<()> {
                 UNIQUE(poche, ticker, mois)
             );
             PRAGMA user_version = 6;
+        ")?;
+    }
+    if version < 7 {
+        // Migration : rendre scpi_valuations communes à toutes les poches
+        conn.execute_batch("
+            CREATE TABLE scpi_valuations_v2 (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ticker TEXT NOT NULL, mois TEXT NOT NULL, valeur_unit REAL NOT NULL,
+                UNIQUE(ticker, mois)
+            );
+            INSERT OR IGNORE INTO scpi_valuations_v2 (ticker, mois, valeur_unit)
+                SELECT ticker, mois, MAX(valeur_unit) FROM scpi_valuations GROUP BY ticker, mois;
+            DROP TABLE scpi_valuations;
+            ALTER TABLE scpi_valuations_v2 RENAME TO scpi_valuations;
+            PRAGMA user_version = 7;
         ")?;
     }
     Ok(())

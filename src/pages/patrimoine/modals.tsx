@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
-import { LIVRETS_DEF, POCHES, INVEST_SUBCATS, TRADEABLE_SUBCATS, defaultDateForMonth } from "../../constants";
+import { LIVRETS_DEF, INVEST_SUBCATS, TRADEABLE_SUBCATS, defaultDateForMonth } from "../../constants";
 import { curMonth, useDevise } from "../../context/DeviseContext";
+import { usePoches } from "../../context/PochesContext";
 import type { Livret, Position, Vente, Dividende, Versement, ScpiValuation } from "./types";
 
 // ── Livret Modal ───────────────────────────────────────────────────────────────
@@ -107,6 +108,7 @@ const SUBS_NO_ESPECES = INVEST_SUBCATS.filter(s=>s.key!=="especes");
 export function PositionModal({poche,existing,mois=curMonth,onClose,onSave}:{
   poche:string;existing:Position[];mois?:string;onClose:()=>void;onSave:()=>void;
 }) {
+  const { poches } = usePoches();
   const [form,setForm]=useState<Position>({
     poche,ticker:"",nom:"",sous_categorie:SUBS_NO_ESPECES[0].key,
     quantite:0,prix_achat:0,date_achat:defaultDateForMonth(mois),
@@ -123,7 +125,7 @@ export function PositionModal({poche,existing,mois=curMonth,onClose,onSave}:{
   };
 
   return(<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
-    <div className="modal-title">Ajouter position · {POCHES.find(p=>p.key===poche)?.label}</div>
+    <div className="modal-title">Ajouter position · {poches.find(p=>p.key===poche)?.label??poche}</div>
     <div className="form-grid">
       <div className="field"><label>Ticker Yahoo Finance</label>
         <input list="tk-l" value={form.ticker} placeholder="AAPL, BTC-USD, WLD.PA" onChange={e=>handleTickerChange(e.target.value)}/>
@@ -153,10 +155,11 @@ export function PositionModal({poche,existing,mois=curMonth,onClose,onSave}:{
 
 // ── Versement Modal ────────────────────────────────────────────────────────────
 export function VersementModal({poche,mois=curMonth,onClose,onSave}:{poche:string;mois?:string;onClose:()=>void;onSave:()=>void}) {
+  const { poches } = usePoches();
   const [form,setForm]=useState<Versement>({poche,montant:0,date:defaultDateForMonth(mois)});
   const s=(k:keyof Versement,v:string|number)=>setForm(f=>({...f,[k]:v}));
   return(<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
-    <div className="modal-title">Versement cash · {POCHES.find(p=>p.key===poche)?.label}</div>
+    <div className="modal-title">Versement cash · {poches.find(p=>p.key===poche)?.label??poche}</div>
     <div className="form-grid">
       <div className="field"><label>Montant (€)</label><input type="number" step="0.01" value={form.montant} onChange={e=>s("montant",parseFloat(e.target.value)||0)}/></div>
       <div className="field"><label>Date</label><input type="date" value={form.date} onChange={e=>s("date",e.target.value)}/></div>
@@ -381,14 +384,14 @@ export function DividendeModal({poche,positions,mois=curMonth,onClose,onSave}:{
 }
 
 // ── SCPI Valuation Modal ───────────────────────────────────────────────────────
-export function ScpiValuationModal({poche,scpiTickers,mois=curMonth,valuations,onClose,onSave}:{
-  poche:string;scpiTickers:string[];mois?:string;valuations:ScpiValuation[];onClose:()=>void;onSave:()=>void;
+export function ScpiValuationModal({scpiTickers,mois=curMonth,valuations,onClose,onSave}:{
+  scpiTickers:string[];mois?:string;valuations:ScpiValuation[];onClose:()=>void;onSave:()=>void;
 }) {
   const [ticker,setTicker]=useState(scpiTickers[0]??"");
   const [month,setMonth]=useState(mois);
   const [valeur,setValeur]=useState(0);
   return(<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
-    <div className="modal-title">Valorisation SCPI · {POCHES.find(p=>p.key===poche)?.label}</div>
+    <div className="modal-title">Valorisation SCPI</div>
     <div className="form-grid">
       <div className="field"><label>Ticker SCPI</label>
         <select value={ticker} onChange={e=>setTicker(e.target.value)}>
@@ -418,7 +421,7 @@ export function ScpiValuationModal({poche,scpiTickers,mois=curMonth,valuations,o
     <div className="form-actions">
       <button className="btn btn-ghost" onClick={onClose}>Fermer</button>
       <button className="btn btn-primary" disabled={!ticker||valeur<=0}
-        onClick={async()=>{await invoke("add_scpi_valuation",{val:{poche,ticker,mois:month,valeur_unit:valeur}});onSave();}}>Enregistrer</button>
+        onClick={async()=>{await invoke("add_scpi_valuation",{val:{ticker,mois:month,valeur_unit:valeur}});onSave();}}>Enregistrer</button>
     </div>
   </div></div>);
 }

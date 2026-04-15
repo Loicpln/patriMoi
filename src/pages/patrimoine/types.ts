@@ -4,7 +4,7 @@ export interface Position  { id?: number; poche: string; ticker: string; nom: st
 export interface Vente     { id?: number; poche: string; ticker: string; nom: string; quantite: number; prix_achat: number; prix_vente: number; date_vente: string; pnl: number; notes?: string; }
 export interface Dividende { id?: number; ticker: string; poche: string; montant: number; date: string; notes?: string; }
 export interface Versement { id?: number; poche: string; montant: number; date: string; notes?: string; }
-export interface ScpiValuation { id?: number; poche: string; ticker: string; mois: string; valeur_unit: number; }
+export interface ScpiValuation { id?: number; ticker: string; mois: string; valeur_unit: number; }
 
 // SUBCAT_ORDER defines stack order from bottom (index 0) to top
 export const SUBCAT_ORDER = [

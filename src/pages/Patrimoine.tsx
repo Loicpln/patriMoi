@@ -12,9 +12,10 @@ import {
   ResponsiveContainer, Tooltip, ComposedChart, Line, Customized, Brush,
 } from "recharts";
 import { useDevise, curMonth } from "../context/DeviseContext";
+import { usePoches } from "../context/PochesContext";
 import { useQuotes } from "../hooks/useQuotes";
 import {
-  LIVRETS_DEF, POCHES, INVEST_SUBCATS, INVEST_SUBCAT_COLOR,
+  LIVRETS_DEF, INVEST_SUBCATS, INVEST_SUBCAT_COLOR,
   GLOBAL_GROUP_COLORS, TOOLTIP_STYLE,
 } from "../constants";
 import MonthSelector from "../components/MonthSelector";
@@ -69,6 +70,7 @@ function scpiPrice(map: Record<string, Record<string, number>>, ticker: string, 
 // ── Recap Investissement ───────────────────────────────────────────────────────
 function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiValuations}:{positions:Position[];ventes:Vente[];dividendes:Dividende[];versements:Versement[];mois:string;scpiValuations:ScpiValuation[]}) {
   const {fmt,fmtAxis}=useDevise();
+  const {poches}=usePoches();
   const MN_SHORT=["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
   const [pieToggle,setPieToggle]=useState<"versements"|"investi"|"valeur">("valeur");
   const [brushIdxR,setBrushIdxR]=useState<{start:number;end:number}|null>(null);
@@ -114,7 +116,7 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
     const pocheMap:Record<string,{value:number;color:string}>={};
     const outerMap:Record<string,{value:number;color:string}>={};
 
-    POCHES.forEach(p=>{
+    poches.forEach(p=>{
       // Chronological buy/sell replay (same as PocheSection.aggregateByTicker)
       type Ev={date:string;type:"buy"|"sell";ticker:string;subcat:string;qty:number;price:number};
       const evs:Ev[]=[
@@ -192,11 +194,11 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
     });
 
     const inner=Object.entries(pocheMap)
-      .map(([k,v])=>({name:POCHES.find(p=>p.key===k)?.label??k,...v}))
+      .map(([k,v])=>({name:poches.find(p=>p.key===k)?.label??k,...v}))
       .filter(e=>e.value>0);
     const outer=Object.entries(outerMap).map(([k,v])=>{
       const [pk,...rest]=k.split("||");const sk=rest.join("||");
-      const pocheName=POCHES.find(p=>p.key===pk)?.label??pk;
+      const pocheName=poches.find(p=>p.key===pk)?.label??pk;
       const subcatName=sk==="especes"?"Espèces":(INVEST_SUBCATS.find(s=>s.key===sk)?.label??sk);
       return{name:subcatName,group:pocheName,...v};
     }).filter(e=>e.value>0);
@@ -229,17 +231,17 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
     const versPerP:Record<string,Versement[]>={};
     const ventPerP:Record<string,Vente[]>={};
     const divsPerP:Record<string,Dividende[]>={};
-    POCHES.forEach(p=>{
+    poches.forEach(p=>{
       versPerP[p.key]=[...versements].filter(v=>v.poche===p.key).sort((a,b)=>(a.date??"").localeCompare(b.date??""));
       ventPerP[p.key]=[...ventes].filter(v=>v.poche===p.key).sort((a,b)=>(a.date_vente??"").localeCompare(b.date_vente??""));
       divsPerP[p.key]=[...dividendes].filter(d=>d.poche===p.key).sort((a,b)=>(a.date??"").localeCompare(b.date??""));
     });
     const pVC:Record<string,number>={};const pPC:Record<string,number>={};const pDC:Record<string,number>={};
     const pCumV:Record<string,number>={};const pCumP:Record<string,number>={};const pCumD:Record<string,number>={};
-    POCHES.forEach(p=>{pVC[p.key]=0;pPC[p.key]=0;pDC[p.key]=0;pCumV[p.key]=0;pCumP[p.key]=0;pCumD[p.key]=0;});
+    poches.forEach(p=>{pVC[p.key]=0;pPC[p.key]=0;pDC[p.key]=0;pCumV[p.key]=0;pCumP[p.key]=0;pCumD[p.key]=0;});
 
     const byPoche:Record<string,Record<string,{q:number;inv:number;subcat:string}>>={};
-    POCHES.forEach(p=>{byPoche[p.key]={};});
+    poches.forEach(p=>{byPoche[p.key]={};});
 
     let evIdx=0,viC=0,piC=0,diC=0,cumVers=0,cumPnl=0,cumDivs=0;
     return dayDates.map(dateStr=>{
@@ -262,14 +264,14 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
       while(piC<sortedVent.length&&(sortedVent[piC].date_vente??"")<= dateStr)cumPnl+=sortedVent[piC++].pnl;
       while(diC<sortedDivs.length&&(sortedDivs[diC].date??"")<= dateStr)cumDivs+=sortedDivs[diC++].montant;
       // Per-poche cumulative
-      POCHES.forEach(p=>{
+      poches.forEach(p=>{
         while(pVC[p.key]<versPerP[p.key].length&&(versPerP[p.key][pVC[p.key]].date??"")<= dateStr)pCumV[p.key]+=versPerP[p.key][pVC[p.key]++].montant;
         while(pPC[p.key]<ventPerP[p.key].length&&(ventPerP[p.key][pPC[p.key]].date_vente??"")<= dateStr)pCumP[p.key]+=ventPerP[p.key][pPC[p.key]++].pnl;
         while(pDC[p.key]<divsPerP[p.key].length&&(divsPerP[p.key][pDC[p.key]].date??"")<= dateStr)pCumD[p.key]+=divsPerP[p.key][pDC[p.key]++].montant;
       });
       const row:any={date:dateStr,month:dateStr.slice(0,7),_versTotal:cumVers};
       let totalInvestMarket=0,totalInvested=0;
-      POCHES.forEach(p=>{
+      poches.forEach(p=>{
         const pocheInvest=Object.values(byPoche[p.key]).reduce((s,d)=>s+d.inv,0);
         const investVal=Object.entries(byPoche[p.key]).reduce((s,[t,d])=>{
           const pru=d.q>0?d.inv/d.q:0;
@@ -288,7 +290,7 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
       row._pnlTotal=(totalInvestMarket-totalInvested)+cumPnl+cumDivs;
       row._pnlReal=cumPnl;
       // Loss zone: gap between versements line and total portfolio value
-      const totalPocheVal=POCHES.reduce((s,p)=>s+(row[p.label]??0),0);
+      const totalPocheVal=poches.reduce((s,p)=>s+(row[p.label]??0),0);
       row._lossArea=Math.max(0,cumVers-totalPocheVal);
       return row;
     });
@@ -318,7 +320,7 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
   // Isolated dots per poche (daily): day with value but neighbours = 0
   const isolatedByPoche=useMemo(()=>{
     const result:Record<string,Set<string>>={};
-    POCHES.forEach(p=>{
+    poches.forEach(p=>{
       const s=new Set<string>();
       stackedData.forEach((row:any,i:number)=>{
         const cur =(stackedData[i]  as any)?.[p.label]??0;
@@ -379,7 +381,7 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
       <ResponsiveContainer width="100%" height={h}>
         <ComposedChart data={d} margin={{left:0,right:5,top:5,bottom:isExp?28:0}}>
           <defs>
-            {POCHES.map(p=>(<linearGradient key={p.key} id={`gr_${p.key}`} x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={p.color} stopOpacity={.7}/><stop offset="95%" stopColor={p.color} stopOpacity={.05}/></linearGradient>))}
+            {poches.map(p=>(<linearGradient key={p.key} id={`gr_${p.key}`} x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={p.color} stopOpacity={.7}/><stop offset="95%" stopColor={p.color} stopOpacity={.05}/></linearGradient>))}
             <linearGradient id="gr_loss_r" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%"   stopColor="#e63946" stopOpacity={.55}/>
               <stop offset="100%" stopColor="#e63946" stopOpacity={.15}/>
@@ -390,7 +392,7 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
             tickFormatter={dd=>{const mo=parseInt(dd.slice(5,7));return MN_SHORT[mo-1];}}/>
           <YAxis tick={{fontSize:8,fontFamily:"JetBrains Mono"}} tickFormatter={fmtAxis} width={32} domain={[0,"auto"]}/>
           <Tooltip content={<RecapTooltip/>}/>
-          {POCHES.map(p=><Area key={p.key} type="monotone" dataKey={p.label} stackId="r" name={p.label} stroke={p.color} strokeWidth={1.5} fill={`url(#gr_${p.key})`} dot={renderIsolatedDot(isolatedByPoche[p.label]??new Set(),p.color)}/>)}
+          {poches.map(p=><Area key={p.key} type="monotone" dataKey={p.label} stackId="r" name={p.label} stroke={p.color} strokeWidth={1.5} fill={`url(#gr_${p.key})`} dot={renderIsolatedDot(isolatedByPoche[p.label]??new Set(),p.color)}/>)}
           {/* Loss zone: stacked on top, fills gap to versements line when portfolio < versements */}
           <Area type="monotone" dataKey="_lossArea" stackId="r" name="_lossArea"
             stroke="none" strokeWidth={0} fill="url(#gr_loss_r)" legendType="none"/>
@@ -435,6 +437,7 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
 // ── Global Recap ───────────────────────────────────────────────────────────────
 function GlobalRecap({livrets,positions,ventes,dividendes,versements,mois,scpiValuations}:{livrets:Livret[];positions:Position[];ventes:Vente[];dividendes:Dividende[];versements:Versement[];mois:string;scpiValuations:ScpiValuation[]}) {
   const {fmt,fmtAxis}=useDevise();
+  const {poches}=usePoches();
   const [pieToggle,setPieToggle]=useState<"versements"|"valeur">("valeur");
   const [brushIdxG,setBrushIdxG]=useState<{start:number;end:number}|null>(null);
 
@@ -486,7 +489,7 @@ function GlobalRecap({livrets,positions,ventes,dividendes,versements,mois,scpiVa
   // Portfolio value per poche at mois — market value of positions + espèces (uninvested cash)
   const portfolioParPoche=useMemo(()=>{
     const result:Record<string,number>={};
-    POCHES.forEach(p=>{
+    poches.forEach(p=>{
       type Ev={date:string;type:"buy"|"sell";ticker:string;subcat:string;qty:number;price:number};
       const evs:Ev[]=[
         ...positions.filter(pos=>pos.poche===p.key&&(pos.date_achat??"").slice(0,7)<=mois)
@@ -541,7 +544,7 @@ function GlobalRecap({livrets,positions,ventes,dividendes,versements,mois,scpiVa
   ].filter(p=>p.value>0);
   const outer=[
     ...LIVRETS_DEF.map(l=>({name:l.label,group:"Livrets",value:latestLiv[l.key]?.montant??0,color:l.color+"cc"})),
-    ...POCHES.map(p=>({name:p.label,group:"Investissements",value:pieToggle==="versements"?(versParPoche[p.key]??0):(portfolioParPoche[p.key]??0),color:p.color+"cc"})),
+    ...poches.map(p=>({name:p.label,group:"Investissements",value:pieToggle==="versements"?(versParPoche[p.key]??0):(portfolioParPoche[p.key]??0),color:p.color+"cc"})),
   ].filter(p=>p.value>0);
   const grandTotal=totalLivrets+investVal;
 
@@ -570,7 +573,7 @@ function GlobalRecap({livrets,positions,ventes,dividendes,versements,mois,scpiVa
     const divsPerP:Record<string,Dividende[]>={};
     const pVI:Record<string,number>={};const pPI:Record<string,number>={};const pDI:Record<string,number>={};
     const pCV:Record<string,number>={};const pCP:Record<string,number>={};const pCD:Record<string,number>={};
-    POCHES.forEach(p=>{
+    poches.forEach(p=>{
       versPerP[p.key]=[...versements].filter(v=>v.poche===p.key).sort((a,b)=>(a.date??"").localeCompare(b.date??""));
       ventPerP[p.key]=[...ventes].filter(v=>v.poche===p.key).sort((a,b)=>(a.date_vente??"").localeCompare(b.date_vente??""));
       divsPerP[p.key]=[...dividendes].filter(d=>d.poche===p.key).sort((a,b)=>(a.date??"").localeCompare(b.date??""));
@@ -588,7 +591,7 @@ function GlobalRecap({livrets,positions,ventes,dividendes,versements,mois,scpiVa
 
     // Per-poche position tracker
     const byPocheG:Record<string,Record<string,{q:number;inv:number;subcat:string}>>={};
-    POCHES.forEach(p=>{byPocheG[p.key]={};});
+    poches.forEach(p=>{byPocheG[p.key]={};});
 
     let evIdx=0;
     return dayDates.map(dateStr=>{
@@ -608,7 +611,7 @@ function GlobalRecap({livrets,positions,ventes,dividendes,versements,mois,scpiVa
         }
       }
       // Advance per-poche espèces counters
-      POCHES.forEach(p=>{
+      poches.forEach(p=>{
         while(pVI[p.key]<versPerP[p.key].length&&(versPerP[p.key][pVI[p.key]].date??"")<= dateStr)pCV[p.key]+=versPerP[p.key][pVI[p.key]++].montant;
         while(pPI[p.key]<ventPerP[p.key].length&&(ventPerP[p.key][pPI[p.key]].date_vente??"")<= dateStr)pCP[p.key]+=ventPerP[p.key][pPI[p.key]++].pnl;
         while(pDI[p.key]<divsPerP[p.key].length&&(divsPerP[p.key][pDI[p.key]].date??"")<= dateStr)pCD[p.key]+=divsPerP[p.key][pDI[p.key]++].montant;
@@ -625,7 +628,7 @@ function GlobalRecap({livrets,positions,ventes,dividendes,versements,mois,scpiVa
       // Poches (top of stack) — valorisation + espèces
       // Use monthly price (same logic as the pie in "valorisation" mode)
       const monthStr=dateStr.slice(0,7);
-      POCHES.forEach(p=>{
+      poches.forEach(p=>{
         const map=byPocheG[p.key];
         const pocheInvest=Object.values(map).reduce((s,d)=>s+d.inv,0);
         const marketVal=Object.entries(map).reduce((s,[t,d])=>{
@@ -649,7 +652,7 @@ function GlobalRecap({livrets,positions,ventes,dividendes,versements,mois,scpiVa
 
   // Custom tooltip for GlobalRecap — total › investissements › livrets › detail
   const _livLabels=new Set(LIVRETS_DEF.map(l=>l.label));
-  const _pocheLabels=new Set(POCHES.map(p=>p.label));
+  const _pocheLabels=new Set(poches.map(p=>p.label));
   const GlobalTooltip=({active,payload,label}:any)=>{
     if(!active||!payload?.length)return null;
     const items=payload.filter((p:any)=>p.value!=null&&Number(p.value)>0);
@@ -717,7 +720,7 @@ function GlobalRecap({livrets,positions,ventes,dividendes,versements,mois,scpiVa
   // Isolated dots per livret/poche (daily) for global chart
   const isolatedByGlobal=useMemo(()=>{
     const result:Record<string,Set<string>>={};
-    [...LIVRETS_DEF,...POCHES].forEach(s=>{
+    [...LIVRETS_DEF,...poches].forEach(s=>{
       const set=new Set<string>();
       evoData.forEach((row:any,i:number)=>{
         const cur =(evoData[i]  as any)?.[s.label]??0;
@@ -739,7 +742,7 @@ function GlobalRecap({livrets,positions,ventes,dividendes,versements,mois,scpiVa
         <ComposedChart data={d} margin={{left:0,right:5,top:5,bottom:isExp?28:0}}>
           <defs>
             {LIVRETS_DEF.map(l=>(<linearGradient key={l.key} id={`gGL_${l.key}`} x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={l.color} stopOpacity={.7}/><stop offset="95%" stopColor={l.color} stopOpacity={.05}/></linearGradient>))}
-            {POCHES.map(p=>(<linearGradient key={p.key} id={`gGP_${p.key}`} x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={p.color} stopOpacity={.7}/><stop offset="95%" stopColor={p.color} stopOpacity={.05}/></linearGradient>))}
+            {poches.map(p=>(<linearGradient key={p.key} id={`gGP_${p.key}`} x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={p.color} stopOpacity={.7}/><stop offset="95%" stopColor={p.color} stopOpacity={.05}/></linearGradient>))}
           </defs>
           <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
           <XAxis dataKey="date" ticks={xTicksG} tick={{fontSize:8,fontFamily:"JetBrains Mono"}}
@@ -749,7 +752,7 @@ function GlobalRecap({livrets,positions,ventes,dividendes,versements,mois,scpiVa
           {/* Livrets — stacked at bottom, one area per livret */}
           {LIVRETS_DEF.map(l=><Area key={l.key} type="monotone" dataKey={l.label} stackId="g" name={l.label} stroke={l.color} strokeWidth={1.5} fill={`url(#gGL_${l.key})`} dot={renderIsolatedDot(isolatedByGlobal[l.label]??new Set(),l.color)}/>)}
           {/* Investissements — stacked on top, one area per poche */}
-          {POCHES.map(p=><Area key={p.key} type="monotone" dataKey={p.label} stackId="g" name={p.label} stroke={p.color} strokeWidth={1.5} fill={`url(#gGP_${p.key})`} dot={renderIsolatedDot(isolatedByGlobal[p.label]??new Set(),p.color)}/>)}
+          {poches.map(p=><Area key={p.key} type="monotone" dataKey={p.label} stackId="g" name={p.label} stroke={p.color} strokeWidth={1.5} fill={`url(#gGP_${p.key})`} dot={renderIsolatedDot(isolatedByGlobal[p.label]??new Set(),p.color)}/>)}
           {monthRangeG&&(
             <Customized component={(p:any)=>{
               const bS=isExp?(brushIdxG?.start??0):0;
@@ -797,6 +800,7 @@ function PatrimoineInner() {
   const [tab,setTab]=useState<"global"|"livrets"|"investissements">("global");
   const [mois,setMois]=useState(curMonth);
   const { setMois: setCtxMois } = useDevise();
+  const {poches}=usePoches();
   useEffect(()=>{ setCtxMois(mois); },[mois,setCtxMois]);
   const [livrets,setLivrets]=useState<Livret[]>([]);
   const [positions,setPositions]=useState<Position[]>([]);
@@ -845,7 +849,7 @@ function PatrimoineInner() {
     {tab==="global"&&<GlobalRecap livrets={livrets} positions={positions} ventes={ventes} dividendes={dividendes} versements={versements} mois={mois} scpiValuations={scpiValuations}/>}
     {tab==="livrets"&&<LivretsSection livrets={livrets} mois={mois} onRefresh={load}/>}
     {tab==="investissements"&&<RecapInvestissement positions={positions} ventes={ventes} dividendes={dividendes} versements={versements} mois={mois} scpiValuations={scpiValuations}/>}
-    {tab==="investissements"&&POCHES.map((p: typeof POCHES[number])=>(
+    {tab==="investissements"&&poches.map((p)=>(
       <Boundary key={p.key} label={p.label}>
         <PocheSection poche={p} allPositions={positions} allVentes={ventes}
           allDividendes={dividendes} allVersements={versements} mois={mois} onRefresh={load}/>

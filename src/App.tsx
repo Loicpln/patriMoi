@@ -1,6 +1,7 @@
 import { useState } from "react";
 import "./App.css";
 import { DeviseProvider, useDevise, DEVISES } from "./context/DeviseContext";
+import { PochesProvider } from "./context/PochesContext";
 import Dashboard  from "./pages/Dashboard";
 import Depenses   from "./pages/Depenses";
 import Fiches     from "./pages/Fiches";
@@ -81,7 +82,9 @@ function Shell() {
 export default function App() {
   return (
     <DeviseProvider>
-      <Shell />
+      <PochesProvider>
+        <Shell />
+      </PochesProvider>
     </DeviseProvider>
   );
 }

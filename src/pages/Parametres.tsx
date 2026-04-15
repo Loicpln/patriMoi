@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
 import { save, open as openDialog } from "@tauri-apps/api/dialog";
 import { writeTextFile, readTextFile } from "@tauri-apps/api/fs";
-import { POCHES } from "../constants";
+import { usePoches, type Poche } from "../context/PochesContext";
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 function todayStr(): string {
@@ -116,8 +116,8 @@ function csvToPoche(rows: string[][], poche: string) {
 
 function csvToScpi(rows: string[][]): any[] {
   return rows.slice(1).map(r => ({
-    id: null, poche: r[1]?.trim(), ticker: r[2]?.trim(),
-    mois: r[3]?.trim(), valeur_unit: num(r[4]),
+    id: null, ticker: r[1]?.trim(),
+    mois: r[2]?.trim(), valeur_unit: num(r[3]),
   }));
 }
 
@@ -192,10 +192,10 @@ async function exportPoche(poche: string, filename: string) {
 }
 
 async function exportScpiValuations() {
-  const rows = await invoke<any[]>("get_scpi_valuations", {});
+  const rows = await invoke<any[]>("get_scpi_valuations");
   downloadCsv(withDate("scpi_valorisations.csv"), toCsv(
-    ["id", "poche", "ticker", "mois", "valeur_unit"],
-    rows.map(r => [r.id, r.poche, r.ticker, r.mois, r.valeur_unit])
+    ["id", "ticker", "mois", "valeur_unit"],
+    rows.map(r => [r.id, r.ticker, r.mois, r.valeur_unit])
   ));
 }
 
@@ -325,11 +325,44 @@ function ImportBtn({
 
 // ── Page ──────────────────────────────────────────────────────────────────
 export default function Parametres() {
+  const { poches, setPoches } = usePoches();
   const [pdfFolder, setPdfFolder] = useState("");
   const [saved, setSaved] = useState(false);
   const [importPending, setImportPending] = useState<ImportPending | null>(null);
   const [exportAllState, setExportAllState] = useState<"idle"|"loading"|"done"|"error">("idle");
   const [exportAllMsg, setExportAllMsg] = useState("");
+
+  // ── Gestion des poches ─────────────────────────────────────────────────────
+  const emptyPocheForm = { key: "", label: "", color: "#3a7bd5" };
+  const [pocheForm, setPocheForm] = useState<Poche>(emptyPocheForm);
+  const [editingKey, setEditingKey] = useState<string | null>(null); // null = hors formulaire quand pocheFormOpen=false
+  const [pocheFormOpen, setPocheFormOpen] = useState(false);
+
+  const startAdd = () => { setPocheForm(emptyPocheForm); setEditingKey(null); setPocheFormOpen(true); };
+  const startEdit = (p: Poche) => { setPocheForm({ ...p }); setEditingKey(p.key); setPocheFormOpen(true); };
+  const cancelPoche = () => { setPocheForm(emptyPocheForm); setEditingKey(null); setPocheFormOpen(false); };
+
+  const savePoche = async () => {
+    const k = pocheForm.key.trim().toLowerCase().replace(/[^a-z0-9_]/g, "_");
+    const l = pocheForm.label.trim();
+    if (!k || !l) return;
+    if (editingKey === null) {
+      if (poches.some(p => p.key === k)) return alert(`La clé "${k}" existe déjà.`);
+      await setPoches([...poches, { key: k, label: l, color: pocheForm.color }]);
+    } else {
+      await setPoches(poches.map(p => p.key === editingKey ? { key: editingKey, label: l, color: pocheForm.color } : p));
+    }
+    cancelPoche();
+    setPocheFormOpen(false);
+  };
+
+  const deletePoche = async (key: string) => {
+    if (poches.length <= 1) return;
+    const label = poches.find(p => p.key === key)?.label ?? key;
+    if (!confirm(`Supprimer la poche "${label}" ?\nToutes ses données (positions, ventes, dividendes, versements, SCPI) seront définitivement supprimées.`)) return;
+    await invoke("delete_poche_data", { poche: key });
+    await setPoches(poches.filter(p => p.key !== key));
+  };
 
   useEffect(() => {
     invoke<string>("get_parametre", { cle: "pdf_folder" }).then(setPdfFolder).catch(() => {});
@@ -359,60 +392,17 @@ export default function Parametres() {
     };
   }
 
-  const EXPORTS: {
-    label: string;
-    color?: string;
-    exports: { name: string; fn: () => Promise<void> }[];
-    importFn?: (rows: string[][], replace: boolean) => Promise<number>;
-  }[] = [
-    {
-      label: "Dépenses",
-      color: "var(--rose)",
-      exports: [{ name: "depenses.csv", fn: exportDepenses }],
-      importFn: importDepenses,
-    },
-    {
-      label: "Fiches de paie & Primes",
-      color: "var(--teal)",
-      exports: [{ name: "fiches_et_primes.csv", fn: exportSalaires }],
-      importFn: importSalaires,
-    },
-    {
-      label: "Livrets",
-      color: "var(--gold)",
-      exports: [{ name: "livrets.csv", fn: exportLivrets }],
-      importFn: importLivrets,
-    },
-    {
-      label: "PEA",
-      color: POCHES.find(p => p.key === "pea")!.color,
-      exports: [{ name: "pea.csv", fn: () => exportPoche("pea", "pea.csv") }],
-      importFn: importPoche("pea"),
-    },
-    {
-      label: "Assurance Vie",
-      color: POCHES.find(p => p.key === "av")!.color,
-      exports: [{ name: "assurance_vie.csv", fn: () => exportPoche("av", "assurance_vie.csv") }],
-      importFn: importPoche("av"),
-    },
-    {
-      label: "CTO",
-      color: POCHES.find(p => p.key === "cto")!.color,
-      exports: [{ name: "cto.csv", fn: () => exportPoche("cto", "cto.csv") }],
-      importFn: importPoche("cto"),
-    },
-    {
-      label: "Wallet Crypto",
-      color: POCHES.find(p => p.key === "crypto")!.color,
-      exports: [{ name: "crypto.csv", fn: () => exportPoche("crypto", "crypto.csv") }],
-      importFn: importPoche("crypto"),
-    },
-    {
-      label: "Valorisations SCPI",
-      color: "var(--text-2)",
-      exports: [{ name: "scpi_valorisations.csv", fn: exportScpiValuations }],
-      importFn: importScpi,
-    },
+  const EXPORTS = [
+    { label: "Dépenses",             color: "var(--rose)",   exports: [{ name: "depenses.csv",        fn: exportDepenses  }], importFn: importDepenses  },
+    { label: "Fiches de paie & Primes", color: "var(--teal)", exports: [{ name: "fiches_et_primes.csv", fn: exportSalaires  }], importFn: importSalaires  },
+    { label: "Livrets",              color: "var(--gold)",   exports: [{ name: "livrets.csv",         fn: exportLivrets   }], importFn: importLivrets   },
+    ...poches.map(p => ({
+      label: p.label,
+      color: p.color,
+      exports: [{ name: `${p.key}.csv`, fn: () => exportPoche(p.key, `${p.key}.csv`) }],
+      importFn: importPoche(p.key),
+    })),
+    { label: "Valorisations SCPI",   color: "var(--text-2)", exports: [{ name: "scpi_valorisations.csv", fn: exportScpiValuations }], importFn: importScpi },
   ];
 
   return (
@@ -427,7 +417,7 @@ export default function Parametres() {
       </div>
 
       {/* PDF folder */}
-      <div className="table-card" style={{ maxWidth: 600 }}>
+      <div className="table-card">
         <div className="table-head">
           <span className="table-head-title">Dossier des fiches de paie</span>
         </div>
@@ -459,8 +449,74 @@ export default function Parametres() {
         </div>
       </div>
 
+      {/* Poches d'investissement */}
+      <div className="table-card" style={{ marginTop: 20 }}>
+        <div className="table-head">
+          <span className="table-head-title">Poches d'investissement</span>
+          <button className="btn btn-primary btn-sm" onClick={startAdd}>+ Ajouter</button>
+        </div>
+        <div style={{ padding: "8px 0" }}>
+          {poches.map(p => (
+            <div key={p.key} style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
+              padding:"10px 24px", borderBottom:"1px solid var(--border)" }}>
+              <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                <div style={{ width:12, height:12, borderRadius:"50%", background:p.color, flexShrink:0 }}/>
+                <span style={{ fontSize:12, color:"var(--text-0)" }}>{p.label}</span>
+                <span style={{ fontSize:10, color:"var(--text-2)", fontFamily:"var(--mono)" }}>{p.key}</span>
+              </div>
+              <div style={{ display:"flex", gap:6 }}>
+                <button className="btn btn-ghost btn-sm" style={{ fontSize:11 }} onClick={() => startEdit(p)}>✎</button>
+                <button className="btn btn-danger btn-sm" style={{ fontSize:11 }}
+                  disabled={poches.length <= 1} onClick={() => deletePoche(p.key)}>✕</button>
+              </div>
+            </div>
+          ))}
+        </div>
+        {/* Formulaire ajout / édition */}
+        {pocheFormOpen && (
+          <div style={{ padding:"16px 24px", borderTop:"1px solid var(--border)", background:"var(--bg-2)" }}>
+            <div style={{ fontSize:11, color:"var(--text-2)", marginBottom:10 }}>
+              {editingKey === null ? "Nouvelle poche" : `Modifier "${editingKey}"`}
+            </div>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr auto", gap:8, alignItems:"end" }}>
+              {editingKey === null && (
+                <div className="field" style={{ margin:0 }}>
+                  <label>Clé (identifiant)</label>
+                  <input value={pocheForm.key} placeholder="ex: per, scpi…"
+                    autoCapitalize="none" autoCorrect="off" spellCheck={false}
+                    onChange={e => setPocheForm(f => ({ ...f, key: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "_") }))}/>
+                </div>
+              )}
+              <div className="field" style={{ margin:0 }}>
+                <label>Nom affiché</label>
+                <input value={pocheForm.label} placeholder="ex: PER, SCPI…"
+                  onChange={e => setPocheForm(f => ({ ...f, label: e.target.value }))}/>
+              </div>
+              <div className="field" style={{ margin:0 }}>
+                <label>Couleur</label>
+                <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+                  <input type="color" value={pocheForm.color}
+                    onChange={e => setPocheForm(f => ({ ...f, color: e.target.value }))}
+                    style={{ width:36, height:32, padding:2, background:"none", border:"1px solid var(--border)", borderRadius:4, cursor:"pointer" }}/>
+                  <input value={pocheForm.color} placeholder="#3a7bd5"
+                    onChange={e => setPocheForm(f => ({ ...f, color: e.target.value }))}
+                    style={{ flex:1, fontFamily:"var(--mono)", fontSize:11 }}/>
+                </div>
+              </div>
+              <div style={{ display:"flex", gap:6 }}>
+                <button className="btn btn-primary btn-sm" onClick={savePoche}
+                  disabled={!pocheForm.label.trim() || (editingKey===null && !pocheForm.key.trim())}>
+                  {editingKey === null ? "Ajouter" : "Sauvegarder"}
+                </button>
+                <button className="btn btn-ghost btn-sm" onClick={cancelPoche}>Annuler</button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* CSV export / import */}
-      <div className="table-card" style={{ maxWidth: 600, marginTop: 20 }}>
+      <div className="table-card" style={{ marginTop: 20 }}>
         <div className="table-head">
           <span className="table-head-title">Export / Import CSV</span>
           <button
@@ -517,7 +573,7 @@ export default function Parametres() {
       </div>
 
       {/* À propos */}
-      <div className="table-card" style={{ maxWidth: 600, marginTop: 20 }}>
+      <div className="table-card" style={{ marginTop: 20 }}>
         <div className="table-head">
           <span className="table-head-title">À propos</span>
         </div>
