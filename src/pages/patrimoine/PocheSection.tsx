@@ -806,9 +806,6 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
           <button className="btn btn-ghost btn-sm" onClick={refresh}>↻</button>
           <button className="btn btn-ghost btn-sm" onClick={() => setVerModal(true)}>+ Versement</button>
           {positions.length > 0 && <button className="btn btn-teal btn-sm" onClick={() => setDivModal(true)}>+ Dividende</button>}
-          {positions.some(p => p.sous_categorie === "scp") && (
-            <button className="btn btn-lavender btn-sm" onClick={() => setScpiModal(true)} style={{ fontSize: 10 }}>+ SCPI</button>
-          )}
           <button className="btn btn-primary btn-sm" onClick={() => setPosModal(true)}>+ Position</button>
           {/* ── Séparateur visuel ── */}
           {(onEdit || onDelete || onExport || onImportParsed) &&
@@ -823,15 +820,19 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
 
       {open && (
         <div>
-          <div style={{ display: "flex", gap: 12, padding: "12px 20px", borderBottom: "1px solid var(--border)", flexWrap: "wrap" }}>
-            {summary.map(s => (
-              <div key={s.label} style={{ minWidth: 90 }}>
-                <div style={{ fontSize: 9, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--text-2)", marginBottom: 3 }}>{s.label}</div>
-                <div style={{ fontFamily: "var(--serif)", fontSize: 13, color: s.color }}>{s.value}</div>
-              </div>
-            ))}
+          <div style={{ display: "flex", justifyContent:"space-between", padding: "12px 20px", borderBottom: "1px solid var(--border)", flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+              {summary.map(s => (
+                <div key={s.label} style={{ minWidth: 90 }}>
+                  <div style={{ fontSize: 9, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--text-2)", marginBottom: 3 }}>{s.label}</div>
+                  <div style={{ fontFamily: "var(--serif)", fontSize: 13, color: s.color }}>{s.value}</div>
+                </div>
+              ))}
+            </div>
+            {positions.some(p => p.sous_categorie === "scp") && (
+              <button className="btn btn-lavender btn-sm" onClick={() => setScpiModal(true)} style={{ fontSize: 10 }}>+ SCPI</button>
+            )}
           </div>
-
           <ChartGrid charts={[
             { key: `pie_${poche.key}`,    title: `Répartition · ${mois}`,          node: pieNode    },
             { key: `stack_${poche.key}`,  title: "Valeur portefeuille / jour",      node: stackNode,
