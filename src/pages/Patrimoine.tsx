@@ -12,7 +12,7 @@ import {
   ResponsiveContainer, Tooltip, ComposedChart, Line, Customized, Brush,
 } from "recharts";
 import { useDevise, curMonth } from "../context/DeviseContext";
-import { usePoches } from "../context/PochesContext";
+import { usePoches, type Poche } from "../context/PochesContext";
 import { useQuotes } from "../hooks/useQuotes";
 import {
   LIVRETS_DEF, INVEST_SUBCATS, INVEST_SUBCAT_COLOR,
@@ -22,6 +22,9 @@ import MonthSelector from "../components/MonthSelector";
 import { Boundary, ChartGrid, NestedPie } from "./patrimoine/shared";
 import { LivretsSection } from "./patrimoine/LivretsSection";
 import { PocheSection } from "./patrimoine/PocheSection";
+import { exportPoche, exportScpiValuations, importPoche, importScpi, parseCsvContent,
+  ImportModal, PocheFormModal, ConfirmDeleteModal,
+  type ImportPending } from "./patrimoine/InvestSettings";
 import type { Livret, Position, Vente, Dividende, Versement, ScpiValuation } from "./patrimoine/types";
 
 // Renders a dot only when the data point is isolated (no neighbours with a value)
@@ -68,9 +71,10 @@ function scpiPrice(map: Record<string, Record<string, number>>, ticker: string, 
 }
 
 // ── Recap Investissement ───────────────────────────────────────────────────────
-function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiValuations}:{positions:Position[];ventes:Vente[];dividendes:Dividende[];versements:Versement[];mois:string;scpiValuations:ScpiValuation[]}) {
+function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiValuations,onAddPoche}:{positions:Position[];ventes:Vente[];dividendes:Dividende[];versements:Versement[];mois:string;scpiValuations:ScpiValuation[];onAddPoche?:()=>void}) {
   const {fmt,fmtAxis}=useDevise();
   const {poches}=usePoches();
+  const [exportAllState,setExportAllState]=useState<"idle"|"loading"|"done"|"error">("idle");
   const MN_SHORT=["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
   const [pieToggle,setPieToggle]=useState<"versements"|"investi"|"valeur">("valeur");
   const [brushIdxR,setBrushIdxR]=useState<{start:number;end:number}|null>(null);
@@ -425,7 +429,33 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
     );
   })();
   return(<div>
-    <div className="section-sep"><span className="section-sep-label">Récap. investissements</span><div className="section-sep-line"/></div>
+    <div className="section-sep">
+      <span className="section-sep-label">Récap. investissements</span>
+      <div className="section-sep-line"/>
+      <button
+        className="btn btn-ghost btn-sm"
+        style={{marginLeft:12,whiteSpace:"nowrap",fontSize:10,
+          borderColor:exportAllState==="done"?"var(--teal)":exportAllState==="error"?"var(--rose)":undefined,
+          color:exportAllState==="done"?"var(--teal)":exportAllState==="error"?"var(--rose)":undefined,
+          opacity:exportAllState==="loading"?0.6:1}}
+        disabled={exportAllState==="loading"}
+        onClick={async()=>{
+          setExportAllState("loading");
+          try{
+            const subfolder=await invoke<string>("choose_export_folder");
+            if(!subfolder){setExportAllState("idle");return;}
+            await invoke<string[]>("export_all_csv",{subfolder});
+            setExportAllState("done");
+            setTimeout(()=>setExportAllState("idle"),3000);
+          }catch{
+            setExportAllState("error");
+            setTimeout(()=>setExportAllState("idle"),3000);
+          }
+        }}>
+        {exportAllState==="loading"?"…":exportAllState==="done"?"✓ Exporté":exportAllState==="error"?"⚠ Erreur":"↓ Tout exporter"}
+      </button>
+      {onAddPoche&&<button className="btn btn-primary btn-sm" style={{marginLeft:6,whiteSpace:"nowrap"}} onClick={onAddPoche}>+ Poche</button>}
+    </div>
     <ChartGrid charts={[
       {key:"recap_pie",   title:`Poche / Sous-catégorie · ${mois}`, node:pieNode},
       {key:"recap_stack", title:"Valeur par poche / jour",           node:stackNode,
@@ -800,7 +830,7 @@ function PatrimoineInner() {
   const [tab,setTab]=useState<"global"|"livrets"|"investissements">("global");
   const [mois,setMois]=useState(curMonth);
   const { setMois: setCtxMois } = useDevise();
-  const {poches}=usePoches();
+  const {poches,setPoches}=usePoches();
   useEffect(()=>{ setCtxMois(mois); },[mois,setCtxMois]);
   const [livrets,setLivrets]=useState<Livret[]>([]);
   const [positions,setPositions]=useState<Position[]>([]);
@@ -809,6 +839,43 @@ function PatrimoineInner() {
   const [versements,setVersements]=useState<Versement[]>([]);
   const [scpiValuations,setScpiValuations]=useState<ScpiValuation[]>([]);
   const [err,setErr]=useState<string|null>(null);
+
+  // ── Gestion des poches ────────────────────────────────────────────────────
+  const emptyPoche: Poche = { key:"", label:"", color:"#3a7bd5" };
+  const [pocheFormOpen, setPocheFormOpen] = useState(false);
+  const [editingPoche, setEditingPoche]   = useState<Poche>(emptyPoche);
+  const [editingKey,   setEditingKey]     = useState<string|null>(null);
+  const [confirmDeleteKey, setConfirmDeleteKey] = useState<string|null>(null);
+  const [importPending, setImportPending] = useState<ImportPending|null>(null);
+
+  const openAddPoche = () => { setEditingPoche(emptyPoche); setEditingKey(null); setPocheFormOpen(true); };
+  const openEditPoche = (p: Poche) => { setEditingPoche({...p}); setEditingKey(p.key); setPocheFormOpen(true); };
+
+  const handleSavePoche = async (form: Poche) => {
+    const k = form.key.trim().toLowerCase().replace(/[^a-z0-9_]/g, "_");
+    const l = form.label.trim();
+    if (!k || !l) return;
+    if (editingKey === null) {
+      if (poches.some(p => p.key === k)) { alert(`La clé "${k}" existe déjà.`); return; }
+      await setPoches([...poches, { key:k, label:l, color:form.color }]);
+    } else {
+      await setPoches(poches.map(p => p.key === editingKey ? { key:editingKey, label:l, color:form.color } : p));
+    }
+    setPocheFormOpen(false);
+  };
+
+  const handleDeletePoche = async () => {
+    if (!confirmDeleteKey) return;
+    await invoke("delete_poche_data", { poche: confirmDeleteKey });
+    await setPoches(poches.filter(p => p.key !== confirmDeleteKey));
+    setConfirmDeleteKey(null);
+  };
+
+  function makeImportHandler(label: string, importFn: (rows: string[][], replace: boolean) => Promise<number>) {
+    return (rows: string[][], rowCount: number) => {
+      setImportPending({ label, rowCount, onConfirm: async (replace) => { await importFn(rows, replace); load(); } });
+    };
+  }
 
   const load=useCallback(async()=>{
     try{
@@ -835,6 +902,14 @@ function PatrimoineInner() {
   },[livrets,positions]);
 
   return(<div>
+    {/* ── Modales de gestion des poches ── */}
+    {importPending&&<ImportModal pending={importPending} onClose={()=>setImportPending(null)}/>}
+    {pocheFormOpen&&<PocheFormModal editingKey={editingKey} initial={editingPoche}
+      onSave={handleSavePoche} onClose={()=>setPocheFormOpen(false)}/>}
+    {confirmDeleteKey&&<ConfirmDeleteModal
+      label={poches.find(p=>p.key===confirmDeleteKey)?.label??confirmDeleteKey}
+      onConfirm={handleDeletePoche} onClose={()=>setConfirmDeleteKey(null)}/>}
+
     <div className="page-header">
       <h1 className="page-title">Patrimoine</h1>
       <p className="page-sub">Livrets · Investissements · Cours en direct</p>
@@ -848,11 +923,16 @@ function PatrimoineInner() {
     </div>
     {tab==="global"&&<GlobalRecap livrets={livrets} positions={positions} ventes={ventes} dividendes={dividendes} versements={versements} mois={mois} scpiValuations={scpiValuations}/>}
     {tab==="livrets"&&<LivretsSection livrets={livrets} mois={mois} onRefresh={load}/>}
-    {tab==="investissements"&&<RecapInvestissement positions={positions} ventes={ventes} dividendes={dividendes} versements={versements} mois={mois} scpiValuations={scpiValuations}/>}
+    {tab==="investissements"&&<RecapInvestissement positions={positions} ventes={ventes} dividendes={dividendes}
+      versements={versements} mois={mois} scpiValuations={scpiValuations} onAddPoche={openAddPoche}/>}
     {tab==="investissements"&&poches.map((p)=>(
       <Boundary key={p.key} label={p.label}>
         <PocheSection poche={p} allPositions={positions} allVentes={ventes}
-          allDividendes={dividendes} allVersements={versements} mois={mois} onRefresh={load}/>
+          allDividendes={dividendes} allVersements={versements} mois={mois} onRefresh={load}
+          onEdit={()=>openEditPoche(p)}
+          onDelete={poches.length>1?()=>setConfirmDeleteKey(p.key):undefined}
+          onExport={()=>exportPoche(p.key,`${p.key}.csv`)}
+          onImportParsed={makeImportHandler(p.label, importPoche(p.key))}/>
       </Boundary>
     ))}
   </div>);

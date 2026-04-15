@@ -10,6 +10,7 @@ import type { Poche } from "../../context/PochesContext";
 import { useQuotes } from "../../hooks/useQuotes";
 import { ChartGrid, NestedPie, AccordionSection } from "./shared";
 import { PositionModal, VersementModal, SellModal, TradeModal, DividendeModal, DeletePositionModal, ScpiValuationModal } from "./modals";
+import { ExportBtn, ImportBtn } from "./InvestSettings";
 import type { Position, Vente, Dividende, Versement, ScpiValuation } from "./types";
 import { SUBCAT_ORDER } from "./types";
 
@@ -317,9 +318,15 @@ function PocheTooltip({ active, payload, label, fmt: fmtFn }: any) {
 }
 
 // ── Main Component ─────────────────────────────────────────────────────────────
-export function PocheSection({ poche, allPositions, allVentes, allDividendes, allVersements, mois, onRefresh }: {
+export function PocheSection({ poche, allPositions, allVentes, allDividendes, allVersements, mois, onRefresh,
+  onEdit, onDelete, onExport, onImportParsed,
+}: {
   poche: Poche; allPositions: Position[]; allVentes: Vente[];
   allDividendes: Dividende[]; allVersements: Versement[]; mois: string; onRefresh: () => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
+  onExport?: () => Promise<void>;
+  onImportParsed?: (rows: string[][], rowCount: number) => void;
 }) {
   const { fmt, fmtAxis } = useDevise();
   const [open, setOpen]           = useState(false);
@@ -794,7 +801,7 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
           {(() => { const pnlTot = totalPnlOpen + totalPnlReal + totalDivs; return <span style={{ color: pnlTot >= 0 ? "var(--teal)" : "var(--rose)", fontWeight: 600 }}>{pnlTot >= 0 ? "+" : "−"}{fmt(Math.abs(pnlTot))}</span>; })()}
           </span>
         </div>
-        <div style={{ display: "flex", gap: 6 }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }} onClick={e => e.stopPropagation()}>
           {loading && <span className="spinner"/>}
           <button className="btn btn-ghost btn-sm" onClick={refresh}>↻</button>
           <button className="btn btn-ghost btn-sm" onClick={() => setVerModal(true)}>+ Versement</button>
@@ -803,6 +810,14 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
             <button className="btn btn-lavender btn-sm" onClick={() => setScpiModal(true)} style={{ fontSize: 10 }}>+ SCPI</button>
           )}
           <button className="btn btn-primary btn-sm" onClick={() => setPosModal(true)}>+ Position</button>
+          {/* ── Séparateur visuel ── */}
+          {(onEdit || onDelete || onExport || onImportParsed) &&
+            <span style={{ width:1, height:16, background:"var(--border)", display:"inline-block", margin:"0 2px" }}/>}
+          {/* ── Boutons de gestion de la poche ── */}
+          {onExport && <ExportBtn label={`${poche.key}.csv`} onExport={onExport}/>}
+          {onImportParsed && <ImportBtn label={poche.label} onParsed={onImportParsed}/>}
+          {onEdit   && <button className="btn btn-ghost btn-sm" style={{ fontSize:11 }} onClick={onEdit}   title="Modifier la poche">✎</button>}
+          {onDelete && <button className="btn btn-danger btn-sm" style={{ fontSize:11 }} onClick={onDelete} title="Supprimer la poche">✕</button>}
         </div>
       </div>
 

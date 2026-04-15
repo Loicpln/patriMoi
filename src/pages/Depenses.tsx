@@ -463,7 +463,7 @@ export default function Depenses() {
 
       <div style={{ display:"flex", alignItems:"center", justifyContent:"flex-end", marginBottom:16, gap:8 }}>
         {loading && <span className="spinner"/>}
-        <button className="btn btn-primary" onClick={() => setModal(true)}>+ Dépense</button>
+        <button className="btn btn-primary btn-sm" onClick={() => setModal(true)}>+ Dépense</button>
       </div>
 
       {/* Stats */}
