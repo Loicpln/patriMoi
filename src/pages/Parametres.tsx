@@ -337,6 +337,7 @@ export default function Parametres() {
   const [pocheForm, setPocheForm] = useState<Poche>(emptyPocheForm);
   const [editingKey, setEditingKey] = useState<string | null>(null); // null = hors formulaire quand pocheFormOpen=false
   const [pocheFormOpen, setPocheFormOpen] = useState(false);
+  const [confirmDeleteKey, setConfirmDeleteKey] = useState<string | null>(null);
 
   const startAdd = () => { setPocheForm(emptyPocheForm); setEditingKey(null); setPocheFormOpen(true); };
   const startEdit = (p: Poche) => { setPocheForm({ ...p }); setEditingKey(p.key); setPocheFormOpen(true); };
@@ -356,12 +357,11 @@ export default function Parametres() {
     setPocheFormOpen(false);
   };
 
-  const deletePoche = async (key: string) => {
-    if (poches.length <= 1) return;
-    const label = poches.find(p => p.key === key)?.label ?? key;
-    if (!confirm(`Supprimer la poche "${label}" ?\nToutes ses données (positions, ventes, dividendes, versements, SCPI) seront définitivement supprimées.`)) return;
-    await invoke("delete_poche_data", { poche: key });
-    await setPoches(poches.filter(p => p.key !== key));
+  const deletePoche = async () => {
+    if (!confirmDeleteKey) return;
+    await invoke("delete_poche_data", { poche: confirmDeleteKey });
+    await setPoches(poches.filter(p => p.key !== confirmDeleteKey));
+    setConfirmDeleteKey(null);
   };
 
   useEffect(() => {
@@ -405,10 +405,30 @@ export default function Parametres() {
     { label: "Valorisations SCPI",   color: "var(--text-2)", exports: [{ name: "scpi_valorisations.csv", fn: exportScpiValuations }], importFn: importScpi },
   ];
 
+  const confirmDeleteLabel = poches.find(p => p.key === confirmDeleteKey)?.label ?? confirmDeleteKey ?? "";
+
   return (
     <div>
       {importPending && (
         <ImportModal pending={importPending} onClose={() => setImportPending(null)} />
+      )}
+
+      {confirmDeleteKey && (
+        <div className="overlay" onClick={() => setConfirmDeleteKey(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 400 }}>
+            <div className="modal-title" style={{ color: "var(--rose)" }}>Supprimer la poche</div>
+            <p style={{ color: "var(--text-1)", fontSize: 13, lineHeight: 1.6, margin: "12px 0 20px" }}>
+              Supprimer <strong style={{ color: "var(--text-0)" }}>"{confirmDeleteLabel}"</strong> ?<br/>
+              <span style={{ color: "var(--text-2)", fontSize: 12 }}>
+                Toutes les données associées (positions, ventes, dividendes, versements) seront définitivement supprimées.
+              </span>
+            </p>
+            <div className="form-actions">
+              <button className="btn btn-ghost" onClick={() => setConfirmDeleteKey(null)}>Annuler</button>
+              <button className="btn btn-danger" onClick={deletePoche}>Supprimer</button>
+            </div>
+          </div>
+        </div>
       )}
 
       <div className="page-header">
@@ -467,7 +487,7 @@ export default function Parametres() {
               <div style={{ display:"flex", gap:6 }}>
                 <button className="btn btn-ghost btn-sm" style={{ fontSize:11 }} onClick={() => startEdit(p)}>✎</button>
                 <button className="btn btn-danger btn-sm" style={{ fontSize:11 }}
-                  disabled={poches.length <= 1} onClick={() => deletePoche(p.key)}>✕</button>
+                  disabled={poches.length <= 1} onClick={() => setConfirmDeleteKey(p.key)}>✕</button>
               </div>
             </div>
           ))}
