@@ -72,6 +72,34 @@ function csvToScpi(rows: string[][]): any[] {
     id: null, ticker: r[1]?.trim(), mois: r[2]?.trim(), valeur_unit: num(r[3]),
   }));
 }
+function csvToDepenses(rows: string[][]): any[] {
+  return rows.slice(1).map(r => ({
+    id: null, date: r[1]?.trim(), categorie: r[2]?.trim(),
+    sous_categorie: r[3]?.trim(), libelle: r[4]?.trim(),
+    montant: num(r[5]), notes: str(r[6] ?? ""),
+  }));
+}
+function csvToSalaires(rows: string[][]): any[] {
+  return rows.slice(1).map(r => {
+    const typeVal = r[2]?.trim() ?? "";
+    const isP = typeVal !== "Fiche de paie";
+    const notesRaw = str(r[7] ?? "") ?? "";
+    return {
+      id: null, date: r[1]?.trim(),
+      salaire_brut: num(r[3]), salaire_net: num(r[4]),
+      primes: r[5]?.trim() ? num(r[5]) : null,
+      employeur: isP ? "_PRIME" : (r[6]?.trim() || ""),
+      pdf_path: null,
+      notes: isP ? (`[PRIME:${typeVal}] ${notesRaw}`).trim() || null : (notesRaw || null),
+    };
+  });
+}
+function csvToLivrets(rows: string[][]): any[] {
+  return rows.slice(1).map(r => ({
+    id: null, poche: r[1]?.trim(), date: r[2]?.trim(),
+    montant: num(r[3]), taux: num(r[4]), notes: str(r[5] ?? ""),
+  }));
+}
 
 // ── Export / Import functions ──────────────────────────────────────────────
 export async function exportPoche(poche: string, filename: string) {
@@ -105,6 +133,43 @@ export function importPoche(pocheKey: string) {
 }
 export async function importScpi(rows: string[][], replace: boolean): Promise<number> {
   return invoke<number>("import_scpi_valuations", { rows: csvToScpi(rows), replace });
+}
+export async function exportDepenses(): Promise<void> {
+  const rows = await invoke<any[]>("get_depenses", {});
+  downloadCsv(withDate("depenses.csv"), toCsv(
+    ["id", "date", "categorie", "sous_categorie", "libelle", "montant", "notes"],
+    rows.map(r => [r.id, r.date, r.categorie, r.sous_categorie, r.libelle, r.montant, r.notes])
+  ));
+}
+export async function exportSalaires(): Promise<void> {
+  const rows = await invoke<any[]>("get_salaires");
+  downloadCsv(withDate("fiches_et_primes.csv"), toCsv(
+    ["id", "date", "type", "salaire_brut", "salaire_net", "primes", "employeur", "notes"],
+    rows.map(r => {
+      const isP = r.employeur === "_PRIME";
+      const type = isP
+        ? ((r.notes ?? "").replace(/\[PRIME:([^\]]+)\].*/, "$1").trim() || "Prime")
+        : "Fiche de paie";
+      const notes = (r.notes ?? "").replace(/\[PRIME:[^\]]+\]\s*/, "");
+      return [r.id, r.date, type, r.salaire_brut, r.salaire_net, r.primes ?? "", isP ? "" : r.employeur, notes];
+    })
+  ));
+}
+export async function exportLivrets(): Promise<void> {
+  const rows = await invoke<any[]>("get_livrets");
+  downloadCsv(withDate("livrets.csv"), toCsv(
+    ["id", "poche", "date", "montant", "taux", "notes"],
+    rows.map(r => [r.id, r.poche, r.date, r.montant, r.taux, r.notes])
+  ));
+}
+export async function importDepenses(rows: string[][], replace: boolean): Promise<number> {
+  return invoke<number>("import_depenses", { rows: csvToDepenses(rows), replace });
+}
+export async function importSalaires(rows: string[][], replace: boolean): Promise<number> {
+  return invoke<number>("import_salaires", { rows: csvToSalaires(rows), replace });
+}
+export async function importLivrets(rows: string[][], replace: boolean): Promise<number> {
+  return invoke<number>("import_livrets", { rows: csvToLivrets(rows), replace });
 }
 
 // ── Types ──────────────────────────────────────────────────────────────────

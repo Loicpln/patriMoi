@@ -8,6 +8,7 @@ import { LIVRETS_DEF, TOOLTIP_STYLE } from "../../constants";
 import { ChartGrid, NestedPie, AccordionSection } from "./shared";
 import { LivretModal, InteretModal } from "./modals";
 import type { Livret } from "./types";
+import { ExportBtn, ImportBtn, ImportModal, ImportPending, exportLivrets, importLivrets } from "./InvestSettings";
 
 const MN_SHORT = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
 const PAGE_SIZE = 10;
@@ -45,6 +46,7 @@ export function LivretsSection({livrets,mois,onRefresh}:{livrets:Livret[];mois:s
   const {fmt,fmtAxis}=useDevise();
   const [modal,setModal]=useState(false);
   const [interetModal,setInteretModal]=useState(false);
+  const [importPending,setImportPending]=useState<ImportPending|null>(null);
   const [brushIdxL,setBrushIdxL]=useState<{start:number;end:number}|null>(null);
   const [pageSoldes,setPageSoldes]=useState(0);
   const [filterSoldes,setFilterSoldes]=useState<Set<string>>(new Set());
@@ -203,9 +205,12 @@ export function LivretsSection({livrets,mois,onRefresh}:{livrets:Livret[];mois:s
   })();
 
   return(<div>
+    {importPending&&<ImportModal pending={importPending} onClose={()=>setImportPending(null)}/>}
     <div className="section-sep">
       <span className="section-sep-label">Livrets réglementés</span>
       <div className="section-sep-line"/>
+      <ExportBtn label="livrets.csv" onExport={exportLivrets}/>
+      <ImportBtn label="Livrets" onParsed={(rows,rowCount)=>setImportPending({label:"Livrets",rowCount,onConfirm:async(replace)=>{await importLivrets(rows,replace);onRefresh();}})}/>
       <button className="btn btn-ghost btn-sm" onClick={()=>setInteretModal(true)}>+ Intérêts</button>
       <button className="btn btn-primary btn-sm" onClick={()=>setModal(true)}>+ Mise à jour</button>
     </div>

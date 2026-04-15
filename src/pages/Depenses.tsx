@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
+import { ExportBtn, ImportBtn, ImportModal, ImportPending, exportDepenses, importDepenses } from "./patrimoine/InvestSettings";
 import {
   Tooltip, ResponsiveContainer,
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Brush,
@@ -136,6 +137,7 @@ export default function Depenses() {
   const [loading, setLoading]           = useState(false);
   const [firstMonth, setFirstMonth]     = useState<string | undefined>(undefined);
   const [brushIdxD, setBrushIdxD]       = useState<{start:number;end:number}|null>(null);
+  const [importPending, setImportPending] = useState<ImportPending | null>(null);
 
   const load = useCallback(async (m: string) => {
     setLoading(true);
@@ -454,6 +456,7 @@ export default function Depenses() {
 
   return (
     <div>
+      {importPending && <ImportModal pending={importPending} onClose={() => setImportPending(null)}/>}
       <div className="page-header">
         <h1 className="page-title">Dépenses</h1>
         <p className="page-sub">Suivi mensuel par catégorie</p>
@@ -463,6 +466,8 @@ export default function Depenses() {
 
       <div style={{ display:"flex", alignItems:"center", justifyContent:"flex-end", marginBottom:16, gap:8 }}>
         {loading && <span className="spinner"/>}
+        <ExportBtn label="depenses.csv" onExport={exportDepenses}/>
+        <ImportBtn label="Dépenses" onParsed={(rows, rowCount) => setImportPending({ label: "Dépenses", rowCount, onConfirm: async (replace) => { await importDepenses(rows, replace); load(mois); loadAll(); }})}/>
         <button className="btn btn-primary btn-sm" onClick={() => setModal(true)}>+ Dépense</button>
       </div>
 

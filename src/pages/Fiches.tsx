@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
+import { ExportBtn, ImportBtn, ImportModal, ImportPending, exportSalaires, importSalaires } from "./patrimoine/InvestSettings";
 import { useDevise } from "../context/DeviseContext";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Customized, Brush } from "recharts";
 import { TOOLTIP_STYLE, tickerColor, PRIME_TYPE_COLORS, monthsBetween, curMonthStr } from "../constants";
@@ -269,6 +270,7 @@ export default function Fiches() {
   const [selected, setSelected] = useState<Salaire | null>(null);
   const [addModal, setAddModal] = useState(false);
   const [primeModal, setPrimeModal] = useState(false);
+  const [importPending, setImportPending] = useState<ImportPending | null>(null);
   const [primeAddDate, setPrimeAddDate] = useState("");
   const [primesMonthKey, setPrimesMonthKey] = useState<string|null>(null);
   const [salToggle, setSalToggle] = useState<"moyen"|"total">("moyen");
@@ -407,6 +409,7 @@ export default function Fiches() {
 
   return (
     <div>
+      {importPending && <ImportModal pending={importPending} onClose={() => setImportPending(null)}/>}
       <div className="page-header" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
         <div>
           <h1 className="page-title">Fiches de paie</h1>
@@ -430,6 +433,8 @@ export default function Fiches() {
           className={`btn btn-sm ${salToggle === "total" ? "btn-primary" : "btn-ghost"}`}
           onClick={() => setSalToggle("total")}>Totaux</button>
         <div style={{ flex: 1 }}/>
+        <ExportBtn label="fiches_et_primes.csv" onExport={exportSalaires}/>
+        <ImportBtn label="Fiches & Primes" onParsed={(rows, rowCount) => setImportPending({ label: "Fiches & Primes", rowCount, onConfirm: async (replace) => { await importSalaires(rows, replace); load(); }})}/>
         <button className="btn btn-ghost btn-sm" onClick={() => setPrimeModal(true)}>+ Prime / Aide</button>
         <button className="btn btn-primary btn-sm" onClick={() => setAddModal(true)}>+ Fiche</button>
       </div>
