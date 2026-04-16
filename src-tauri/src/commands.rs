@@ -75,7 +75,12 @@ pub fn delete_salaire(id: i64, state: State<DbState>) -> Result<(), String> {
 }
 #[tauri::command]
 pub fn open_pdf(path: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    std::process::Command::new("cmd").args(["/c", "start", "", &path]).spawn().map_err(|e| e.to_string())?;
+    #[cfg(target_os = "macos")]
     std::process::Command::new("open").arg(&path).spawn().map_err(|e| e.to_string())?;
+    #[cfg(target_os = "linux")]
+    std::process::Command::new("xdg-open").arg(&path).spawn().map_err(|e| e.to_string())?;
     Ok(())
 }
 #[tauri::command]
@@ -336,23 +341,21 @@ pub fn set_parametre(cle: String, valeur: String, state: State<DbState>) -> Resu
 }
 #[tauri::command]
 pub fn choose_folder() -> Result<String, String> {
-    let output = std::process::Command::new("osascript")
-        .args(["-e","POSIX path of (choose folder with prompt \"Sélectionner le dossier des fiches de paie\")"])
-        .output().map_err(|e| e.to_string())?;
-    Ok(String::from_utf8(output.stdout).map_err(|e| e.to_string())?.trim().to_string())
+    let folder = rfd::FileDialog::new()
+        .set_title("Sélectionner le dossier des fiches de paie")
+        .pick_folder()
+        .ok_or_else(|| "Aucun dossier sélectionné".to_string())?;
+    Ok(folder.to_string_lossy().to_string())
 }
 
 /// Opens a folder picker, creates a dated subfolder (YYYY-MM-DD) inside it, and returns its path.
 /// The JS side can then write files directly into the returned path.
 #[tauri::command]
 pub fn choose_export_folder() -> Result<String, String> {
-    let output = std::process::Command::new("osascript")
-        .args(["-e","POSIX path of (choose folder with prompt \"Choisir le dossier de destination pour l'export\")"])
-        .output().map_err(|e| e.to_string())?;
-    let parent = String::from_utf8(output.stdout).map_err(|e| e.to_string())?.trim().to_string();
-    if parent.is_empty() {
-        return Ok(String::new()); // user cancelled
-    }
+    let parent = rfd::FileDialog::new()
+        .set_title("Choisir le dossier de destination pour l'export")
+        .pick_folder()
+        .ok_or_else(|| "Aucun dossier sélectionné".to_string())?;
     // Build date string YYYY-MM-DD
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -361,11 +364,9 @@ pub fn choose_export_folder() -> Result<String, String> {
     let days = now / 86400;
     let (y, m, d) = days_to_ymd(days as i64);
     let date_str = format!("{:04}-{:02}-{:02}", y, m, d);
-    // Strip trailing slash from parent
-    let parent = parent.trim_end_matches('/');
-    let subfolder = format!("{}/{}", parent, date_str);
-    std::fs::create_dir_all(&subfolder).map_err(|e| format!("Impossible de créer le dossier '{}': {}", subfolder, e))?;
-    Ok(subfolder)
+    let subfolder = parent.join(&date_str);
+    std::fs::create_dir_all(&subfolder).map_err(|e| format!("Impossible de créer le dossier : {}", e))?;
+    Ok(subfolder.to_string_lossy().to_string())
 }
 
 /// Gregorian calendar: convert days-since-epoch to (year, month, day).

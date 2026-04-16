@@ -2134,6 +2134,7 @@ name = "patrimoine-app"
 version = "0.1.0"
 dependencies = [
  "reqwest",
+ "rfd",
  "rusqlite",
  "serde",
  "serde_json",

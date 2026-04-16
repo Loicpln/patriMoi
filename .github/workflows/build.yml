@@ -1,0 +1,61 @@
+name: Build Patrimo
+
+on:
+  push:
+    tags:
+      - "v*"          # déclenché sur git tag v1.0.0 etc.
+  workflow_dispatch:   # ou manuellement depuis l'onglet Actions
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            label: macOS-intel
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            label: macOS-apple-silicon
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            label: Windows
+
+    runs-on: ${{ matrix.os }}
+    name: Build · ${{ matrix.label }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install npm deps
+        run: npm ci
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: --target ${{ matrix.target }}
+          tagName: ${{ github.ref_name }}
+          releaseName: "Patrimo ${{ github.ref_name }}"
+          releaseBody: "Release automatique"
+          releaseDraft: true
+          prerelease: false
