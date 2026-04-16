@@ -5,21 +5,34 @@ import { curMonth, useDevise } from "../../context/DeviseContext";
 import { usePoches } from "../../context/PochesContext";
 import type { Livret, Position, Vente, Dividende, Versement, ScpiValuation } from "./types";
 
+// ── Layout helpers ─────────────────────────────────────────────────────────────
+const G2: React.CSSProperties = { display:"grid", gridTemplateColumns:"1fr 1fr", gap:"12px 16px", marginTop:16 };
+const F:  React.CSSProperties = { margin:0 };
+const S2: React.CSSProperties = { margin:0, gridColumn:"1 / -1" };
+const RO: React.CSSProperties = {
+  padding:"8px 11px", borderRadius:6, border:"1px solid var(--border-l)",
+  background:"var(--bg-0)", fontSize:12, fontFamily:"var(--mono)",
+};
+
 // ── Livret Modal ───────────────────────────────────────────────────────────────
 export function LivretModal({mois,onClose,onSave}:{mois:string;onClose:()=>void;onSave:()=>void}) {
   const [form,setForm]=useState<Livret>({poche:LIVRETS_DEF[0].key,montant:0,taux:LIVRETS_DEF[0].taux,date:defaultDateForMonth(mois)});
   const s=(k:keyof Livret,v:string|number)=>setForm(f=>({...f,[k]:v}));
   return(<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
     <div className="modal-title">Mise à jour livret</div>
-    <div className="form-grid">
-      <div className="field"><label>Poche</label>
+    <div style={G2}>
+      <div className="field" style={F}><label>Poche</label>
         <select value={form.poche} onChange={e=>{const d=LIVRETS_DEF.find(l=>l.key===e.target.value);setForm(f=>({...f,poche:e.target.value,taux:d?.taux??f.taux}));}}>
           {LIVRETS_DEF.map(l=><option key={l.key} value={l.key}>{l.label}</option>)}
         </select></div>
-      <div className="field"><label>Montant (€)</label><input type="number" step="0.01" value={form.montant} onChange={e=>s("montant",parseFloat(e.target.value)||0)}/></div>
-      <div className="field"><label>Taux (%)</label><input type="number" step="0.01" value={form.taux} onChange={e=>s("taux",parseFloat(e.target.value)||0)}/></div>
-      <div className="field"><label>Date</label><input type="date" value={form.date} onChange={e=>s("date",e.target.value)}/></div>
-      <div className="field span2"><label>Notes</label><textarea rows={2} value={form.notes??""} onChange={e=>s("notes",e.target.value)}/></div>
+      <div className="field" style={F}><label>Montant (€)</label>
+        <input type="number" step="0.01" value={form.montant} onChange={e=>s("montant",parseFloat(e.target.value)||0)}/></div>
+      <div className="field" style={F}><label>Taux (%)</label>
+        <input type="number" step="0.01" value={form.taux} onChange={e=>s("taux",parseFloat(e.target.value)||0)}/></div>
+      <div className="field" style={F}><label>Date</label>
+        <input type="date" value={form.date} onChange={e=>s("date",e.target.value)}/></div>
+      <div className="field" style={S2}><label>Notes</label>
+        <textarea rows={2} value={form.notes??""} onChange={e=>s("notes",e.target.value)}/></div>
     </div>
     <div className="form-actions">
       <button className="btn btn-ghost" onClick={onClose}>Annuler</button>
@@ -37,14 +50,17 @@ export function InteretModal({mois,onClose,onSave}:{mois:string;onClose:()=>void
   const [notes,setNotes]=useState("");
   return(<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
     <div className="modal-title">Ajouter des intérêts annuels</div>
-    <div className="form-grid">
-      <div className="field"><label>Poche</label>
+    <div style={G2}>
+      <div className="field" style={F}><label>Poche</label>
         <select value={poche} onChange={e=>setPoche(e.target.value)}>
           {LIVRETS_DEF.map(l=><option key={l.key} value={l.key}>{l.label}</option>)}
         </select></div>
-      <div className="field"><label>Montant (€)</label><input type="number" step="0.01" value={montant} onChange={e=>setMontant(parseFloat(e.target.value)||0)}/></div>
-      <div className="field"><label>Année</label><input type="number" value={annee} onChange={e=>setAnnee(parseInt(e.target.value)||anneeDefault)} min={2000} max={2100}/></div>
-      <div className="field span2"><label>Notes</label><textarea rows={2} value={notes} onChange={e=>setNotes(e.target.value)}/></div>
+      <div className="field" style={F}><label>Montant (€)</label>
+        <input type="number" step="0.01" value={montant} onChange={e=>setMontant(parseFloat(e.target.value)||0)}/></div>
+      <div className="field" style={F}><label>Année</label>
+        <input type="number" value={annee} onChange={e=>setAnnee(parseInt(e.target.value)||anneeDefault)} min={2000} max={2100}/></div>
+      <div className="field" style={S2}><label>Notes</label>
+        <textarea rows={2} value={notes} onChange={e=>setNotes(e.target.value)}/></div>
     </div>
     <div className="form-actions">
       <button className="btn btn-ghost" onClick={onClose}>Annuler</button>
@@ -126,24 +142,27 @@ export function PositionModal({poche,existing,mois=curMonth,onClose,onSave}:{
 
   return(<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
     <div className="modal-title">Ajouter position · {poches.find(p=>p.key===poche)?.label??poche}</div>
-    <div className="form-grid">
-      <div className="field"><label>Ticker Yahoo Finance</label>
+    <div style={G2}>
+      <div className="field" style={F}><label>Ticker Yahoo Finance</label>
         <input list="tk-l" value={form.ticker} placeholder="AAPL, BTC-USD, WLD.PA" onChange={e=>handleTickerChange(e.target.value)}/>
         <datalist id="tk-l">{known.map(t=><option key={t} value={t}/>)}</datalist></div>
-      <div className="field"><label>Nom</label><input value={form.nom} placeholder="Apple Inc." onChange={e=>s("nom",e.target.value)}/></div>
-      <div className="field"><label>Sous-catégorie</label>
+      <div className="field" style={F}><label>Nom</label>
+        <input value={form.nom} placeholder="Apple Inc." onChange={e=>s("nom",e.target.value)}/></div>
+      <div className="field" style={F}><label>Sous-catégorie</label>
         <select value={form.sous_categorie??""} onChange={e=>s("sous_categorie",e.target.value)}>
           {SUBS_NO_ESPECES.map(sc=><option key={sc.key} value={sc.key}>{sc.label}</option>)}
         </select></div>
-      <div className="field"><label>Quantité</label>
+      <div className="field" style={F}><label>Quantité</label>
         <input type="number" step="0.0001" value={form.quantite} onChange={e=>s("quantite",parseFloat(e.target.value)||0)}/></div>
-      <div className="field">
+      <div className="field" style={F}>
         <label>Total commande (€) <span style={{color:"var(--text-2)",fontSize:9}}>montant global</span></label>
         <input type="number" step="0.01" value={totalCmd} onChange={e=>setTotalCmd(parseFloat(e.target.value)||0)}/>
         {prixUnitaire>0&&<div style={{fontSize:10,color:"var(--text-1)",marginTop:3}}>→ Prix unitaire : {prixUnitaire.toFixed(6)} €</div>}
       </div>
-      <div className="field"><label>Date d'achat</label><input type="date" value={form.date_achat} onChange={e=>s("date_achat",e.target.value)}/></div>
-      <div className="field span2"><label>Notes</label><textarea rows={2} value={form.notes??""} onChange={e=>s("notes",e.target.value)}/></div>
+      <div className="field" style={F}><label>Date d'achat</label>
+        <input type="date" value={form.date_achat} onChange={e=>s("date_achat",e.target.value)}/></div>
+      <div className="field" style={S2}><label>Notes</label>
+        <textarea rows={2} value={form.notes??""} onChange={e=>s("notes",e.target.value)}/></div>
     </div>
     <div className="form-actions">
       <button className="btn btn-ghost" onClick={onClose}>Annuler</button>
@@ -160,10 +179,13 @@ export function VersementModal({poche,mois=curMonth,onClose,onSave}:{poche:strin
   const s=(k:keyof Versement,v:string|number)=>setForm(f=>({...f,[k]:v}));
   return(<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
     <div className="modal-title">Versement cash · {poches.find(p=>p.key===poche)?.label??poche}</div>
-    <div className="form-grid">
-      <div className="field"><label>Montant (€)</label><input type="number" step="0.01" value={form.montant} onChange={e=>s("montant",parseFloat(e.target.value)||0)}/></div>
-      <div className="field"><label>Date</label><input type="date" value={form.date} onChange={e=>s("date",e.target.value)}/></div>
-      <div className="field span2"><label>Notes</label><textarea rows={2} value={form.notes??""} onChange={e=>s("notes",e.target.value)}/></div>
+    <div style={G2}>
+      <div className="field" style={F}><label>Montant (€)</label>
+        <input type="number" step="0.01" value={form.montant} onChange={e=>s("montant",parseFloat(e.target.value)||0)}/></div>
+      <div className="field" style={F}><label>Date</label>
+        <input type="date" value={form.date} onChange={e=>s("date",e.target.value)}/></div>
+      <div className="field" style={S2}><label>Notes</label>
+        <textarea rows={2} value={form.notes??""} onChange={e=>s("notes",e.target.value)}/></div>
     </div>
     <div className="form-actions">
       <button className="btn btn-ghost" onClick={onClose}>Annuler</button>
@@ -172,7 +194,7 @@ export function VersementModal({poche,mois=curMonth,onClose,onSave}:{poche:strin
   </div></div>);
 }
 
-// ── Sell Modal — prix TOTAL de vente ──────────────────────────────────────────
+// ── Sell Modal ─────────────────────────────────────────────────────────────────
 
 function addDays(dateStr: string, n: number): string {
   const d = new Date(dateStr + "T00:00:00");
@@ -180,8 +202,6 @@ function addDays(dateStr: string, n: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-// Replay all buy/sell events for a ticker chronologically up to dateStr
-// to get remaining quantity and PRU at that date.
 function computeAtSellDate(
   tickerPositions: Position[],
   tickerVentes: Vente[],
@@ -213,7 +233,6 @@ export function SellModal({poche,ticker,nom,tickerPositions,tickerVentes,getPric
 }) {
   const {fmt}=useDevise();
 
-  // Min selectable date = day after the most recent existing vente for this ticker
   const minDate = useMemo(() => {
     const max = tickerVentes.reduce((m,v) => (v.date_vente??'') > m ? (v.date_vente??'') : m, '');
     return max ? addDays(max, 1) : '';
@@ -225,13 +244,11 @@ export function SellModal({poche,ticker,nom,tickerPositions,tickerVentes,getPric
   const [notes, setNotes] = useState('');
   const [err, setErr] = useState('');
 
-  // Qty available and PRU at the selected date (chronological replay)
   const { qty: availQty, pru } = useMemo(
     () => computeAtSellDate(tickerPositions, tickerVentes, date),
     [tickerPositions, tickerVentes, date],
   );
 
-  // Estimated price at selected date (falls back to PRU if quote unavailable)
   const priceAtDate = useMemo(
     () => availQty > 0 ? getPriceForDate(ticker, date, pru) : 0,
     [ticker, date, pru, availQty, getPriceForDate],
@@ -240,7 +257,6 @@ export function SellModal({poche,ticker,nom,tickerPositions,tickerVentes,getPric
   const [qty, setQty] = useState(availQty);
   const [totalVente, setTotalVente] = useState(parseFloat((priceAtDate * availQty).toFixed(2)));
 
-  // When date changes → reset qty to max available and totalVente to estimated
   const prevDateRef = useRef(date);
   useEffect(() => {
     if (prevDateRef.current !== date) {
@@ -261,40 +277,39 @@ export function SellModal({poche,ticker,nom,tickerPositions,tickerVentes,getPric
         <div style={{color:"var(--text-1)",fontSize:12}}>{nom}</div>
       </div>
     </div>
-    <div className="form-grid">
-      <div className="field">
+    <div style={G2}>
+      <div className="field" style={F}>
         <label>Date{minDate&&<span style={{color:"var(--text-2)",fontSize:9,marginLeft:4}}>min {minDate}</span>}</label>
-        <input type="date" value={date} min={minDate||undefined}
-          onChange={e=>setDate(clamp(e.target.value))}/>
+        <input type="date" value={date} min={minDate||undefined} onChange={e=>setDate(clamp(e.target.value))}/>
       </div>
-      <div className="field">
+      <div className="field" style={F}>
         <label>Disponible à cette date</label>
-        <div style={{padding:"8px 11px",borderRadius:6,border:"1px solid var(--border-l)",background:"var(--bg-0)",
-          color:availQty>0?"var(--text-0)":"var(--rose)",fontSize:12,fontFamily:availQty>0?"var(--mono)":undefined}}>
+        <div style={{...RO,color:availQty>0?"var(--text-0)":"var(--rose)"}}>
           {availQty > 0
             ? <>{availQty.toFixed(4)} parts · PRU <span style={{color:"var(--gold)"}}>{fmt(pru)}</span></>
             : "Aucune position à cette date"}
         </div>
       </div>
-      <div className="field">
+      <div className="field" style={F}>
         <label>Quantité (max {availQty.toFixed(4)})</label>
         <input type="number" step="0.0001" min="0.0001" max={availQty} value={qty} disabled={availQty<=0}
           onChange={e=>{const q=Math.min(parseFloat(e.target.value)||0,availQty);setQty(q);setTotalVente(parseFloat((priceAtDate*q).toFixed(2)));}}/>
       </div>
-      <div className="field">
+      <div className="field" style={F}>
         <label>Total vente (€) <span style={{color:"var(--text-2)",fontSize:9}}>montant global</span></label>
         <input type="number" step="0.01" value={totalVente} disabled={availQty<=0}
           onChange={e=>setTotalVente(parseFloat(e.target.value)||0)}/>
         {qty>0&&<div style={{fontSize:10,color:"var(--text-1)",marginTop:3}}>→ Prix unitaire : {prixUnitaire.toFixed(6)} €</div>}
       </div>
-      <div className="field">
+      <div className="field" style={F}>
         <label>PnL estimé</label>
-        <div style={{padding:"8px 11px",borderRadius:6,border:"1px solid var(--border-l)",background:"var(--bg-0)",
-          color:estPnl>=0?"var(--teal)":"var(--rose)",fontSize:13}}>
+        <div style={{...RO,color:estPnl>=0?"var(--teal)":"var(--rose)",fontSize:13}}>
           {estPnl>=0?"+":""}{fmt(estPnl)}
         </div>
       </div>
-      <div className="field"><label>Notes</label><textarea rows={2} value={notes} onChange={e=>setNotes(e.target.value)}/></div>
+      <div className="field" style={F}><label>Notes</label>
+        <textarea rows={2} value={notes} onChange={e=>setNotes(e.target.value)}/>
+      </div>
     </div>
     {err&&<div style={{color:"var(--rose)",fontSize:12,marginBottom:12}}>⚠ {err}</div>}
     <div className="form-actions">
@@ -330,51 +345,39 @@ export function DividendeModal({poche,positions,mois=curMonth,onClose,onSave}:{
   const handleSave=async()=>{
     await invoke("add_dividende",{dividende:form});
     if(isReinvest&&quantite>0){
-      const pos:Position={
-        poche,
-        ticker:form.ticker,
-        nom:nomByTicker[form.ticker]??"",
-        sous_categorie:selectedSubcat,
-        quantite,
-        prix_achat:prixUnitaire,
-        date_achat:form.date,
-        notes:"[REINVEST_DIV]",
-      };
-      await invoke("add_position",{position:pos});
+      await invoke("add_position",{position:{
+        poche, ticker:form.ticker, nom:nomByTicker[form.ticker]??"",
+        sous_categorie:selectedSubcat, quantite,
+        prix_achat:prixUnitaire, date_achat:form.date, notes:"[REINVEST_DIV]",
+      }});
     }
     onSave();
   };
 
   return(<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
     <div className="modal-title">Ajouter un dividende / intérêt</div>
-    <div className="form-grid">
-      <div className="field"><label>Ticker</label>
+    <div style={G2}>
+      <div className="field" style={F}><label>Ticker</label>
         <select value={form.ticker} onChange={e=>{s("ticker",e.target.value);setQuantite(0);}}>
           {allOptions.map(t=><option key={t} value={t}>{t==="_INTERETS_"?"Intérêts":t}</option>)}
         </select></div>
-      <div className="field"><label>Nom</label>
+      <div className="field" style={F}><label>Nom</label>
         <input value={selectedNom} readOnly tabIndex={-1}
-          style={{background:"var(--bg-2)",color:"var(--text-2)",cursor:"default"}}/>
-      </div>
-      <div className="field"><label>Montant (€)</label>
-        <input type="number" step="0.01" value={form.montant} onChange={e=>s("montant",parseFloat(e.target.value)||0)}/>
-      </div>
-      <div className="field"><label>Date</label>
-        <input type="date" value={form.date} onChange={e=>s("date",e.target.value)}/>
-      </div>
+          style={{background:"var(--bg-2)",color:"var(--text-2)",cursor:"default"}}/></div>
+      <div className="field" style={F}><label>Montant (€)</label>
+        <input type="number" step="0.01" value={form.montant} onChange={e=>s("montant",parseFloat(e.target.value)||0)}/></div>
+      <div className="field" style={F}><label>Date</label>
+        <input type="date" value={form.date} onChange={e=>s("date",e.target.value)}/></div>
       {isReinvest&&<>
-        <div className="field"><label>Quantité reçue (réinvesti)</label>
+        <div className="field" style={F}><label>Quantité reçue (réinvesti)</label>
           <input type="number" step="any" min="0" value={quantite||""} placeholder="0"
-            onChange={e=>setQuantite(parseFloat(e.target.value)||0)}/>
-        </div>
-        <div className="field"><label>Prix unitaire calculé</label>
+            onChange={e=>setQuantite(parseFloat(e.target.value)||0)}/></div>
+        <div className="field" style={F}><label>Prix unitaire calculé</label>
           <input value={quantite>0?`${prixUnitaire.toFixed(6)} €/unité`:"—"} readOnly tabIndex={-1}
-            style={{background:"var(--bg-2)",color:"var(--text-2)",cursor:"default"}}/>
-        </div>
+            style={{background:"var(--bg-2)",color:"var(--text-2)",cursor:"default"}}/></div>
       </>}
-      <div className="field span2"><label>Notes</label>
-        <textarea rows={2} value={form.notes??""} onChange={e=>s("notes",e.target.value)}/>
-      </div>
+      <div className="field" style={S2}><label>Notes</label>
+        <textarea rows={2} value={form.notes??""} onChange={e=>s("notes",e.target.value)}/></div>
     </div>
     <div className="form-actions">
       <button className="btn btn-ghost" onClick={onClose}>Annuler</button>
@@ -390,34 +393,43 @@ export function ScpiValuationModal({scpiTickers,mois=curMonth,valuations,onClose
   const [ticker,setTicker]=useState(scpiTickers[0]??"");
   const [month,setMonth]=useState(mois);
   const [valeur,setValeur]=useState(0);
-  return(<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
+
+  const history=valuations.filter(v=>v.ticker===ticker).sort((a,b)=>b.mois.localeCompare(a.mois));
+
+  return(<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()} style={{maxWidth:600}}>
     <div className="modal-title">Valorisation SCPI</div>
-    <div className="form-grid">
-      <div className="field"><label>Ticker SCPI</label>
-        <select value={ticker} onChange={e=>setTicker(e.target.value)}>
-          {scpiTickers.map(t=><option key={t} value={t}>{t}</option>)}
-        </select></div>
-      <div className="field"><label>Mois (YYYY-MM)</label>
-        <input type="month" value={month} onChange={e=>setMonth(e.target.value)}/></div>
-      <div className="field"><label>Valeur unitaire (€)</label>
-        <input type="number" step="0.01" value={valeur} onChange={e=>setValeur(parseFloat(e.target.value)||0)}/></div>
-    </div>
-    {valuations.filter(v=>v.ticker===ticker).length>0&&(
-      <div style={{marginBottom:16}}>
-        <div style={{fontSize:10,color:"var(--text-2)",marginBottom:6,textTransform:"uppercase",letterSpacing:".08em"}}>Historique {ticker}</div>
-        <div style={{display:"flex",flexDirection:"column",gap:4,maxHeight:160,overflowY:"auto"}}>
-          {valuations.filter(v=>v.ticker===ticker).sort((a,b)=>b.mois.localeCompare(a.mois)).map(v=>(
-            <div key={v.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",
-              padding:"4px 10px",background:"var(--bg-2)",borderRadius:6,fontSize:11}}>
-              <span style={{color:"var(--text-1)"}}>{v.mois}</span>
-              <span style={{color:"var(--gold)",fontWeight:500}}>{v.valeur_unit.toFixed(2)} €</span>
-              <button className="btn btn-ghost btn-sm" style={{fontSize:10,padding:"2px 8px",color:"var(--rose)"}}
-                onClick={async()=>{await invoke("delete_scpi_valuation",{id:v.id});onSave();}}>✕</button>
-            </div>
-          ))}
-        </div>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,marginTop:16}}>
+      {/* ── Col gauche : saisie ── */}
+      <div style={{display:"flex",flexDirection:"column",gap:12}}>
+        <div className="field" style={F}><label>Ticker SCPI</label>
+          <select value={ticker} onChange={e=>setTicker(e.target.value)}>
+            {scpiTickers.map(t=><option key={t} value={t}>{t}</option>)}
+          </select></div>
+        <div className="field" style={F}><label>Mois (YYYY-MM)</label>
+          <input type="month" value={month} onChange={e=>setMonth(e.target.value)}/></div>
+        <div className="field" style={F}><label>Valeur unitaire (€)</label>
+          <input type="number" step="0.01" value={valeur} onChange={e=>setValeur(parseFloat(e.target.value)||0)}/></div>
       </div>
-    )}
+      {/* ── Col droite : historique ── */}
+      <div>
+        <div style={{fontSize:10,color:"var(--text-2)",marginBottom:6,textTransform:"uppercase",letterSpacing:".08em"}}>
+          Historique {ticker||"—"}
+        </div>
+        {history.length===0
+          ? <div style={{fontSize:11,color:"var(--text-2)",padding:"8px 0"}}>Aucune valorisation</div>
+          : <div style={{display:"flex",flexDirection:"column",gap:4,maxHeight:200,overflowY:"auto"}}>
+              {history.map(v=>(
+                <div key={v.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",
+                  padding:"4px 10px",background:"var(--bg-2)",borderRadius:6,fontSize:11}}>
+                  <span style={{color:"var(--text-1)"}}>{v.mois}</span>
+                  <span style={{color:"var(--gold)",fontWeight:500}}>{v.valeur_unit.toFixed(2)} €</span>
+                  <button className="btn btn-ghost btn-sm" style={{fontSize:10,padding:"2px 8px",color:"var(--rose)"}}
+                    onClick={async()=>{await invoke("delete_scpi_valuation",{id:v.id});onSave();}}>✕</button>
+                </div>
+              ))}
+            </div>}
+      </div>
+    </div>
     <div className="form-actions">
       <button className="btn btn-ghost" onClick={onClose}>Fermer</button>
       <button className="btn btn-primary" disabled={!ticker||valeur<=0}
@@ -426,8 +438,7 @@ export function ScpiValuationModal({scpiTickers,mois=curMonth,valuations,onClose
   </div></div>);
 }
 
-// ── Trade Modal — swap partiel/total sans PnL réalisé ─────────────────────────
-
+// ── Trade Modal ────────────────────────────────────────────────────────────────
 const TRADEABLE_SUBCAT_KEYS: readonly string[] = TRADEABLE_SUBCATS;
 
 export function TradeModal({poche,ticker,nom,subcat:_subcat,tickerPositions,tickerVentes,tradeablePositions,getPriceForDate:_gpfd,mois=curMonth,onClose,onSave}:{
@@ -439,7 +450,6 @@ export function TradeModal({poche,ticker,nom,subcat:_subcat,tickerPositions,tick
 }) {
   const {fmt}=useDevise();
 
-  // Min date = day after most recent vente for this source ticker
   const minDate=useMemo(()=>{
     const max=tickerVentes.reduce((m,v)=>(v.date_vente??'')>m?(v.date_vente??''):m,'');
     return max?addDays(max,1):'';
@@ -450,14 +460,12 @@ export function TradeModal({poche,ticker,nom,subcat:_subcat,tickerPositions,tick
   const [err,setErr]=useState('');
   const [notes,setNotes]=useState('');
 
-  // Source: available qty + PRU at selected date
   const {qty:availQty,pru:pruSource}=useMemo(
     ()=>computeAtSellDate(tickerPositions,tickerVentes,date),
     [tickerPositions,tickerVentes,date],
   );
 
   const [qtyToTrade,setQtyToTrade]=useState(availQty);
-
   const prevDateRef=useRef(date);
   useEffect(()=>{
     if(prevDateRef.current!==date){prevDateRef.current=date;setQtyToTrade(availQty);}
@@ -465,7 +473,6 @@ export function TradeModal({poche,ticker,nom,subcat:_subcat,tickerPositions,tick
 
   const costBasis=qtyToTrade*pruSource;
 
-  // Distinct destination tickers (tradeable, excluding source)
   const destTickers=useMemo(()=>{
     const seen=new Set<string>();
     const out:{ticker:string;nom:string;subcat:string}[]=[];
@@ -492,10 +499,18 @@ export function TradeModal({poche,ticker,nom,subcat:_subcat,tickerPositions,tick
   const [qtyDest,setQtyDest]=useState('');
   const qtyDestNum=parseFloat(qtyDest)||0;
   const destPru=qtyDestNum>0?costBasis/qtyDestNum:0;
-
   const canConfirm=availQty>0&&qtyToTrade>0&&destTicker.length>0&&qtyDestNum>0;
 
-  return(<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
+  const COL: React.CSSProperties = {
+    display:"flex",flexDirection:"column",gap:10,padding:"14px 16px",
+    background:"var(--bg-2)",borderRadius:8,border:"1px solid var(--border)",
+  };
+  const LBL: React.CSSProperties = {
+    fontSize:10,color:"var(--text-2)",textTransform:"uppercase",
+    letterSpacing:".08em",fontWeight:600,marginBottom:2,
+  };
+
+  return(<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()} style={{maxWidth:680}}>
     <div className="sell-header">
       <span className="sell-icon">🔄</span>
       <div>
@@ -504,70 +519,68 @@ export function TradeModal({poche,ticker,nom,subcat:_subcat,tickerPositions,tick
       </div>
     </div>
 
-    <div style={{fontSize:10,color:"var(--text-2)",textTransform:"uppercase",letterSpacing:".08em",marginBottom:6}}>Source</div>
-    <div className="form-grid">
-      <div className="field">
-        <label>Date{minDate&&<span style={{color:"var(--text-2)",fontSize:9,marginLeft:4}}>min {minDate}</span>}</label>
-        <input type="date" value={date} min={minDate||undefined} onChange={e=>setDate(clamp(e.target.value))}/>
-      </div>
-      <div className="field">
-        <label>Disponible à cette date</label>
-        <div style={{padding:"8px 11px",borderRadius:6,border:"1px solid var(--border-l)",background:"var(--bg-0)",
-          color:availQty>0?"var(--text-0)":"var(--rose)",fontSize:12,fontFamily:availQty>0?"var(--mono)":undefined}}>
-          {availQty>0?<>{availQty.toFixed(4)} parts · PRU <span style={{color:"var(--gold)"}}>{fmt(pruSource)}</span></>:"Aucune position à cette date"}
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,marginTop:12}}>
+      {/* ── Source ── */}
+      <div style={COL}>
+        <div style={LBL}>Source — {ticker}</div>
+        <div className="field" style={F}>
+          <label>Date{minDate&&<span style={{color:"var(--text-2)",fontSize:9,marginLeft:4}}>min {minDate}</span>}</label>
+          <input type="date" value={date} min={minDate||undefined} onChange={e=>setDate(clamp(e.target.value))}/>
+        </div>
+        <div className="field" style={F}>
+          <label>Disponible à cette date</label>
+          <div style={{...RO,color:availQty>0?"var(--text-0)":"var(--rose)"}}>
+            {availQty>0?<>{availQty.toFixed(4)} parts · PRU <span style={{color:"var(--gold)"}}>{fmt(pruSource)}</span></>:"Aucune position à cette date"}
+          </div>
+        </div>
+        <div className="field" style={F}>
+          <label>Quantité à trader (max {availQty.toFixed(4)})</label>
+          <input type="number" step="0.0001" min="0.0001" max={availQty} value={qtyToTrade} disabled={availQty<=0}
+            onChange={e=>setQtyToTrade(Math.min(parseFloat(e.target.value)||0,availQty))}/>
+        </div>
+        <div className="field" style={F}>
+          <label>Base de coût transférée</label>
+          <div style={{...RO,color:"var(--gold)",fontSize:13}}>{fmt(costBasis)}</div>
         </div>
       </div>
-      <div className="field">
-        <label>Quantité à trader (max {availQty.toFixed(4)})</label>
-        <input type="number" step="0.0001" min="0.0001" max={availQty} value={qtyToTrade} disabled={availQty<=0}
-          onChange={e=>setQtyToTrade(Math.min(parseFloat(e.target.value)||0,availQty))}/>
-      </div>
-      <div className="field">
-        <label>Base de coût transférée</label>
-        <div style={{padding:"8px 11px",borderRadius:6,border:"1px solid var(--border-l)",background:"var(--bg-0)",
-          fontSize:13,color:"var(--gold)",fontFamily:"var(--mono)"}}>
-          {fmt(costBasis)}
+
+      {/* ── Destination ── */}
+      <div style={COL}>
+        <div style={LBL}>Destination</div>
+        <div className="field" style={F}>
+          <label>Ticker destination</label>
+          <select value={destSel} onChange={e=>setDestSel(e.target.value)}>
+            {destTickers.map(t=><option key={t.ticker} value={t.ticker}>{t.ticker} — {t.nom}</option>)}
+            <option value={NEW_KEY}>+ Nouveau ticker…</option>
+          </select>
+        </div>
+        {isNew&&<>
+          <div className="field" style={F}><label>Ticker</label>
+            <input value={newTicker} placeholder="BTC-USD" onChange={e=>setNewTicker(e.target.value.toUpperCase())}/></div>
+          <div className="field" style={F}><label>Nom</label>
+            <input value={newNom} placeholder="Bitcoin" onChange={e=>setNewNom(e.target.value)}/></div>
+          <div className="field" style={F}><label>Sous-catégorie</label>
+            <select value={newSubcat} onChange={e=>setNewSubcat(e.target.value)}>
+              {INVEST_SUBCATS.filter(s=>TRADEABLE_SUBCAT_KEYS.includes(s.key)).map(s=>
+                <option key={s.key} value={s.key}>{s.label}</option>
+              )}
+            </select></div>
+        </>}
+        <div className="field" style={F}>
+          <label>Quantité reçue</label>
+          <input type="number" step="0.00000001" min="0.00000001" value={qtyDest} disabled={availQty<=0}
+            onChange={e=>setQtyDest(e.target.value)}/>
+        </div>
+        <div className="field" style={F}>
+          <label>PRU calculé</label>
+          <div style={{...RO,color:"var(--teal)",fontSize:13}}>{qtyDestNum>0?fmt(destPru):"—"}</div>
         </div>
       </div>
     </div>
 
-    <div style={{fontSize:10,color:"var(--text-2)",textTransform:"uppercase",letterSpacing:".08em",margin:"12px 0 6px"}}>Destination</div>
-    <div className="form-grid">
-      <div className="field span2">
-        <label>Ticker destination</label>
-        <select value={destSel} onChange={e=>setDestSel(e.target.value)}>
-          {destTickers.map(t=><option key={t.ticker} value={t.ticker}>{t.ticker} — {t.nom}</option>)}
-          <option value={NEW_KEY}>+ Nouveau ticker…</option>
-        </select>
-      </div>
-      {isNew&&<>
-        <div className="field"><label>Ticker</label>
-          <input value={newTicker} placeholder="BTC-USD" onChange={e=>setNewTicker(e.target.value.toUpperCase())}/>
-        </div>
-        <div className="field"><label>Nom</label>
-          <input value={newNom} placeholder="Bitcoin" onChange={e=>setNewNom(e.target.value)}/>
-        </div>
-        <div className="field span2"><label>Sous-catégorie</label>
-          <select value={newSubcat} onChange={e=>setNewSubcat(e.target.value)}>
-            {INVEST_SUBCATS.filter(s=>TRADEABLE_SUBCAT_KEYS.includes(s.key)).map(s=>
-              <option key={s.key} value={s.key}>{s.label}</option>
-            )}
-          </select>
-        </div>
-      </>}
-      <div className="field">
-        <label>Quantité reçue</label>
-        <input type="number" step="0.00000001" min="0.00000001" value={qtyDest} disabled={availQty<=0}
-          onChange={e=>setQtyDest(e.target.value)}/>
-      </div>
-      <div className="field">
-        <label>PRU calculé</label>
-        <div style={{padding:"8px 11px",borderRadius:6,border:"1px solid var(--border-l)",background:"var(--bg-0)",
-          fontSize:13,color:"var(--teal)",fontFamily:"var(--mono)"}}>
-          {qtyDestNum>0?fmt(destPru):"—"}
-        </div>
-      </div>
-      <div className="field span2"><label>Notes</label><textarea rows={2} value={notes} onChange={e=>setNotes(e.target.value)}/></div>
+    <div className="field" style={{margin:"14px 0 0"}}>
+      <label>Notes</label>
+      <textarea rows={2} value={notes} onChange={e=>setNotes(e.target.value)}/>
     </div>
 
     {err&&<div style={{color:"var(--rose)",fontSize:12,marginBottom:12}}>⚠ {err}</div>}
@@ -575,19 +588,12 @@ export function TradeModal({poche,ticker,nom,subcat:_subcat,tickerPositions,tick
       <button className="btn btn-ghost" onClick={onClose}>Annuler</button>
       <button className="btn btn-primary" disabled={!canConfirm} onClick={async()=>{
         setErr("");
-        const notesSuffix=notes?` ${notes}`:"";
+        const sfx=notes?` ${notes}`:"";
         try{
-          // 1. Retirer la source à son PRU → PnL = 0
-          await invoke("sell_position",{
-            poche,ticker,nom,quantiteVendue:qtyToTrade,prixVente:pruSource,
-            dateVente:date,notes:`[TRADE → ${destTicker}]${notesSuffix}`,
-          });
-          // 2. Ajouter la destination avec la base de coût transférée
-          await invoke("add_position",{position:{
-            poche,ticker:destTicker,nom:destNom,sous_categorie:destSubcat,
-            quantite:qtyDestNum,prix_achat:destPru,date_achat:date,
-            notes:`[TRADE ← ${ticker}]${notesSuffix}`,
-          }});
+          await invoke("sell_position",{poche,ticker,nom,quantiteVendue:qtyToTrade,prixVente:pruSource,
+            dateVente:date,notes:`[TRADE → ${destTicker}]${sfx}`});
+          await invoke("add_position",{position:{poche,ticker:destTicker,nom:destNom,sous_categorie:destSubcat,
+            quantite:qtyDestNum,prix_achat:destPru,date_achat:date,notes:`[TRADE ← ${ticker}]${sfx}`}});
           onSave();
         }catch(e:any){setErr(String(e));}
       }}>Confirmer le trade</button>
