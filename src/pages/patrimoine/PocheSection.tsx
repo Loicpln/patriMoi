@@ -412,11 +412,8 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
     return getPriceForDate(ticker, dateStr, pru);
   }, [positions, scpiPriceMap, getPriceForDate]);
 
-  // All positions in this poche with tradeable subcats (for TradeModal destination dropdown)
-  const tradeablePositions = useMemo(
-    () => positions.filter(p => (TRADEABLE_SUBCATS as readonly string[]).includes(p.sous_categorie ?? '')),
-    [positions],
-  );
+  // All positions in this poche (for TradeModal destination dropdown — all subcats allowed)
+  const tradeablePositions = useMemo(() => positions, [positions]);
 
   // Load SCPI valuations (global, shared across all poches)
   useEffect(() => {
@@ -897,11 +894,11 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
                               Vendre
                             </button>
                             {(TRADEABLE_SUBCATS as readonly string[]).includes(p.subcat) && (
-                            <button className="btn btn-ghost btn-sm" style={{ fontSize: 10, color: "var(--lavender)", borderColor: "var(--lavender)" }}
-                              onClick={() => setTradeTarget({ ticker: p.ticker, nom: p.nom, subcat: p.subcat, tickerPositions: positions.filter(pos => pos.ticker === p.ticker), tickerVentes: ventes.filter(v => v.ticker === p.ticker) })}>
-                              Trader
-                            </button>
-                          )}
+                              <button className="btn btn-ghost btn-sm" style={{ fontSize: 10, color: "var(--lavender)", borderColor: "var(--lavender)" }}
+                                onClick={() => setTradeTarget({ ticker: p.ticker, nom: p.nom, subcat: p.subcat, tickerPositions: positions.filter(pos => pos.ticker === p.ticker), tickerVentes: ventes.filter(v => v.ticker === p.ticker) })}>
+                                Trader
+                              </button>
+                            )}
                             
                           </div>
                           <button className="btn btn-ghost btn-sm"

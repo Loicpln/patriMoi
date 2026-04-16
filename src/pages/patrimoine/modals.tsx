@@ -439,7 +439,6 @@ export function ScpiValuationModal({scpiTickers,mois=curMonth,valuations,onClose
 }
 
 // ── Trade Modal ────────────────────────────────────────────────────────────────
-const TRADEABLE_SUBCAT_KEYS: readonly string[] = TRADEABLE_SUBCATS;
 
 export function TradeModal({poche,ticker,nom,subcat:_subcat,tickerPositions,tickerVentes,tradeablePositions,getPriceForDate:_gpfd,mois=curMonth,onClose,onSave}:{
   poche:string;ticker:string;nom:string;subcat:string;
@@ -489,7 +488,7 @@ export function TradeModal({poche,ticker,nom,subcat:_subcat,tickerPositions,tick
   const [destSel,setDestSel]=useState(()=>destTickers[0]?.ticker??NEW_KEY);
   const [newTicker,setNewTicker]=useState('');
   const [newNom,setNewNom]=useState('');
-  const [newSubcat,setNewSubcat]=useState<string>(TRADEABLE_SUBCATS[0]);
+  const [newSubcat,setNewSubcat]=useState<string>(INVEST_SUBCATS[0].key);
 
   const isNew=destSel===NEW_KEY;
   const destTicker=isNew?newTicker.toUpperCase():destSel;
@@ -561,9 +560,7 @@ export function TradeModal({poche,ticker,nom,subcat:_subcat,tickerPositions,tick
             <input value={newNom} placeholder="Bitcoin" onChange={e=>setNewNom(e.target.value)}/></div>
           <div className="field" style={F}><label>Sous-catégorie</label>
             <select value={newSubcat} onChange={e=>setNewSubcat(e.target.value)}>
-              {INVEST_SUBCATS.filter(s=>TRADEABLE_SUBCAT_KEYS.includes(s.key)).map(s=>
-                <option key={s.key} value={s.key}>{s.label}</option>
-              )}
+              {INVEST_SUBCATS.map(s=><option key={s.key} value={s.key}>{s.label}</option>)}
             </select></div>
         </>}
         <div className="field" style={F}>
