@@ -336,6 +336,7 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
   const [sellTarget, setSellTarget]   = useState<{ ticker: string; nom: string; tickerPositions: Position[]; tickerVentes: Vente[] } | null>(null);
   const [tradeTarget, setTradeTarget] = useState<{ ticker: string; nom: string; subcat: string; tickerPositions: Position[]; tickerVentes: Vente[] } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ ticker: string; rows: Position[] } | null>(null);
+  const [headerMode, setHeaderMode] = useState<"actions" | "gestion">("actions");
   const [pieToggle, setPieToggle] = useState<"investi" | "valeur">("valeur");
   const [pnlMode, setPnlMode]     = useState<"latent" | "realise" | "divs">("latent");
   const [brushIdx, setBrushIdx] = useState<{ start: number; end: number } | null>(null);
@@ -803,18 +804,31 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
         </div>
         <div style={{ display: "flex", gap: 6, alignItems: "center" }} onClick={e => e.stopPropagation()}>
           {loading && <span className="spinner"/>}
-          <button className="btn btn-ghost btn-sm" onClick={refresh}>↻</button>
-          <button className="btn btn-ghost btn-sm" onClick={() => setVerModal(true)}>+ Versement</button>
-          {positions.length > 0 && <button className="btn btn-teal btn-sm" onClick={() => setDivModal(true)}>+ Dividende</button>}
-          <button className="btn btn-primary btn-sm" onClick={() => setPosModal(true)}>+ Position</button>
-          {/* ── Séparateur visuel ── */}
-          {(onEdit || onDelete || onExport || onImportParsed) &&
-            <span style={{ width:1, height:16, background:"var(--border)", display:"inline-block", margin:"0 2px" }}/>}
-          {/* ── Boutons de gestion de la poche ── */}
-          {onExport && <ExportBtn label={`${poche.key}.csv`} onExport={onExport}/>}
-          {onImportParsed && <ImportBtn label={poche.label} onParsed={onImportParsed}/>}
-          {onEdit   && <button className="btn btn-ghost btn-sm" style={{ fontSize:11 }} onClick={onEdit}   title="Modifier la poche">✎</button>}
-          {onDelete && <button className="btn btn-danger btn-sm" style={{ fontSize:11 }} onClick={onDelete} title="Supprimer la poche">✕</button>}
+
+          {/* ── Groupe Actions ── */}
+          {headerMode === "actions" && <>
+            <button className="btn btn-ghost btn-sm" onClick={refresh} title="Rafraîchir les cours">↻</button>
+            <button className="btn btn-ghost btn-sm" onClick={() => setVerModal(true)}>+ Versement</button>
+            {positions.length > 0 && <button className="btn btn-teal btn-sm" onClick={() => setDivModal(true)}>+ Dividende</button>}
+            <button className="btn btn-primary btn-sm" onClick={() => setPosModal(true)}>+ Position</button>
+          </>}
+
+          {/* ── Groupe Gestion ── */}
+          {headerMode === "gestion" && <>
+            {onExport      && <ExportBtn label={`${poche.key}.csv`} onExport={onExport}/>}
+            {onImportParsed && <ImportBtn label={poche.label} onParsed={onImportParsed}/>}
+            {onEdit        && <button className="btn btn-ghost btn-sm" style={{ fontSize:11 }} onClick={onEdit}   title="Modifier la poche">✎</button>}
+            {onDelete      && <button className="btn btn-danger btn-sm" style={{ fontSize:11 }} onClick={onDelete} title="Supprimer la poche">✕</button>}
+          </>}
+
+          {/* ── Séparateur + bouton toggle ── */}
+          <span style={{ width:1, height:16, background:"var(--border)", display:"inline-block", margin:"0 2px" }}/>
+          <button
+            className={`btn btn-sm ${headerMode === "gestion" ? "btn-primary" : "btn-ghost"}`}
+            style={{ fontSize:12, padding:"2px 7px" }}
+            onClick={() => setHeaderMode(m => m === "actions" ? "gestion" : "actions")}
+            title={headerMode === "actions" ? "Passer en mode gestion (import/export/modifier/supprimer)" : "Passer en mode actions (versement/dividende/position/refresh)"}
+          >⚙</button>
         </div>
       </div>
 
