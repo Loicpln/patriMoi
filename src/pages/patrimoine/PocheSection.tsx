@@ -817,8 +817,8 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
           {headerMode === "gestion" && <>
             {onExport      && <ExportBtn label={`${poche.key}.csv`} onExport={onExport}/>}
             {onImportParsed && <ImportBtn label={poche.label} onParsed={onImportParsed}/>}
-            {onEdit        && <button className="btn btn-ghost btn-sm" style={{ fontSize:11 }} onClick={onEdit}   title="Modifier la poche">✎</button>}
-            {onDelete      && <button className="btn btn-danger btn-sm" style={{ fontSize:11 }} onClick={onDelete} title="Supprimer la poche">✕</button>}
+            {onEdit        && <button className="btn btn-ghost btn-sm" style={{ fontSize:10 }} onClick={onEdit}   title="Modifier la poche">✎</button>}
+            {onDelete      && <button className="btn btn-danger btn-sm" style={{ fontSize:10 }} onClick={onDelete} title="Supprimer la poche">✕</button>}
           </>}
 
           {/* ── Séparateur + bouton toggle ── */}
