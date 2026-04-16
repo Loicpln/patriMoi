@@ -7,6 +7,19 @@ use tauri::api::path::app_data_dir;
 pub struct Depense {
     pub id: Option<i64>, pub date: String, pub categorie: String,
     pub sous_categorie: String, pub libelle: String, pub montant: f64, pub notes: Option<String>,
+    pub recurrence_id: Option<i64>,
+}
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DepenseRecurrente {
+    pub id: Option<i64>,
+    pub categorie: String,
+    pub sous_categorie: String,
+    pub libelle: String,
+    pub montant: f64,
+    pub periodicite: String,  // "mensuel", "annuel", "hebdomadaire"
+    pub date_debut: String,
+    pub date_fin: Option<String>,
+    pub notes: Option<String>,
 }
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Salaire {
@@ -157,6 +170,24 @@ pub fn init_db(conn: &Connection) -> Result<()> {
             DROP TABLE scpi_valuations;
             ALTER TABLE scpi_valuations_v2 RENAME TO scpi_valuations;
             PRAGMA user_version = 7;
+        ")?;
+    }
+    if version < 8 {
+        conn.execute_batch("
+            CREATE TABLE IF NOT EXISTS depenses_recurrentes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                categorie TEXT NOT NULL,
+                sous_categorie TEXT NOT NULL,
+                libelle TEXT NOT NULL,
+                montant REAL NOT NULL,
+                periodicite TEXT NOT NULL,
+                date_debut TEXT NOT NULL,
+                date_fin TEXT,
+                notes TEXT,
+                created_at TEXT DEFAULT (datetime('now'))
+            );
+            ALTER TABLE depenses ADD COLUMN recurrence_id INTEGER;
+            PRAGMA user_version = 8;
         ")?;
     }
     Ok(())

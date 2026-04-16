@@ -72,12 +72,41 @@ function csvToScpi(rows: string[][]): any[] {
     id: null, ticker: r[1]?.trim(), mois: r[2]?.trim(), valeur_unit: num(r[3]),
   }));
 }
-function csvToDepenses(rows: string[][]): any[] {
-  return rows.slice(1).map(r => ({
-    id: null, date: r[1]?.trim(), categorie: r[2]?.trim(),
-    sous_categorie: r[3]?.trim(), libelle: r[4]?.trim(),
-    montant: num(r[5]), notes: str(r[6] ?? ""),
-  }));
+function csvToDepenses(rows: string[][]): { depenses: any[]; recurrentes: any[] } {
+  const header = rows[0] ?? [];
+  const hasType = header[0]?.trim().toLowerCase() === "type";
+  const data = rows.slice(1);
+  if (!hasType) {
+    // ancien format sans colonne type : toutes des dépenses ordinaires
+    return {
+      depenses: data.map(r => ({
+        id: null, date: r[1]?.trim(), categorie: r[2]?.trim(),
+        sous_categorie: r[3]?.trim(), libelle: r[4]?.trim(),
+        montant: num(r[5]), notes: str(r[6] ?? ""),
+      })),
+      recurrentes: [],
+    };
+  }
+  const depenses: any[] = [];
+  const recurrentes: any[] = [];
+  data.forEach(r => {
+    const type = r[0]?.trim().toLowerCase();
+    if (type === "recurrente") {
+      recurrentes.push({
+        id: null, categorie: r[2]?.trim(), sous_categorie: r[3]?.trim(),
+        libelle: r[4]?.trim(), montant: num(r[5]), notes: str(r[6] ?? ""),
+        periodicite: r[7]?.trim() || "mensuel",
+        date_debut: r[8]?.trim(), date_fin: str(r[9] ?? ""),
+      });
+    } else {
+      depenses.push({
+        id: null, date: r[1]?.trim(), categorie: r[2]?.trim(),
+        sous_categorie: r[3]?.trim(), libelle: r[4]?.trim(),
+        montant: num(r[5]), notes: str(r[6] ?? ""),
+      });
+    }
+  });
+  return { depenses, recurrentes };
 }
 function csvToSalaires(rows: string[][]): any[] {
   return rows.slice(1).map(r => {
@@ -135,11 +164,16 @@ export async function importScpi(rows: string[][], replace: boolean): Promise<nu
   return invoke<number>("import_scpi_valuations", { rows: csvToScpi(rows), replace });
 }
 export async function exportDepenses(): Promise<void> {
-  const rows = await invoke<any[]>("get_depenses", {});
-  downloadCsv(withDate("depenses.csv"), toCsv(
-    ["id", "date", "categorie", "sous_categorie", "libelle", "montant", "notes"],
-    rows.map(r => [r.id, r.date, r.categorie, r.sous_categorie, r.libelle, r.montant, r.notes])
-  ));
+  // On n'exporte que les dépenses manuelles (recurrence_id IS NULL) — les générées seront recréées à l'import
+  const [depenses, recurrentes] = await Promise.all([
+    invoke<any[]>("get_depenses", {}),
+    invoke<any[]>("get_depenses_recurrentes"),
+  ]);
+  const manuelles = depenses.filter((r: any) => r.recurrence_id == null);
+  const headers = ["type", "date", "categorie", "sous_categorie", "libelle", "montant", "notes", "periodicite", "date_debut", "date_fin"];
+  const depRows = manuelles.map((r: any) => ["depense", r.date, r.categorie, r.sous_categorie, r.libelle, r.montant, r.notes ?? "", "", "", ""]);
+  const recRows = recurrentes.map((r: any) => ["recurrente", "", r.categorie, r.sous_categorie, r.libelle, r.montant, r.notes ?? "", r.periodicite, r.date_debut, r.date_fin ?? ""]);
+  downloadCsv(withDate("depenses.csv"), toCsv(headers, [...depRows, ...recRows]));
 }
 export async function exportSalaires(): Promise<void> {
   const rows = await invoke<any[]>("get_salaires");
@@ -163,7 +197,14 @@ export async function exportLivrets(): Promise<void> {
   ));
 }
 export async function importDepenses(rows: string[][], replace: boolean): Promise<number> {
-  return invoke<number>("import_depenses", { rows: csvToDepenses(rows), replace });
+  const { depenses, recurrentes } = csvToDepenses(rows);
+  const [n1, n2] = await Promise.all([
+    invoke<number>("import_depenses", { rows: depenses, replace }),
+    invoke<number>("import_depenses_recurrentes", { rows: recurrentes, replace }),
+  ]);
+  // Régénérer les dépenses récurrentes après import
+  await invoke("process_depenses_recurrentes");
+  return n1 + n2;
 }
 export async function importSalaires(rows: string[][], replace: boolean): Promise<number> {
   return invoke<number>("import_salaires", { rows: csvToSalaires(rows), replace });

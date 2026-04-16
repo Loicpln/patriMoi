@@ -1,4 +1,4 @@
-use rusqlite::params;
+use rusqlite::{params, Connection};
 use std::sync::Mutex;
 use tauri::State;
 use crate::db::*;
@@ -10,11 +10,11 @@ pub struct DbState(pub Mutex<rusqlite::Connection>);
 pub fn get_depenses(mois: Option<String>, state: State<DbState>) -> Result<Vec<Depense>, String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     let (sql, filtered) = match &mois {
-        Some(_) => ("SELECT id,date,categorie,sous_categorie,libelle,montant,notes FROM depenses WHERE strftime('%Y-%m',date)=?1 ORDER BY date DESC", true),
-        None    => ("SELECT id,date,categorie,sous_categorie,libelle,montant,notes FROM depenses ORDER BY date DESC", false),
+        Some(_) => ("SELECT id,date,categorie,sous_categorie,libelle,montant,notes,recurrence_id FROM depenses WHERE strftime('%Y-%m',date)=?1 ORDER BY date DESC", true),
+        None    => ("SELECT id,date,categorie,sous_categorie,libelle,montant,notes,recurrence_id FROM depenses ORDER BY date DESC", false),
     };
     let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
-    let map = |r: &rusqlite::Row| Ok(Depense { id:r.get(0)?,date:r.get(1)?,categorie:r.get(2)?,sous_categorie:r.get(3)?,libelle:r.get(4)?,montant:r.get(5)?,notes:r.get(6)? });
+    let map = |r: &rusqlite::Row| Ok(Depense { id:r.get(0)?,date:r.get(1)?,categorie:r.get(2)?,sous_categorie:r.get(3)?,libelle:r.get(4)?,montant:r.get(5)?,notes:r.get(6)?,recurrence_id:r.get(7)? });
     let items = if filtered { stmt.query_map(params![mois.unwrap()], map) } else { stmt.query_map([], map) }
         .map_err(|e| e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e| e.to_string())?;
     Ok(items)
@@ -513,6 +513,21 @@ pub fn import_depenses(rows: Vec<Depense>, replace: bool, state: State<DbState>)
 }
 
 #[tauri::command]
+pub fn import_depenses_recurrentes(rows: Vec<DepenseRecurrente>, replace: bool, state: State<DbState>) -> Result<usize, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    if replace {
+        conn.execute("DELETE FROM depenses_recurrentes", []).map_err(|e| e.to_string())?;
+    }
+    for r in &rows {
+        conn.execute(
+            "INSERT INTO depenses_recurrentes (categorie,sous_categorie,libelle,montant,periodicite,date_debut,date_fin,notes) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+            params![r.categorie, r.sous_categorie, r.libelle, r.montant, r.periodicite, r.date_debut, r.date_fin, r.notes],
+        ).map_err(|e| e.to_string())?;
+    }
+    Ok(rows.len())
+}
+
+#[tauri::command]
 pub fn import_salaires(rows: Vec<Salaire>, replace: bool, state: State<DbState>) -> Result<usize, String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     if replace { conn.execute("DELETE FROM salaires", []).map_err(|e| e.to_string())?; }
@@ -591,6 +606,175 @@ pub fn import_scpi_valuations(rows: Vec<ScpiValuation>, replace: bool, state: St
             .map_err(|e| e.to_string())?;
     }
     Ok(rows.len())
+}
+
+// ═══ DÉPENSES RÉCURRENTES ════════════════════════════════════════════════════
+
+/// Extrait le numéro de jour (1-31) depuis une date YYYY-MM-DD.
+fn anchor_day(date: &str) -> u32 {
+    date.get(8..10)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(1)
+}
+
+/// Calcule le dernier jour du mois pour un préfixe YYYY-MM via SQLite.
+fn last_day_of_month(conn: &Connection, ym_prefix: &str) -> rusqlite::Result<u32> {
+    conn.query_row(
+        &format!("SELECT CAST(strftime('%d', date('{}-01', '+1 month', '-1 day')) AS INTEGER)", ym_prefix),
+        [],
+        |r| r.get(0),
+    )
+}
+
+/// Avance d'une période en respectant le jour d'ancrage (anchor_day).
+/// - hebdomadaire : +7 jours (pas de problème de mois)
+/// - mensuel      : mois suivant, jour = MIN(anchor_day, dernier_jour_du_mois)
+/// - annuel       : année suivante, même logique
+fn generate_next_date(conn: &Connection, current: &str, periodicite: &str, anchor: u32) -> rusqlite::Result<String> {
+    if periodicite == "hebdomadaire" {
+        return conn.query_row(
+            &format!("SELECT date('{}', '+7 days')", current),
+            [], |r| r.get(0),
+        );
+    }
+
+    let interval = if periodicite == "annuel" { "+1 year" } else { "+1 month" };
+
+    // IMPORTANT : on avance depuis le 1er du mois courant (pas depuis `current`)
+    // pour éviter le débordement de SQLite : date('2025-01-30', '+1 month') → 2025-03-02
+    // alors que date('2025-01-01', '+1 month') → 2025-02-01 (correct)
+    let current_ym = &current[..7]; // "YYYY-MM"
+    let next_ym: String = conn.query_row(
+        &format!("SELECT strftime('%Y-%m', date('{}-01', '{}'))", current_ym, interval),
+        [], |r| r.get(0),
+    )?;
+
+    // Calculer le dernier jour disponible dans ce mois et appliquer l'ancrage
+    let last = last_day_of_month(conn, &next_ym)?;
+    let day = anchor.min(last);
+
+    Ok(format!("{}-{:02}", next_ym, day))
+}
+
+fn process_one_recurrence(conn: &Connection, rec_id: i64) -> rusqlite::Result<usize> {
+    let (cat, sous_cat, libelle, montant, periodicite, date_debut, date_fin, notes):
+        (String, String, String, f64, String, String, Option<String>, Option<String>) =
+        conn.query_row(
+            "SELECT categorie,sous_categorie,libelle,montant,periodicite,date_debut,date_fin,notes
+             FROM depenses_recurrentes WHERE id=?1",
+            [rec_id], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?,r.get(6)?,r.get(7)?))
+        )?;
+
+    // Jour d'ancrage extrait une fois depuis date_debut (ex: 30 si date_debut = 2024-01-30)
+    let anchor = anchor_day(&date_debut);
+
+    let end_date: String = conn.query_row(
+        "SELECT COALESCE(MIN(?1, date('now')), date('now'))",
+        [date_fin.as_deref().unwrap_or("9999-12-31")],
+        |r| r.get(0),
+    )?;
+
+    let mut existing_stmt = conn.prepare(
+        "SELECT date FROM depenses WHERE recurrence_id=?1"
+    )?;
+    let existing: std::collections::HashSet<String> = existing_stmt
+        .query_map([rec_id], |r| r.get(0))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    let mut current = date_debut.clone();
+    let mut count = 0;
+    while current <= end_date {
+        if !existing.contains(&current) {
+            conn.execute(
+                "INSERT INTO depenses (date,categorie,sous_categorie,libelle,montant,notes,recurrence_id) VALUES (?1,?2,?3,?4,?5,?6,?7)",
+                rusqlite::params![current, cat, sous_cat, libelle, montant, notes, rec_id],
+            )?;
+            count += 1;
+        }
+        current = generate_next_date(conn, &current, &periodicite, anchor)?;
+    }
+    Ok(count)
+}
+
+pub fn process_recurrences_sync(conn: &Connection) -> usize {
+    let ids: Vec<i64> = match conn.prepare("SELECT id FROM depenses_recurrentes") {
+        Err(_) => return 0,
+        Ok(mut s) => s.query_map([], |r| r.get(0))
+            .unwrap_or_else(|_| panic!("query_map failed"))
+            .filter_map(|r| r.ok())
+            .collect(),
+    };
+    let mut total = 0;
+    for id in ids {
+        if let Ok(n) = process_one_recurrence(conn, id) { total += n; }
+    }
+    total
+}
+
+#[tauri::command]
+pub fn get_depenses_recurrentes(state: State<DbState>) -> Result<Vec<DepenseRecurrente>, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let mut stmt = conn.prepare(
+        "SELECT id,categorie,sous_categorie,libelle,montant,periodicite,date_debut,date_fin,notes FROM depenses_recurrentes ORDER BY date_debut DESC"
+    ).map_err(|e| e.to_string())?;
+    let items = stmt.query_map([], |r| Ok(DepenseRecurrente {
+        id: r.get(0)?, categorie: r.get(1)?, sous_categorie: r.get(2)?,
+        libelle: r.get(3)?, montant: r.get(4)?, periodicite: r.get(5)?,
+        date_debut: r.get(6)?, date_fin: r.get(7)?, notes: r.get(8)?,
+    })).map_err(|e| e.to_string())?.collect::<rusqlite::Result<Vec<_>>>().map_err(|e| e.to_string())?;
+    Ok(items)
+}
+
+#[tauri::command]
+pub fn add_depense_recurrente(rec: DepenseRecurrente, state: State<DbState>) -> Result<i64, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    conn.execute(
+        "INSERT INTO depenses_recurrentes (categorie,sous_categorie,libelle,montant,periodicite,date_debut,date_fin,notes) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+        params![rec.categorie, rec.sous_categorie, rec.libelle, rec.montant, rec.periodicite, rec.date_debut, rec.date_fin, rec.notes],
+    ).map_err(|e| e.to_string())?;
+    let new_id = conn.last_insert_rowid();
+    process_one_recurrence(&conn, new_id).map_err(|e| e.to_string())?;
+    Ok(new_id)
+}
+
+#[tauri::command]
+pub fn update_depense_recurrente(rec: DepenseRecurrente, state: State<DbState>) -> Result<(), String> {
+    let id = rec.id.ok_or("Missing id")?;
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE depenses_recurrentes SET categorie=?1,sous_categorie=?2,libelle=?3,montant=?4,periodicite=?5,date_debut=?6,date_fin=?7,notes=?8 WHERE id=?9",
+        params![rec.categorie, rec.sous_categorie, rec.libelle, rec.montant, rec.periodicite, rec.date_debut, rec.date_fin, rec.notes, id],
+    ).map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM depenses WHERE recurrence_id=?1", params![id]).map_err(|e| e.to_string())?;
+    process_one_recurrence(&conn, id).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn delete_depense_recurrente(id: i64, delete_generated: bool, state: State<DbState>) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM depenses_recurrentes WHERE id=?1", params![id]).map_err(|e| e.to_string())?;
+    if delete_generated {
+        conn.execute("DELETE FROM depenses WHERE recurrence_id=?1", params![id]).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn process_depenses_recurrentes(state: State<DbState>) -> Result<usize, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let ids: Vec<i64> = conn.prepare("SELECT id FROM depenses_recurrentes")
+        .map_err(|e| e.to_string())?
+        .query_map([], |r| r.get(0))
+        .map_err(|e| e.to_string())?
+        .filter_map(|r| r.ok())
+        .collect();
+    let mut total = 0;
+    for id in ids {
+        total += process_one_recurrence(&conn, id).map_err(|e| e.to_string())?;
+    }
+    Ok(total)
 }
 
 // ═══ FETCH URL (proxy pour contourner CORS) ═══════════════════════════════════

@@ -10,6 +10,7 @@ fn main() {
             if let Some(p) = db_path.parent() { std::fs::create_dir_all(p)?; }
             let conn = Connection::open(&db_path).expect("DB open failed");
             init_db(&conn).expect("DB init failed");
+            commands::process_recurrences_sync(&conn);
             app.manage(DbState(Mutex::new(conn)));
             Ok(())
         })
@@ -25,9 +26,12 @@ fn main() {
             commands::get_parametre, commands::set_parametre, commands::choose_folder, commands::choose_export_folder, commands::export_all_csv,
             commands::fetch_url,
             commands::get_scpi_valuations, commands::add_scpi_valuation, commands::delete_scpi_valuation,
-            commands::import_depenses, commands::import_salaires, commands::import_livrets,
+            commands::import_depenses, commands::import_depenses_recurrentes, commands::import_salaires, commands::import_livrets,
             commands::import_poche, commands::import_scpi_valuations,
             commands::delete_poche_data,
+            commands::get_depenses_recurrentes, commands::add_depense_recurrente,
+            commands::update_depense_recurrente, commands::delete_depense_recurrente,
+            commands::process_depenses_recurrentes,
         ])
         .run(tauri::generate_context!())
         .expect("Tauri error");

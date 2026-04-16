@@ -14,6 +14,19 @@ import { NestedPie } from "./patrimoine/shared";
 interface Depense {
   id?: number; date: string; categorie: string;
   sous_categorie: string; libelle: string; montant: number; notes?: string;
+  recurrence_id?: number;
+}
+
+interface DepenseRecurrente {
+  id?: number;
+  categorie: string;
+  sous_categorie: string;
+  libelle: string;
+  montant: number;
+  periodicite: "mensuel" | "annuel" | "hebdomadaire";
+  date_debut: string;
+  date_fin?: string;
+  notes?: string;
 }
 
 const CATEGORIES: Record<string, string[]> = Object.fromEntries(
@@ -126,6 +139,134 @@ function Modal({ initial, libelles, onClose, onSave, title }: {
   );
 }
 
+const PERIODICITE_LABELS: Record<string, string> = {
+  mensuel: "Mensuel",
+  annuel: "Annuel",
+  hebdomadaire: "Hebdomadaire",
+};
+
+const G2 = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px 16px", marginTop: 16 };
+
+function RecurrenteModal({ initial, title, onClose, onSave }: {
+  initial: DepenseRecurrente; title: string;
+  onClose: () => void; onSave: (r: DepenseRecurrente) => Promise<void>;
+}) {
+  const [form, setForm] = useState<DepenseRecurrente>({ ...initial });
+  const s = (k: keyof DepenseRecurrente, v: string | number) => setForm(f => ({ ...f, [k]: v }));
+  const sousCategs = CATEGORIES[form.categorie] ?? ["Autre"];
+
+  return (
+    <div className="overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <div className="modal-title">{title}</div>
+        <div style={G2}>
+          <div className="field" style={{ margin: 0 }}>
+            <label>Catégorie</label>
+            <select value={form.categorie} onChange={e => {
+              const cat = e.target.value;
+              setForm(f => ({ ...f, categorie: cat, sous_categorie: CATEGORIES[cat]?.[0] ?? "Autre" }));
+            }}>
+              {CAT_KEYS.map(c => <option key={c}>{c}</option>)}
+            </select>
+          </div>
+          <div className="field" style={{ margin: 0 }}>
+            <label>Sous-catégorie</label>
+            <select value={form.sous_categorie} onChange={e => s("sous_categorie", e.target.value)}>
+              {sousCategs.map(sc => <option key={sc}>{sc}</option>)}
+            </select>
+          </div>
+          <div className="field" style={{ margin: 0 }}>
+            <label>Libellé</label>
+            <input list="rec-lib-list" value={form.libelle}
+              onChange={e => s("libelle", e.target.value)} placeholder="ex: Netflix, Loyer…" />
+            <datalist id="rec-lib-list"/>
+          </div>
+          <div className="field" style={{ margin: 0 }}>
+            <label>Montant (€)</label>
+            <input type="number" step="0.01" value={form.montant}
+              onChange={e => s("montant", parseFloat(e.target.value) || 0)} />
+          </div>
+          <div className="field" style={{ margin: 0 }}>
+            <label>Périodicité</label>
+            <select value={form.periodicite} onChange={e => s("periodicite", e.target.value as DepenseRecurrente["periodicite"])}>
+              <option value="mensuel">Mensuel</option>
+              <option value="annuel">Annuel</option>
+              <option value="hebdomadaire">Hebdomadaire</option>
+            </select>
+          </div>
+          <div className="field" style={{ margin: 0 }}>
+            <label>Date de début</label>
+            <input type="date" value={form.date_debut} onChange={e => s("date_debut", e.target.value)} />
+          </div>
+          <div className="field" style={{ margin: 0 }}>
+            <label>Date de fin (optionnelle)</label>
+            <input type="date" value={form.date_fin ?? ""} onChange={e => setForm(f => ({ ...f, date_fin: e.target.value || undefined }))} />
+          </div>
+          <div className="field" style={{ margin: 0 }} />
+          <div className="field" style={{ margin: 0, gridColumn: "1/-1" }}>
+            <label>Notes</label>
+            <textarea rows={2} value={form.notes ?? ""} onChange={e => setForm(f => ({ ...f, notes: e.target.value || undefined }))} />
+          </div>
+        </div>
+        <div className="form-actions">
+          <button className="btn btn-ghost" onClick={onClose}>Annuler</button>
+          <button className="btn btn-primary" onClick={() => onSave(form).then(onClose)}>Enregistrer</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RecurrenteSection({ recurrentes, fmt, onEdit, onDelete }: {
+  recurrentes: DepenseRecurrente[]; fmt: (n: number) => string;
+  onEdit: (r: DepenseRecurrente) => void;
+  onDelete: (r: DepenseRecurrente) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="table-card" style={{ marginBottom: 8 }}>
+      <div className="table-head" onClick={() => setOpen(v => !v)} style={{ cursor: "pointer", userSelect: "none" }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 10, transform: open ? "rotate(90deg)" : "none", display: "inline-block", transition: "transform .15s", color: "var(--text-2)" }}>▶</span>
+          <span className="table-head-title" style={{ color: "var(--gold)" }}>Dépenses récurrentes</span>
+        </span>
+        <span style={{ color: "var(--text-1)", fontSize: 12 }}>{recurrentes.length} modèle{recurrentes.length > 1 ? "s" : ""}</span>
+      </div>
+      {open && (
+        <table>
+          <thead>
+            <tr>
+              <th>Libellé</th>
+              <th>Catégorie</th>
+              <th>Montant</th>
+              <th>Périodicité</th>
+              <th>Début</th>
+              <th>Fin</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {recurrentes.map(r => (
+              <tr key={r.id}>
+                <td>{r.libelle}</td>
+                <td style={{ color: "var(--text-1)" }}>{r.categorie} / {r.sous_categorie}</td>
+                <td style={{ color: "var(--rose)" }}>{fmt(r.montant)}</td>
+                <td>{PERIODICITE_LABELS[r.periodicite] ?? r.periodicite}</td>
+                <td style={{ color: "var(--text-1)" }}>{r.date_debut}</td>
+                <td style={{ color: "var(--text-1)" }}>{r.date_fin ?? "∞"}</td>
+                <td style={{ display: "flex", gap: 4 }}>
+                  <button className="btn btn-ghost btn-sm" onClick={e => { e.stopPropagation(); onEdit(r); }}>✎</button>
+                  <button className="btn btn-danger btn-sm" onClick={e => { e.stopPropagation(); onDelete(r); }}>✕</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
 export default function Depenses() {
   const { fmt, fmtAxis, setMois: setCtxMois } = useDevise();
   const [depenses, setDepenses]         = useState<Depense[]>([]);
@@ -138,6 +279,10 @@ export default function Depenses() {
   const [firstMonth, setFirstMonth]     = useState<string | undefined>(undefined);
   const [brushIdxD, setBrushIdxD]       = useState<{start:number;end:number}|null>(null);
   const [importPending, setImportPending] = useState<ImportPending | null>(null);
+  const [recurrentes, setRecurrentes]   = useState<DepenseRecurrente[]>([]);
+  const [recModal, setRecModal]         = useState(false);
+  const [editingRec, setEditingRec]     = useState<DepenseRecurrente | null>(null);
+  const [confirmDeleteRec, setConfirmDeleteRec] = useState<{id:number;label:string} | null>(null);
 
   const load = useCallback(async (m: string) => {
     setLoading(true);
@@ -157,6 +302,20 @@ export default function Depenses() {
   }, []);
   useEffect(() => { loadAll(); }, [loadAll]);
 
+  const loadRecurrentes = useCallback(async () => {
+    try { setRecurrentes(await invoke<DepenseRecurrente[]>("get_depenses_recurrentes")); }
+    catch {}
+  }, []);
+  useEffect(() => { loadRecurrentes(); }, [loadRecurrentes]);
+
+  // Au montage : relancer la génération des récurrentes pour combler d'éventuels trous
+  useEffect(() => {
+    invoke("process_depenses_recurrentes")
+      .then(() => { load(mois); loadAll(); })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const libelles = useMemo<Record<string, string[]>>(() => {
     const map: Record<string, Set<string>> = {};
     depenses.forEach(d => {
@@ -168,6 +327,16 @@ export default function Depenses() {
   }, [depenses]);
 
   const total = depenses.reduce((s, d) => s + d.montant, 0);
+
+  // Modèles récurrents dont la période couvre le mois sélectionné
+  const recurrentesDuMois = useMemo(() => {
+    const debut = `${mois}-01`;   // premier jour du mois
+    const fin   = `${mois}-31`;   // borne haute : toujours >= dernier jour réel
+    return recurrentes.filter(r =>
+      r.date_debut <= fin &&
+      (!r.date_fin || r.date_fin >= debut)
+    );
+  }, [recurrentes, mois]);
 
   // Double-ring pie data — ordered by category key order
   const catMap = useMemo(() => {
@@ -468,6 +637,7 @@ export default function Depenses() {
         {loading && <span className="spinner"/>}
         <ExportBtn label="depenses.csv" onExport={exportDepenses}/>
         <ImportBtn label="Dépenses" onParsed={(rows, rowCount) => setImportPending({ label: "Dépenses", rowCount, onConfirm: async (replace) => { await importDepenses(rows, replace); load(mois); loadAll(); }})}/>
+        <button className="btn btn-ghost btn-sm" onClick={() => { setEditingRec(null); setRecModal(true); }}>+ Récurrente</button>
         <button className="btn btn-primary btn-sm" onClick={() => setModal(true)}>+ Dépense</button>
       </div>
 
@@ -493,6 +663,14 @@ export default function Depenses() {
           onResetZoom: () => setBrushIdxD(null), brushActive: !!brushIdxD },
       ]}/>
 
+      {/* Recurring templates section — only those with an occurrence this month */}
+      {recurrentesDuMois.length > 0 && (
+        <RecurrenteSection recurrentes={recurrentesDuMois} fmt={fmt}
+          onEdit={r => { setEditingRec(r); setRecModal(true); }}
+          onDelete={r => setConfirmDeleteRec({ id: r.id!, label: r.libelle })}
+        />
+      )}
+
       {/* Detail by category — accordion */}
       {orderedCats.map(cat => {
         const subs = grouped[cat];
@@ -517,6 +695,60 @@ export default function Depenses() {
         <Modal initial={editing} libelles={libelles} title="Modifier la dépense"
           onClose={() => setEditing(null)}
           onSave={async form => { await invoke("update_depense",{depense:form}); load(mois); loadAll(); }}/>
+      )}
+
+      {recModal && (
+        <RecurrenteModal
+          initial={editingRec ?? {
+            categorie: CAT_KEYS[0],
+            sous_categorie: CATEGORIES[CAT_KEYS[0]]?.[0] ?? "Autre",
+            libelle: "", montant: 0,
+            periodicite: "mensuel",
+            date_debut: new Date().toISOString().slice(0, 10),
+          }}
+          title={editingRec ? "Modifier la dépense récurrente" : "Ajouter une dépense récurrente"}
+          onClose={() => { setRecModal(false); setEditingRec(null); }}
+          onSave={async (form) => {
+            if (editingRec?.id) {
+              await invoke("update_depense_recurrente", { rec: { ...form, id: editingRec.id } });
+            } else {
+              await invoke("add_depense_recurrente", { rec: form });
+            }
+            // Generate the recurring entries now so they appear immediately in accordions/charts
+            await invoke("process_depenses_recurrentes");
+            setRecModal(false);
+            setEditingRec(null);
+            await load(mois);
+            await loadAll();
+            loadRecurrentes();
+          }}
+        />
+      )}
+
+      {confirmDeleteRec && (
+        <div className="overlay" onClick={() => setConfirmDeleteRec(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-title">Supprimer « {confirmDeleteRec.label} » ?</div>
+            <p style={{ color: "var(--text-1)", fontSize: 13, margin: "12px 0 20px" }}>
+              Supprimer aussi les occurrences générées automatiquement ?
+            </p>
+            <div className="form-actions">
+              <button className="btn btn-ghost" onClick={() => setConfirmDeleteRec(null)}>Annuler</button>
+              <button className="btn btn-ghost" onClick={async () => {
+                await invoke("delete_depense_recurrente", { id: confirmDeleteRec.id, deleteGenerated: false });
+                setConfirmDeleteRec(null);
+                loadRecurrentes();
+                load(mois); loadAll();
+              }}>Garder les occurrences</button>
+              <button className="btn btn-danger" onClick={async () => {
+                await invoke("delete_depense_recurrente", { id: confirmDeleteRec.id, deleteGenerated: true });
+                setConfirmDeleteRec(null);
+                loadRecurrentes();
+                load(mois); loadAll();
+              }}>Tout supprimer</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -554,12 +786,27 @@ function CatAccordion({ cat, subs, catTotal, fmt, onEdit, onDelete }: {
                       }}>{sub}</span>
                     </td>
                   )}
-                  <td>{d.libelle}</td>
+                  <td>
+                    <span style={{ display:"inline-flex", alignItems:"center", gap:6 }}>
+                      {d.recurrence_id != null && (
+                        <span title="Dépense récurrente" style={{ fontSize:10, color:"var(--gold)", opacity:.8, lineHeight:1 }}>↻</span>
+                      )}
+                      {d.libelle}
+                    </span>
+                  </td>
                   <td style={{ color:"var(--text-1)" }}>{d.date}</td>
                   <td style={{ color:"var(--rose)" }}>{fmt(d.montant)}</td>
                   <td style={{ display:"flex", gap:4 }}>
-                    <button className="btn btn-ghost btn-sm" onClick={() => onEdit(d)}>✎</button>
-                    <button className="btn btn-danger btn-sm" onClick={() => onDelete(d)}>✕</button>
+                    <button className="btn btn-ghost btn-sm"
+                      disabled={d.recurrence_id != null}
+                      title={d.recurrence_id != null ? "Modifier le modèle récurrent pour changer cette dépense" : undefined}
+                      style={d.recurrence_id != null ? { opacity:.3, cursor:"not-allowed" } : undefined}
+                      onClick={() => d.recurrence_id == null && onEdit(d)}>✎</button>
+                    <button className="btn btn-danger btn-sm"
+                      disabled={d.recurrence_id != null}
+                      title={d.recurrence_id != null ? "Supprimez le modèle récurrent pour retirer cette dépense" : undefined}
+                      style={d.recurrence_id != null ? { opacity:.3, cursor:"not-allowed" } : undefined}
+                      onClick={() => d.recurrence_id == null && onDelete(d)}>✕</button>
                   </td>
                 </tr>
               ))
