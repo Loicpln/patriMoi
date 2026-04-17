@@ -9,7 +9,7 @@ import {
 import { useDevise, curMonth } from "../context/DeviseContext";
 import { DEPENSE_CATEGORIES, TOOLTIP_STYLE, depenseSubColor, defaultDateForMonth } from "../constants";
 import MonthSelector from "../components/MonthSelector";
-import { NestedPie } from "./patrimoine/shared";
+import { NestedPie, bellEffect } from "./patrimoine/shared";
 
 interface Depense {
   id?: number; date: string; categorie: string;
@@ -36,17 +36,6 @@ const CAT_COLOR: Record<string, string> = Object.fromEntries(
   Object.entries(DEPENSE_CATEGORIES).map(([k,v]) => [k, v.color])
 );
 const CAT_KEYS = Object.keys(DEPENSE_CATEGORIES);
-
-// Returns a dot renderer that shows a point only for months pre-computed as isolated.
-// Using payload.mois avoids any index/offset arithmetic.
-function isolatedDotByMois(isolated: Set<string>, color: string) {
-  return (props: any) => {
-    const { cx, cy, payload } = props;
-    if (cx == null || cy == null || !payload?.mois) return <g/>;
-    if (!isolated.has(payload.mois)) return <g/>;
-    return <circle cx={cx} cy={cy} r={2.5} fill={color} stroke="var(--bg-0)" strokeWidth={1.5}/>;
-  };
-}
 
 // ── Chart grid (same as Patrimoine) ──────────────────────────────────────────
 function ChartGrid({charts}:{charts:{key:string;title:string;node:(h:number,isExp:boolean)=>React.ReactNode;onResetZoom?:()=>void;brushActive?:boolean}[]}) {
@@ -398,7 +387,7 @@ export default function Depenses() {
       full.push(`${y}-${String(m).padStart(2,"0")}`);
       m++; if (m > 12) { m = 1; y++; }
     }
-    return full.map(mo => {
+    const raw = full.map(mo => {
       const row: any = { mois: mo };
       const moDepenses = allDepenses.filter(d => d.date.slice(0, 7) === mo);
       CAT_KEYS.forEach(cat => {
@@ -407,24 +396,11 @@ export default function Depenses() {
       });
       return row;
     });
+    return bellEffect(raw, CAT_KEYS);
   }, [allDepenses]);
 
   const MN_SHORT_D = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
 
-  // Pre-compute which months are isolated per category (no data in adjacent months)
-  const isolatedMois = useMemo(() => {
-    const result: Record<string, Set<string>> = {};
-    CAT_KEYS.forEach(cat => {
-      result[cat] = new Set<string>();
-      monthlyStackData.forEach((row, i) => {
-        const cur  = monthlyStackData[i]?.[cat] ?? null;
-        const prev = monthlyStackData[i - 1]?.[cat] ?? null;
-        const next = monthlyStackData[i + 1]?.[cat] ?? null;
-        if (cur != null && prev == null && next == null) result[cat].add(row.mois);
-      });
-    });
-    return result;
-  }, [monthlyStackData]);
 
   const visibleMonthlyData = useMemo(() =>
     brushIdxD ? monthlyStackData.slice(brushIdxD.start, brushIdxD.end + 1) : monthlyStackData,
@@ -485,7 +461,7 @@ export default function Depenses() {
                 stroke={CAT_COLOR[cat]} strokeWidth={1.5}
                 fill={`url(#dmg_${cat.replace(/\W/g,"_")})`}
                 connectNulls={false}
-                dot={isolatedDotByMois(isolatedMois[cat] ?? new Set(), CAT_COLOR[cat])}
+                dot={false}
                 activeDot={{ r: 4 }}/>
             ))}
             {/* Selected-month highlight zone */}

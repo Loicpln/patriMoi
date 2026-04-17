@@ -28,6 +28,27 @@ export const TTP = {
   labelStyle:   { color: "var(--text-1)" },
 };
 
+/**
+ * Pour chaque point isolé (valeur non-null avec voisins null) d'une série donnée,
+ * pose un 0 à gauche et à droite → effet de cloche au lieu d'un simple point.
+ * Les autres valeurs (null ou non-isolées) ne sont pas modifiées.
+ */
+export function bellEffect(data: any[], keys: string[]): any[] {
+  const result = data.map(r => ({ ...r }));
+  for (const key of keys) {
+    for (let i = 0; i < result.length; i++) {
+      const cur  = result[i][key]   ?? null;
+      const prev = result[i - 1]?.[key] ?? null;
+      const next = result[i + 1]?.[key] ?? null;
+      if (cur !== null && prev === null && next === null) {
+        if (i > 0)                    result[i - 1][key] = 0;
+        if (i < result.length - 1)   result[i + 1][key] = 0;
+      }
+    }
+  }
+  return result;
+}
+
 // ── Chart grid: expand hides others, expands active ───────────────────────────
 export function ChartGrid({charts}:{charts:{key:string;title:string;node:(h:number,isExp:boolean)=>ReactNode;onResetZoom?:()=>void;brushActive?:boolean}[]}) {
   const [exp,setExp]=useState<string|null>(null);
