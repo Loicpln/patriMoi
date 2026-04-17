@@ -618,8 +618,8 @@ function GlobalRecap({livrets,positions,ventes,dividendes,versements,mois,scpiVa
     {name:"Investissements",value:investVal,color:GLOBAL_GROUP_COLORS.investissements},
   ].filter(p=>p.value>0);
   const outer=[
-    ...LIVRETS_DEF.map(l=>({name:l.label,group:"Livrets",value:latestLiv[l.key]?.montant??0,color:l.color+"cc"})),
-    ...poches.map(p=>({name:p.label,group:"Investissements",value:pieToggle==="versements"?(versParPoche[p.key]??0):(portfolioParPoche[p.key]??0),color:p.color+"cc"})),
+    ...LIVRETS_DEF.map(l=>({name:l.label,group:"Livrets",value:latestLiv[l.key]?.montant??0,color:l.color})),
+    ...poches.map(p=>({name:p.label,group:"Investissements",value:pieToggle==="versements"?(versParPoche[p.key]??0):(portfolioParPoche[p.key]??0),color:p.color})),
   ].filter(p=>p.value>0);
   const grandTotal=totalLivrets+investVal;
 

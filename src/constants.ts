@@ -6,10 +6,10 @@
 
 // ── Livrets ────────────────────────────────────────────────────
 export const LIVRETS_DEF = [
-  { key: "livret_a",     label: "Livret A",     taux: 1.50, color: "#e6a817" },
-  { key: "ldds",         label: "LDDS",         taux: 1.50, color: "#d4793a" },
-  { key: "lep",          label: "LEP",          taux: 2.50, color: "#c95f2e" },
-  { key: "livret_jeune", label: "Livret Jeune", taux: 2.40, color: "#b8860b" },
+  { key: "livret_a",     label: "Livret A",     taux: 1.50, color: "#F0BD40" },
+  { key: "ldds",         label: "LDDS",         taux: 1.50, color: "#F09937" },
+  { key: "lep",          label: "LEP",          taux: 2.50, color: "#EC602A" },
+  { key: "livret_jeune", label: "Livret Jeune", taux: 2.40, color: "#DB3B26" },
 ] as const;
 
 export type LivretKey = typeof LIVRETS_DEF[number]["key"];
@@ -22,22 +22,22 @@ export const LIVRET_COLOR: Record<string, string> = Object.fromEntries(
 // ── Vue globale — couleurs des groupes agrégés ─────────────────
 // Utilisées dans GlobalRecap (camembert + graphique)
 export const GLOBAL_GROUP_COLORS = {
-  livrets:         "#e6a817", // Ensemble livrets (ton or)
-  investissements: "#3a7bd5", // Ensemble investissements (ton bleu)
+  livrets:         "#DB2338", // Ensemble livrets (ton or)
+  investissements: "#1C1E7C", // Ensemble investissements (ton bleu)
 } as const;
 
 // ── Sous-catégories d'investissement ──────────────────────────
 export const INVEST_SUBCATS = [
-  { key: "actions",        label: "Actions",          color: "#3a7bd5" },
-  { key: "etf",            label: "ETF",              color: "#5fa89e" },
-  { key: "etc",            label: "ETC",              color: "#7c6fd4" },
-  { key: "private_equity", label: "Private Equity",   color: "#2196a8" },
-  { key: "fond",           label: "Fond",             color: "#1e7a8a" },
-  { key: "scp",            label: "SCPI",             color: "#4a90d9" },
-  { key: "digital_cash",   label: "Digital Cash",     color: "#6c8ebf" },
-  { key: "smart_contract", label: "Smart Contract",   color: "#8b6fd4" },
-  { key: "stable_coin",    label: "Stable Coin",      color: "#4db6c1" },
-  { key: "meme_coin",      label: "Meme Coin",        color: "#a06fd4" },
+  { key: "actions",        label: "Actions",          color: "#EE220C" },
+  { key: "etf",            label: "ETF",              color: "#479FF8" },
+  { key: "etc",            label: "ETC",              color: "#46BF3D" },
+  { key: "private_equity", label: "Private Equity",   color: "#82221F" },
+  { key: "fond",           label: "Fond",             color: "#3E40DF" },
+  { key: "scp",            label: "SCPI",             color: "#A25300" },
+  { key: "digital_cash",   label: "Digital Cash",     color: "#FFF066" },
+  { key: "smart_contract", label: "Smart Contract",   color: "#B5FCFF" },
+  { key: "stable_coin",    label: "Stable Coin",      color: "#A1443E" },
+  { key: "meme_coin",      label: "Meme Coin",        color: "#778D27" },
   { key: "especes",        label: "Espèces",          color: "#78909c" },
 ] as const;
 
