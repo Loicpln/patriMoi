@@ -88,7 +88,8 @@ export function LivretsSection({livrets,mois,onRefresh}:{livrets:Livret[];mois:s
     // For each poche, maintain a cursor that advances with dateStr
     const cursors:Record<string,number>={};
     const curVal:Record<string,number>={};
-    LIVRETS_DEF.forEach(l=>{cursors[l.key]=0;curVal[l.key]=0;});
+    const livActive:Record<string,boolean>={};
+    LIVRETS_DEF.forEach(l=>{cursors[l.key]=0;curVal[l.key]=0;livActive[l.key]=false;});
 
     return dayDates.map(dateStr=>{
       LIVRETS_DEF.forEach(livDef=>{
@@ -96,11 +97,13 @@ export function LivretsSection({livrets,mois,onRefresh}:{livrets:Livret[];mois:s
         // Advance cursor to latest entry ≤ dateStr
         while(cursors[livDef.key]<arr.length&&(arr[cursors[livDef.key]].date??"")<= dateStr){
           curVal[livDef.key]=arr[cursors[livDef.key]].montant;
+          livActive[livDef.key]=true;
           cursors[livDef.key]++;
         }
       });
       const entry:any={date:dateStr,month:dateStr.slice(0,7)};
-      LIVRETS_DEF.forEach(l=>{entry[l.label]=curVal[l.key];});
+      // null before first entry so each livret area only starts when it has data
+      LIVRETS_DEF.forEach(l=>{entry[l.label]=livActive[l.key]?curVal[l.key]:null;});
       return entry;
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps

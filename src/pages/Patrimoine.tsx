@@ -19,7 +19,7 @@ import {
   GLOBAL_GROUP_COLORS, TOOLTIP_STYLE,
 } from "../constants";
 import MonthSelector from "../components/MonthSelector";
-import { Boundary, ChartGrid, NestedPie } from "./patrimoine/shared";
+import { Boundary, ChartGrid, NestedPie, bellEffect } from "./patrimoine/shared";
 import { LivretsSection } from "./patrimoine/LivretsSection";
 import { PocheSection } from "./patrimoine/PocheSection";
 import { exportPoche, exportScpiValuations, importPoche, importScpi, parseCsvContent,
@@ -270,12 +270,16 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
 
     const byPoche:Record<string,Record<string,{q:number;inv:number;subcat:string}>>={};
     poches.forEach(p=>{byPoche[p.key]={};});
+    // Track when each poche first has any activity (buy/sell or versement)
+    const pocheActive:Record<string,boolean>={};
+    poches.forEach(p=>{pocheActive[p.key]=false;});
 
     let evIdx=0,viC=0,piC=0,diC=0,cumVers=0,cumPnl=0,cumDivs=0;
-    return dayDates.map(dateStr=>{
+    const raw=dayDates.map(dateStr=>{
       while(evIdx<allEv.length&&allEv[evIdx].date<=dateStr){
         const ev=allEv[evIdx++];
         const map=byPoche[ev.poche];if(!map)continue;
+        pocheActive[ev.poche]=true;
         if(ev.type==="buy"){
           if(!map[ev.ticker])map[ev.ticker]={q:0,inv:0,subcat:ev.subcat};
           map[ev.ticker].q+=ev.qty;map[ev.ticker].inv+=ev.qty*ev.price;
@@ -293,7 +297,9 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
       while(diC<sortedDivs.length&&(sortedDivs[diC].date??"")<= dateStr)cumDivs+=sortedDivs[diC++].montant;
       // Per-poche cumulative
       poches.forEach(p=>{
+        const prevV=pCumV[p.key];
         while(pVC[p.key]<versPerP[p.key].length&&(versPerP[p.key][pVC[p.key]].date??"")<= dateStr)pCumV[p.key]+=versPerP[p.key][pVC[p.key]++].montant;
+        if(pCumV[p.key]!==prevV)pocheActive[p.key]=true;
         while(pPC[p.key]<ventPerP[p.key].length&&(ventPerP[p.key][pPC[p.key]].date_vente??"")<= dateStr)pCumP[p.key]+=ventPerP[p.key][pPC[p.key]++].pnl;
         while(pDC[p.key]<divsPerP[p.key].length&&(divsPerP[p.key][pDC[p.key]].date??"")<= dateStr)pCumD[p.key]+=divsPerP[p.key][pDC[p.key]++].montant;
       });
@@ -310,7 +316,8 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
           return s+d.q*unitPrice;
         },0);
         const esp=Math.max(0,pCumV[p.key]+pCumP[p.key]+pCumD[p.key]-pocheInvest);
-        row[p.label]=investVal+esp;
+        // null before first activity so chart line only starts when poche opens
+        row[p.label]=pocheActive[p.key]?investVal+esp:null;
         totalInvestMarket+=investVal;
         totalInvested+=pocheInvest;
       });
@@ -322,6 +329,8 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
       row._lossArea=Math.max(0,cumVers-totalPocheVal);
       return row;
     });
+    // Bell effect: add 0 on each side of null↔value transitions for smooth cloche
+    return bellEffect(raw, poches.map(p=>p.label));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[positions,ventes,dividendes,versements,getPriceForDate,scpiPriceMap]);
 
@@ -659,21 +668,24 @@ function GlobalRecap({livrets,positions,ventes,dividendes,versements,mois,scpiVa
     const livByKey:Record<string,{date:string;montant:number}[]>={};
     const livIdx:Record<string,number>={};
     const livVal:Record<string,number>={};
+    const livActive:Record<string,boolean>={};
     LIVRETS_DEF.forEach(l=>{
       livByKey[l.key]=livrets.filter(lv=>!isInteret(lv)&&lv.poche===l.key).sort((a,b)=>(a.date??"").localeCompare(b.date??""));
-      livIdx[l.key]=0;livVal[l.key]=0;
+      livIdx[l.key]=0;livVal[l.key]=0;livActive[l.key]=false;
     });
 
-    // Per-poche position tracker
+    // Per-poche position tracker + activity flag
     const byPocheG:Record<string,Record<string,{q:number;inv:number;subcat:string}>>={};
-    poches.forEach(p=>{byPocheG[p.key]={};});
+    const pocheActiveG:Record<string,boolean>={};
+    poches.forEach(p=>{byPocheG[p.key]={};pocheActiveG[p.key]=false;});
 
     let evIdx=0;
-    return dayDates.map(dateStr=>{
+    const rawEvo=dayDates.map(dateStr=>{
       // Advance portfolio events
       while(evIdx<allEvs.length&&allEvs[evIdx].date<=dateStr){
         const ev=allEvs[evIdx++];
         const map=byPocheG[ev.poche];if(!map)continue;
+        pocheActiveG[ev.poche]=true;
         if(ev.type==="buy"){
           if(!map[ev.ticker])map[ev.ticker]={q:0,inv:0,subcat:ev.subcat};
           map[ev.ticker].q+=ev.qty;map[ev.ticker].inv+=ev.qty*ev.price;
@@ -687,21 +699,24 @@ function GlobalRecap({livrets,positions,ventes,dividendes,versements,mois,scpiVa
       }
       // Advance per-poche espèces counters
       poches.forEach(p=>{
+        const prevV=pCV[p.key];
         while(pVI[p.key]<versPerP[p.key].length&&(versPerP[p.key][pVI[p.key]].date??"")<= dateStr)pCV[p.key]+=versPerP[p.key][pVI[p.key]++].montant;
+        if(pCV[p.key]!==prevV)pocheActiveG[p.key]=true;
         while(pPI[p.key]<ventPerP[p.key].length&&(ventPerP[p.key][pPI[p.key]].date_vente??"")<= dateStr)pCP[p.key]+=ventPerP[p.key][pPI[p.key]++].pnl;
         while(pDI[p.key]<divsPerP[p.key].length&&(divsPerP[p.key][pDI[p.key]].date??"")<= dateStr)pCD[p.key]+=divsPerP[p.key][pDI[p.key]++].montant;
       });
       // Advance livret step-function per key
       LIVRETS_DEF.forEach(l=>{
-        while(livIdx[l.key]<livByKey[l.key].length&&(livByKey[l.key][livIdx[l.key]].date??"")<= dateStr)
+        while(livIdx[l.key]<livByKey[l.key].length&&(livByKey[l.key][livIdx[l.key]].date??"")<= dateStr){
           livVal[l.key]=livByKey[l.key][livIdx[l.key]++].montant;
+          livActive[l.key]=true;
+        }
       });
 
       const row:any={date:dateStr,month:dateStr.slice(0,7)};
-      // Livrets (bottom of stack) — capital
-      LIVRETS_DEF.forEach(l=>{row[l.label]=livVal[l.key];});
-      // Poches (top of stack) — valorisation + espèces
-      // Use monthly price (same logic as the pie in "valorisation" mode)
+      // Livrets (bottom of stack) — null before first entry for clean start
+      LIVRETS_DEF.forEach(l=>{row[l.label]=livActive[l.key]?livVal[l.key]:null;});
+      // Poches (top of stack) — null before first activity
       const monthStr=dateStr.slice(0,7);
       poches.forEach(p=>{
         const map=byPocheG[p.key];
@@ -712,10 +727,13 @@ function GlobalRecap({livrets,positions,ventes,dividendes,versements,mois,scpiVa
         return s+d.q*getPriceForDateGlobal(t,dateStr,pru);
         },0);
         const esp=Math.max(0,pCV[p.key]+pCP[p.key]+pCD[p.key]-pocheInvest);
-        row[p.label]=marketVal+esp;
+        row[p.label]=pocheActiveG[p.key]?marketVal+esp:null;
       });
       return row;
     });
+    // Bell effect: add 0 adjacent to null↔value transitions for smooth cloche
+    const evoKeys=[...LIVRETS_DEF.map(l=>l.label),...poches.map(p=>p.label)];
+    return bellEffect(rawEvo, evoKeys);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[livrets,positions,ventes,dividendes,versements,getPriceForDateGlobal]);
 
