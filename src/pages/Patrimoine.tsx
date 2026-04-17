@@ -60,7 +60,7 @@ function scpiPrice(map: Record<string, Record<string, number>>, ticker: string, 
 }
 
 // ── Recap Investissement ───────────────────────────────────────────────────────
-function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiValuations,onAddPoche}:{positions:Position[];ventes:Vente[];dividendes:Dividende[];versements:Versement[];mois:string;scpiValuations:ScpiValuation[];onAddPoche?:()=>void}) {
+function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiValuations,onAddPoche,viewMode,onToggleView}:{positions:Position[];ventes:Vente[];dividendes:Dividende[];versements:Versement[];mois:string;scpiValuations:ScpiValuation[];onAddPoche?:()=>void;viewMode:"graphiques"|"poches";onToggleView:()=>void}) {
   const {fmt,fmtAxis}=useDevise();
   const {poches}=usePoches();
   const [exportAllState,setExportAllState]=useState<"idle"|"loading"|"done"|"error">("idle");
@@ -199,6 +199,41 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
     return{inner,outer,grandTotal};
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[positions,ventes,dividendes,versements,mois,pieToggle,getPrice]);
+
+  // ── Stat cards: versements / investi / valorisation pour le mois sélectionné ──
+  const statCards=useMemo(()=>{
+    let vers=0,investi=0,valeur=0;
+    poches.forEach(p=>{
+      type Ev={date:string;type:"buy"|"sell";ticker:string;qty:number;price:number};
+      const evs:Ev[]=[
+        ...positions.filter(pos=>pos.poche===p.key&&(pos.date_achat??"").slice(0,7)<=mois)
+          .map(pos=>({date:pos.date_achat??"",type:"buy" as const,ticker:pos.ticker,qty:pos.quantite,price:pos.prix_achat})),
+        ...ventes.filter(v=>v.poche===p.key&&(v.date_vente??"").slice(0,7)<=mois)
+          .map(v=>({date:v.date_vente??"",type:"sell" as const,ticker:v.ticker,qty:v.quantite,price:0})),
+      ].sort((a,b)=>a.date.localeCompare(b.date));
+      const byT:Record<string,{q:number;inv:number}>={};
+      evs.forEach(ev=>{
+        if(ev.type==="buy"){
+          if(!byT[ev.ticker])byT[ev.ticker]={q:0,inv:0};
+          byT[ev.ticker].q+=ev.qty;byT[ev.ticker].inv+=ev.qty*ev.price;
+        } else if(byT[ev.ticker]){
+          const pru=byT[ev.ticker].q>0?byT[ev.ticker].inv/byT[ev.ticker].q:0;
+          byT[ev.ticker].q=Math.max(0,byT[ev.ticker].q-ev.qty);
+          byT[ev.ticker].inv=Math.max(0,byT[ev.ticker].inv-ev.qty*pru);
+          if(byT[ev.ticker].q<=1e-9)delete byT[ev.ticker];
+        }
+      });
+      const cost=Object.values(byT).reduce((s,d)=>s+d.inv,0);
+      const mktVal=Object.entries(byT).reduce((s,[t,d])=>s+d.q*getPrice(t,mois,d.q>0?d.inv/d.q:0),0);
+      const pVers=versements.filter(v=>v.poche===p.key&&(v.date??"").slice(0,7)<=mois).reduce((s,v)=>s+v.montant,0);
+      const pnlReal=ventes.filter(v=>v.poche===p.key&&(v.date_vente??"").slice(0,7)<=mois).reduce((s,v)=>s+v.pnl,0);
+      const divs=dividendes.filter(d=>d.poche===p.key&&(d.date??"").slice(0,7)<=mois).reduce((s,d)=>s+d.montant,0);
+      const esp=Math.max(0,pVers+pnlReal+divs-cost);
+      vers+=pVers; investi+=cost; valeur+=mktVal+esp;
+    });
+    return{vers,investi,valeur};
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[positions,ventes,dividendes,versements,mois,getPrice,poches]);
 
   // ── Daily stacked data (all poches — each poche area includes its own espèces) ───
   const stackedData=useMemo(()=>{
@@ -428,12 +463,49 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
         {exportAllState==="loading"?"…":exportAllState==="done"?"✓ Exporté":exportAllState==="error"?"⚠ Erreur":"↓ Tout exporter"}
       </button>
       {onAddPoche&&<button className="btn btn-primary btn-sm" style={{marginLeft:6,whiteSpace:"nowrap"}} onClick={onAddPoche}>+ Poche</button>}
+      <button
+        className={`btn btn-sm ${viewMode==="poches"?"btn-primary":"btn-ghost"}`}
+        style={{marginLeft:6,whiteSpace:"nowrap",fontSize:10}}
+        title={viewMode==="graphiques"?"Afficher les poches":"Afficher les graphiques"}
+        onClick={onToggleView}>
+        {viewMode==="graphiques"?"Poches":"Graphiques"}
+      </button>
+    </div>
+    {viewMode==="graphiques"&&<>
+    {/* ── Stat cards ── */}
+    <div className="stat-row">
+      <div className="stat-card sc-neutral">
+        <div className="sc-label">Versements</div>
+        <div className="sc-value">{fmt(statCards.vers)}</div>
+      </div>
+      <div className="stat-card sc-neutral">
+        <div className="sc-label">Investi</div>
+        <div className="sc-value">{fmt(statCards.investi)}</div>
+      </div>
+      {(()=>{
+        const gain=statCards.valeur-statCards.vers;
+        const gainColor=gain>=0?"var(--teal)":"var(--rose)";
+        return(
+          <div className="stat-card" style={{borderTop:`3px solid ${gainColor}`}}>
+            <div className="sc-label">Valorisation · {mois}</div>
+            <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
+              <div className="sc-value">{fmt(statCards.valeur)}</div>
+              {statCards.vers>0&&(
+                <div style={{fontSize:13,fontWeight:700,color:gainColor}}>
+                  {gain>=0?"+":"-"}{fmt(Math.abs(gain))}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
     </div>
     <ChartGrid charts={[
       {key:"recap_pie",   title:`Poche / Sous-catégorie · ${mois}`, node:pieNode},
       {key:"recap_stack", title:"Valeur par poche / jour",           node:stackNode,
         onResetZoom:()=>setBrushIdxR(null), brushActive:!!brushIdxR},
     ]}/>
+    </>}
   </div>);
 }
 
@@ -804,6 +876,7 @@ function PatrimoineInner() {
   const [editingKey,   setEditingKey]     = useState<string|null>(null);
   const [confirmDeleteKey, setConfirmDeleteKey] = useState<string|null>(null);
   const [importPending, setImportPending] = useState<ImportPending|null>(null);
+  const [investViewMode,setInvestViewMode]=useState<"graphiques"|"poches">("graphiques");
 
   const openAddPoche = () => { setEditingPoche(emptyPoche); setEditingKey(null); setPocheFormOpen(true); };
   const openEditPoche = (p: Poche) => { setEditingPoche({...p}); setEditingKey(p.key); setPocheFormOpen(true); };
@@ -881,8 +954,9 @@ function PatrimoineInner() {
     {tab==="global"&&<GlobalRecap livrets={livrets} positions={positions} ventes={ventes} dividendes={dividendes} versements={versements} mois={mois} scpiValuations={scpiValuations}/>}
     {tab==="livrets"&&<LivretsSection livrets={livrets} mois={mois} onRefresh={load}/>}
     {tab==="investissements"&&<RecapInvestissement positions={positions} ventes={ventes} dividendes={dividendes}
-      versements={versements} mois={mois} scpiValuations={scpiValuations} onAddPoche={openAddPoche}/>}
-    {tab==="investissements"&&poches.map((p)=>(
+      versements={versements} mois={mois} scpiValuations={scpiValuations} onAddPoche={openAddPoche}
+      viewMode={investViewMode} onToggleView={()=>setInvestViewMode(v=>v==="graphiques"?"poches":"graphiques")}/>}
+    {tab==="investissements"&&investViewMode==="poches"&&poches.map((p)=>(
       <Boundary key={p.key} label={p.label}>
         <PocheSection poche={p} allPositions={positions} allVentes={ventes}
           allDividendes={dividendes} allVersements={versements} mois={mois} onRefresh={load}
