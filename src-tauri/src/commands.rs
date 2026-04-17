@@ -407,14 +407,29 @@ pub fn export_all_csv(subfolder: String, state: State<DbState>) -> Result<Vec<St
         std::fs::write(&path, content).map_err(|e| format!("{}: {}", name, e))
     }
 
-    // ── Dépenses ──────────────────────────────────────────────────────────
+    // ── Dépenses (manuelles + modèles récurrents) ─────────────────────────
     {
-        let mut stmt = conn.prepare("SELECT id,date,categorie,sous_categorie,libelle,montant,notes FROM depenses ORDER BY date DESC").map_err(|e| e.to_string())?;
-        let lines: Vec<String> = stmt.query_map([], |r| {
-            let id: Option<i64> = r.get(0)?; let montant: f64 = r.get(5)?;
-            Ok(vec![id.map_or("".into(),|v|v.to_string()),r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,String>(3)?,r.get::<_,String>(4)?,format!("{:.2}",montant),r.get::<_,Option<String>>(6)?.unwrap_or_default()])
-        }).map_err(|e|e.to_string())?.filter_map(|r|r.ok()).map(|f|row(&f)).collect();
-        write_csv(dir,"depenses.csv","id,date,categorie,sous_categorie,libelle,montant,notes",lines)?;
+        let header = "type,date,categorie,sous_categorie,libelle,montant,notes,periodicite,date_debut,date_fin";
+        let mut lines: Vec<String> = Vec::new();
+        // Dépenses manuelles uniquement (recurrence_id IS NULL)
+        let mut stmt = conn.prepare(
+            "SELECT date,categorie,sous_categorie,libelle,montant,notes FROM depenses WHERE recurrence_id IS NULL ORDER BY date DESC"
+        ).map_err(|e| e.to_string())?;
+        let rows = stmt.query_map([], |r| {
+            let montant: f64 = r.get(4)?;
+            Ok(vec!["depense".into(), r.get::<_,String>(0)?, r.get::<_,String>(1)?, r.get::<_,String>(2)?, r.get::<_,String>(3)?, format!("{:.2}", montant), r.get::<_,Option<String>>(5)?.unwrap_or_default(), String::new(), String::new(), String::new()])
+        }).map_err(|e| e.to_string())?;
+        for r in rows { lines.push(row(&r.map_err(|e| e.to_string())?)); }
+        // Modèles récurrents
+        let mut stmt = conn.prepare(
+            "SELECT categorie,sous_categorie,libelle,montant,notes,periodicite,date_debut,date_fin FROM depenses_recurrentes ORDER BY date_debut DESC"
+        ).map_err(|e| e.to_string())?;
+        let rows = stmt.query_map([], |r| {
+            let montant: f64 = r.get(3)?;
+            Ok(vec!["recurrente".into(), String::new(), r.get::<_,String>(0)?, r.get::<_,String>(1)?, r.get::<_,String>(2)?, format!("{:.2}", montant), r.get::<_,Option<String>>(4)?.unwrap_or_default(), r.get::<_,String>(5)?, r.get::<_,String>(6)?, r.get::<_,Option<String>>(7)?.unwrap_or_default()])
+        }).map_err(|e| e.to_string())?;
+        for r in rows { lines.push(row(&r.map_err(|e| e.to_string())?)); }
+        write_csv(dir, "depenses.csv", header, lines)?;
         written.push("depenses.csv".into());
     }
 
