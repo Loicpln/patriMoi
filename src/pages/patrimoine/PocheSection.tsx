@@ -893,7 +893,7 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
               <tbody>{filteredDivs.slice(pageDivs * PAGE_SIZE, (pageDivs + 1) * PAGE_SIZE).map(d => (
                 <tr key={d.id}>
                   <td><span className="badge b-neutral">{d.ticker}</span></td>
-                  <td style={{ color: "var(--gold)" }}>{fmt(d.montant)}</td>
+                  <td style={{ color: "var(--gold)" }}>{fmt(d.montant,8)}</td>
                   <td style={{ color: "var(--text-1)" }}>{d.date}</td>
                   <td><button className="btn btn-danger btn-sm" onClick={async () => { await invoke("delete_dividende", { id: d.id }); onRefresh(); }}>✕</button></td>
                 </tr>
