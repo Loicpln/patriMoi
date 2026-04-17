@@ -94,7 +94,7 @@ export function DeletePositionModal({ticker,rows,onClose,onSave}:{ticker:string;
           background:sel.has(r.id!)?"var(--rose-dim)":"var(--bg-2)",border:`1px solid ${sel.has(r.id!)?"var(--rose)":"var(--border)"}`}}>
           <input type="checkbox" checked={sel.has(r.id!)} onChange={()=>tog(r.id!)}/>
           <span style={{fontSize:12}}>
-            {r.date_achat??""} — {r.quantite.toFixed(8)} × {r.prix_achat.toFixed(6)} € = {fmt(r.quantite*r.prix_achat)}
+            {r.date_achat??""} — {r.quantite.toFixed(8)} × {r.prix_achat.toFixed(6)} € = {fmt(r.quantite*r.prix_achat,8)}
           </span>
         </label>
       ))}

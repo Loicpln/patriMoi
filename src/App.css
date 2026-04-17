@@ -343,7 +343,7 @@ tbody tr:hover td { background: var(--bg-2); }
 }
 .field input:focus, .field select:focus, .field textarea:focus { border-color: var(--gold); }
 .field select option { background: var(--bg-1); }
-.form-actions { display: flex; gap: 10px; justify-content: flex-end; }
+.form-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px; }
 
 /* â”€â”€ Empty â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .empty { padding: 48px; text-align: center; color: var(--text-2); font-size: 12px; }

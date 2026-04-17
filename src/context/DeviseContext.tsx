@@ -48,7 +48,7 @@ export const today = () => new Date().toISOString().slice(0, 10);
 interface DeviseCtx {
   devise: DeviseInfo;
   setDevise: (d: DeviseCode) => void;
-  fmt: (n: number) => string;
+  fmt: (n: number, mfd?: number) => string;
   fmtK: (n: number) => string;
   fmtAxis: (v: number) => string;
   mois: string;
@@ -99,13 +99,13 @@ export function DeviseProvider({ children }: { children: ReactNode }) {
 
   const devise: DeviseInfo = { ...DEVISES[deviseCode], taux };
 
-  const fmt = (eur: number) => {
+  const fmt = (eur: number, mfd: number = 2) => {
     const val = eur * taux;
     return new Intl.NumberFormat("fr-FR", {
       style: "currency",
       currency: deviseCode,
       minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
+      maximumFractionDigits: mfd,
     }).format(val);
   };
 
