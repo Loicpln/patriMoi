@@ -29,20 +29,24 @@ export const TTP = {
 };
 
 /**
- * Pour chaque point isolé (valeur non-null avec voisins null) d'une série donnée,
- * pose un 0 à gauche et à droite → effet de cloche au lieu d'un simple point.
- * Les autres valeurs (null ou non-isolées) ne sont pas modifiées.
+ * Lisse les transitions null↔valeur dans les données de graphique :
+ * - Point isolé : null, VAL, null  →  0, VAL, 0  (cloche)
+ * - Début de série : null, null, VAL  →  null, 0, VAL  (montée douce)
+ * - Fin de série : VAL, null, null  →  VAL, 0, null  (descente douce)
+ *
+ * Utilise les données originales pour les vérifications afin d'éviter
+ * tout effet cascade lors du parcours séquentiel.
  */
 export function bellEffect(data: any[], keys: string[]): any[] {
   const result = data.map(r => ({ ...r }));
   for (const key of keys) {
-    for (let i = 0; i < result.length; i++) {
-      const cur  = result[i][key]   ?? null;
-      const prev = result[i - 1]?.[key] ?? null;
-      const next = result[i + 1]?.[key] ?? null;
-      if (cur !== null && prev === null && next === null) {
-        if (i > 0)                    result[i - 1][key] = 0;
-        if (i < result.length - 1)   result[i + 1][key] = 0;
+    for (let i = 0; i < data.length; i++) {
+      const cur  = data[i][key]       ?? null;
+      const prev = data[i - 1]?.[key] ?? null;
+      const next = data[i + 1]?.[key] ?? null;
+      // Toute valeur null adjacente à une valeur réelle → 0
+      if (cur === null && (prev !== null || next !== null)) {
+        result[i][key] = 0;
       }
     }
   }

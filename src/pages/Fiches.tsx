@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
 import { ExportBtn, ImportBtn, ImportModal, ImportPending, exportSalaires, importSalaires } from "./patrimoine/InvestSettings";
+import { bellEffect } from "./patrimoine/shared";
 import { useDevise } from "../context/DeviseContext";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Customized, Brush } from "recharts";
 import { TOOLTIP_STYLE, tickerColor, PRIME_TYPE_COLORS, monthsBetween, curMonthStr } from "../constants";
@@ -18,14 +19,6 @@ function xPixel(scale: any, value: string): number | null {
   return range[0] + (idx / (domain.length - 1)) * (range[1] - range[0]);
 }
 
-function renderIsolatedDot(isolated: Set<string>, color: string) {
-  return (props: any) => {
-    const { cx, cy, payload } = props;
-    if (cx == null || cy == null || !payload?.mois) return <g/>;
-    if (!isolated.has(payload.mois)) return <g/>;
-    return <circle cx={cx} cy={cy} r={2.5} fill={color} stroke="var(--bg-0)" strokeWidth={1.5}/>;
-  };
-}
 
 interface Salaire {
   id?: number; date: string; salaire_brut: number; salaire_net: number;
@@ -323,33 +316,18 @@ export default function Fiches() {
       if (!primeByTypeM[t]) primeByTypeM[t] = {};
       primeByTypeM[t][m] = (primeByTypeM[t][m] ?? 0) + (p.primes ?? 0);
     });
-    return months.map(m => {
+    const raw = months.map(m => {
       const entry: any = { mois: m, net: netByM[m] ?? null };
       activePrimeTypes.forEach(type => { entry[type] = primeByTypeM[type]?.[m] ?? null; });
       return entry;
     });
+    return bellEffect(raw, ["net", ...activePrimeTypes]);
   }, [fichesNormales, primes, activePrimeTypes]);
 
   // Visible slice for compact view zoom preservation
   const visibleEvoData = useMemo(() =>
     brushFiches ? evoData.slice(brushFiches.start, brushFiches.end + 1) : evoData,
   [evoData, brushFiches]);
-
-  // Pre-compute isolated months per series
-  const isolatedFiches = useMemo(() => {
-    const keys = ["net", ...activePrimeTypes];
-    const result: Record<string, Set<string>> = {};
-    keys.forEach(key => {
-      result[key] = new Set<string>();
-      evoData.forEach((row: any, i: number) => {
-        const cur  = evoData[i]?.[key] ?? null;
-        const prev = evoData[i - 1]?.[key] ?? null;
-        const next = evoData[i + 1]?.[key] ?? null;
-        if (cur != null && prev == null && next == null) result[key].add(row.mois);
-      });
-    });
-    return result;
-  }, [evoData, activePrimeTypes]);
 
   // Map YYYY-MM → Salaire
   const byMonth: Record<string, Salaire[]> = {};
@@ -500,12 +478,12 @@ export default function Fiches() {
                   return (
                     <Area key={type} type="monotone" dataKey={type} stackId="s" name={type}
                       stroke={c} strokeWidth={1.5} fill={`url(#gFP_${type.replace(/[^a-zA-Z0-9]/g,"_")})`}
-                      dot={renderIsolatedDot(isolatedFiches[type] ?? new Set(), c)} connectNulls={false}/>
+                      dot={false} connectNulls={false}/>
                   );
                 })}
                 <Area type="monotone" dataKey="net" stackId="s" name="net"
                   stroke="#5fa89e" strokeWidth={2} fill="url(#gFNet)"
-                  dot={renderIsolatedDot(isolatedFiches["net"] ?? new Set(), "#5fa89e")} connectNulls={false}/>
+                  dot={false} connectNulls={false}/>
                 {yearRange && (
                   <Customized component={(p: any) => {
                     const Nv = chartData.length; if (Nv <= 0) return null;

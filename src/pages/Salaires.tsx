@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/tauri";
 import { useDevise } from "../context/DeviseContext";
 import { AreaChart, Area, ComposedChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Brush, Customized } from "recharts";
 import { TOOLTIP_STYLE, PRIME_TYPE_COLORS, tickerColor } from "../constants";
+import { bellEffect } from "./patrimoine/shared";
 
 interface Salaire {
   id?: number;
@@ -118,11 +119,12 @@ export default function Salaires() {
       if (!primeByTypeM[t]) primeByTypeM[t] = {};
       primeByTypeM[t][mo] = (primeByTypeM[t][mo]??0) + (p.primes??0);
     });
-    return allMonths.map(mo => {
+    const raw = allMonths.map(mo => {
       const entry: any = { mois: mo, net: netByM[mo] ?? null };
       activePrimeTypes.forEach(type => { entry[type] = primeByTypeM[type]?.[mo] ?? null; });
       return entry;
     });
+    return bellEffect(raw, ["net", ...activePrimeTypes]);
   }, [salaires, fichesNormales, primes, activePrimeTypes]);
 
   // Prime-only chart data (cumulative, for the "Primes & Aides" second chart)
@@ -139,7 +141,7 @@ export default function Salaires() {
     const months = Object.keys(byMonth).sort().slice(-12);
     const cumByType: Record<string, number> = {};
     activePrimeTypes.forEach(t => { cumByType[t] = 0; });
-    return months.map(m => {
+    const raw = months.map(m => {
       const entry: any = { mois: m };
       activePrimeTypes.forEach(type => {
         const monthly = byMonth[m]?.[type] ?? 0;
@@ -148,6 +150,7 @@ export default function Salaires() {
       });
       return entry;
     });
+    return bellEffect(raw, activePrimeTypes);
   }, [primes, activePrimeTypes]);
 
   const normalSalaires = fichesNormales;
@@ -156,46 +159,6 @@ export default function Salaires() {
     : 0;
   const totalPrimes = primes.reduce((s, x) => s + (x.primes ?? 0), 0);
 
-  function renderIsolatedDot(isolated: Set<string>, color: string) {
-    return (props: any) => {
-      const { cx, cy, payload } = props;
-      if (cx == null || cy == null || !payload?.mois) return <g/>;
-      if (!isolated.has(payload.mois)) return <g/>;
-      return <circle cx={cx} cy={cy} r={2.5} fill={color} stroke="var(--bg-0)" strokeWidth={1.5}/>;
-    };
-  }
-
-  const isolatedSal = useMemo(() => {
-    const result: Record<string, Set<string>> = {};
-    const keys = ["net", ...activePrimeTypes];
-    keys.forEach(key => {
-      const s = new Set<string>();
-      salChartData.forEach((row, i) => {
-        const cur  = salChartData[i]?.[key]  ?? null;
-        const prev = salChartData[i-1]?.[key] ?? null;
-        const next = salChartData[i+1]?.[key] ?? null;
-        if (cur != null && (prev == null) && (next == null)) s.add(row.mois as string);
-      });
-      result[key] = s;
-    });
-    return result;
-  }, [salChartData, activePrimeTypes]);
-
-  const isolatedPrime = useMemo(() => {
-    const result: Record<string, Set<string>> = {};
-    activePrimeTypes.forEach(key => {
-      const s = new Set<string>();
-      primeChartData.forEach((row, i) => {
-        const cur  = primeChartData[i]?.[key]  ?? null;
-        const prev = primeChartData[i-1]?.[key] ?? null;
-        const next = primeChartData[i+1]?.[key] ?? null;
-        if (cur != null && cur !== 0 && (prev == null || prev === 0) && (next == null || next === 0))
-          s.add(row.mois as string);
-      });
-      result[key] = s;
-    });
-    return result;
-  }, [primeChartData, activePrimeTypes]);
 
   const PrimeTooltip = ({ active, payload, label }: any) => {
     if (!active || !payload?.length) return null;
@@ -287,11 +250,11 @@ export default function Salaires() {
               return (
                 <Area key={type} type="monotone" dataKey={type} stackId="s" name={type}
                   stroke={c} strokeWidth={1.5} fill={`url(#gSP_${type.replace(/[^a-zA-Z0-9]/g,"_")})`}
-                  dot={renderIsolatedDot(isolatedSal[type] ?? new Set(), c)} connectNulls={false}/>
+                  dot={false} connectNulls={false}/>
               );
             })}
             <Area type="monotone" dataKey="net" stackId="s" stroke="#5fa89e" strokeWidth={2} fill="url(#gSalP)"
-              dot={renderIsolatedDot(isolatedSal["net"] ?? new Set(), "#5fa89e")} connectNulls={false}/>
+              dot={false} connectNulls={false}/>
             {isExp && <Brush dataKey="mois" height={22} travellerWidth={6}
               stroke="var(--border)" fill="var(--bg-2)"
               startIndex={brushSal?.start ?? 0}
@@ -322,7 +285,7 @@ export default function Salaires() {
           {activePrimeTypes.map(type => (
             <Line key={type} type="monotone" dataKey={type} name={type}
               stroke={tickerColor(type)} strokeWidth={1.5}
-              dot={renderIsolatedDot(isolatedPrime[type] ?? new Set(), tickerColor(type))} connectNulls={false}/>
+              dot={false} connectNulls={false}/>
           ))}
           {isExp && <Brush dataKey="mois" height={22} travellerWidth={6}
             stroke="var(--border)" fill="var(--bg-2)"

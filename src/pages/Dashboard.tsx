@@ -9,7 +9,7 @@ const curMonth = new Date().toISOString().slice(0, 7);
 import MonthSelector from "../components/MonthSelector";
 import { TOOLTIP_STYLE, TOOLTIP_LABEL_STYLE, TOOLTIP_ITEM_STYLE, monthsBetween, DEPENSE_CATEGORIES, DEPENSE_CAT_KEYS, depenseSubColor, tickerColor, PRIME_TYPE_COLORS } from "../constants";
 import { usePoches } from "../context/PochesContext";
-import { NestedPie } from "./patrimoine/shared";
+import { NestedPie, bellEffect } from "./patrimoine/shared";
 import { useQuotes } from "../hooks/useQuotes";
 
 interface Salaire { id?: number; date: string; salaire_brut: number; salaire_net: number; primes?: number; employeur: string; notes?: string; }
@@ -34,14 +34,6 @@ function scpiPriceD(map: Record<string, Record<string, number>>, ticker: string,
 
 type Page = "dashboard" | "depenses" | "fiches" | "patrimoine" | "parametres";
 
-function renderIsolatedDot(isolated: Set<string>, color: string) {
-  return (props: any) => {
-    const { cx, cy, payload } = props;
-    if (cx == null || cy == null || !payload?.mois) return <g/>;
-    if (!isolated.has(payload.mois)) return <g/>;
-    return <circle cx={cx} cy={cy} r={2.5} fill={color} stroke="var(--bg-0)" strokeWidth={1.5}/>;
-  };
-}
 
 const CAT_COLOR: Record<string, string> = Object.fromEntries(
   Object.entries(DEPENSE_CATEGORIES).map(([k, v]) => [k, v.color])
@@ -190,11 +182,12 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
       if (!primeByTypeM[t]) primeByTypeM[t] = {};
       primeByTypeM[t][m] = (primeByTypeM[t][m] ?? 0) + (p.primes ?? 0);
     });
-    return allMonths.map(m => {
+    const raw = allMonths.map(m => {
       const entry: any = { mois: m, net: netByMonth[m] ?? null };
       activePrimeTypesDash.forEach(type => { entry[type] = primeByTypeM[type]?.[m] ?? null; });
       return entry;
     });
+    return bellEffect(raw, ["net", ...activePrimeTypesDash]);
   }, [salaires, activePrimeTypesDash]);
 
   // Visible slice for compact zoom preservation
@@ -202,23 +195,7 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
     brushDash ? evoSal.slice(brushDash.start, brushDash.end + 1) : evoSal,
   [evoSal, brushDash]);
 
-  // Pre-compute isolated months per series (no adjacent data)
-  const isolatedSal = useMemo(() => {
-    const keys = ["net", ...activePrimeTypesDash];
-    const result: Record<string, Set<string>> = {};
-    keys.forEach(key => {
-      result[key] = new Set<string>();
-      evoSal.forEach((row, i) => {
-        const cur  = evoSal[i]?.[key] ?? null;
-        const prev = evoSal[i - 1]?.[key] ?? null;
-        const next = evoSal[i + 1]?.[key] ?? null;
-        if (cur != null && prev == null && next == null) result[key].add(row.mois);
-      });
-    });
-    return result;
-  }, [evoSal, activePrimeTypesDash]);
-
-  // Pie dépenses du mois sélectionné — 2 anneaux
+// Pie dépenses du mois sélectionné — 2 anneaux
   const { depPieInner, depPieOuter } = useMemo(() => {
     const catMap: Record<string, { total: number; subs: Record<string, number> }> = {};
     depenses.forEach(d => {
@@ -359,11 +336,11 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
                   return (
                     <Area key={type} type="monotone" dataKey={type} stackId="s" name={type}
                       stroke={c} strokeWidth={1.5} fill={`url(#gDP_${type.replace(/[^a-zA-Z0-9]/g,"_")})`}
-                      dot={renderIsolatedDot(isolatedSal[type] ?? new Set(), c)} connectNulls={false}/>
+                      dot={false} connectNulls={false}/>
                   );
                 })}
                 <Area type="monotone" dataKey="net" stackId="s" stroke="#5fa89e" strokeWidth={2} fill="url(#gSal)"
-                  dot={renderIsolatedDot(isolatedSal["net"] ?? new Set(), "#5fa89e")} connectNulls={false}/>
+                  dot={false} connectNulls={false}/>
                 {expSal && <Brush dataKey="mois" height={22} travellerWidth={6}
                   stroke="var(--border)" fill="var(--bg-2)"
                   startIndex={brushDash?.start??0}
