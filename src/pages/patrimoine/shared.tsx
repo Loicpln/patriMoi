@@ -93,6 +93,8 @@ export function NestedPie({inner,outer,total,fmt,toggleLabel,onToggle,h=260}:{
   total:number;fmt:(n:number)=>string;toggleLabel?:string;onToggle?:()=>void;h?:number;
 }) {
   const [selectedGroup,setSelectedGroup]=useState<string|null>(null);
+  // Outer-ring filter: click an outer segment to highlight all segments sharing the same subcat name
+  const [selectedOuterName,setSelectedOuterName]=useState<string|null>(null);
 
   // Order outer segments to match inner ring order (so each outer arc aligns with its inner arc)
   const innerOrder=Object.fromEntries(inner.map((e,i)=>[e.name,i]));
@@ -102,17 +104,30 @@ export function NestedPie({inner,outer,total,fmt,toggleLabel,onToggle,h=260}:{
     return ia-ib;
   });
 
+  // Active filter: inner-group click OR outer-name click (mutually exclusive)
   const filteredOuter=selectedGroup
     ?orderedOuter.filter(o=>o.group===selectedGroup)
+    :selectedOuterName
+    ?orderedOuter.filter(o=>o.name===selectedOuterName)
     :orderedOuter;
+
+  // When outer-name is selected, recompute inner ring as each group's share of that subcat
+  const displayInner=selectedOuterName
+    ?inner
+        .map(e=>({...e,value:filteredOuter.filter(o=>o.group===e.name).reduce((s,o)=>s+o.value,0)}))
+        .filter(e=>e.value>0)
+    :inner;
 
   const CT=({active,payload}:any)=>{
     if(!active||!payload?.length)return null;
     const p=payload[0];
-    const ref=selectedGroup?filteredOuter.reduce((s,o)=>s+o.value,0):total;
+    const ref=(selectedGroup||selectedOuterName)?filteredOuter.reduce((s,o)=>s+o.value,0):total;
     return(
       <div style={{...TOOLTIP_STYLE,padding:"8px 12px"}}>
         <div style={{color:"var(--text-0)",fontWeight:500,marginBottom:4}}>{p.name}</div>
+        {p.payload?.group&&p.payload.group!==p.name&&(
+          <div style={{color:"var(--text-2)",fontSize:10,marginBottom:3}}>{p.payload.group}</div>
+        )}
         <div style={{color:"var(--gold)"}}>{fmt(p.value)}</div>
         {ref>0&&<div style={{color:"var(--text-1)",fontSize:10,marginTop:2}}>{((p.value/ref)*100).toFixed(1)} %</div>}
       </div>
@@ -127,20 +142,35 @@ export function NestedPie({inner,outer,total,fmt,toggleLabel,onToggle,h=260}:{
       )}
       <ResponsiveContainer width="100%" height={h}>
         <PieChart>
-          <Pie data={inner} cx="50%" cy="50%" innerRadius={ir} outerRadius={or1} paddingAngle={0} dataKey="value"
+          {/* ── Inner ring: click to filter outer by group ── */}
+          <Pie data={displayInner} cx="50%" cy="50%" innerRadius={ir} outerRadius={or1} paddingAngle={0} dataKey="value"
             style={{cursor:"pointer"}}
             onClick={(_:any,index:number)=>{
-              const name=inner[index]?.name;
+              const name=displayInner[index]?.name;
               if(!name)return;
+              setSelectedOuterName(null); // clear outer-name filter
               setSelectedGroup(v=>v===name?null:name);
             }}>
-            {inner.map((e,i)=>(
-              <Cell key={i} fill={e.color} stroke="var(--bg-1)" strokeWidth={selectedGroup===e.name?3:2}
-                opacity={selectedGroup&&selectedGroup!==e.name?0.25:1}/>
+            {displayInner.map((e,i)=>(
+              <Cell key={i} fill={e.color} stroke="var(--bg-1)"
+                strokeWidth={selectedGroup===e.name?3:2}
+                opacity={(selectedGroup&&selectedGroup!==e.name)?0.25:1}/>
             ))}
           </Pie>
-          <Pie data={filteredOuter} cx="50%" cy="50%" innerRadius={ir2} outerRadius={or2} paddingAngle={0} dataKey="value">
-            {filteredOuter.map((e,i)=><Cell key={i} fill={e.color} stroke="var(--bg-1)" strokeWidth={1}/>)}
+          {/* ── Outer ring: click to filter by subcat name across all groups ── */}
+          <Pie data={filteredOuter} cx="50%" cy="50%" innerRadius={ir2} outerRadius={or2} paddingAngle={0} dataKey="value"
+            style={{cursor:"pointer"}}
+            onClick={(_:any,index:number)=>{
+              const name=filteredOuter[index]?.name;
+              if(!name)return;
+              setSelectedGroup(null); // clear inner-group filter
+              setSelectedOuterName(v=>v===name?null:name);
+            }}>
+            {filteredOuter.map((e,i)=>(
+              <Cell key={i} fill={e.color} stroke="var(--bg-1)"
+                strokeWidth={selectedOuterName===e.name?2.5:1}
+                opacity={1}/>
+            ))}
           </Pie>
           <Tooltip content={<CT/>}/>
           <text x="50%" y="47%" textAnchor="middle" dominantBaseline="middle"
