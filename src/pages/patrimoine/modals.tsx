@@ -4,6 +4,7 @@ import { LIVRETS_DEF, INVEST_SUBCATS, TRADEABLE_SUBCATS, defaultDateForMonth } f
 import { curMonth, useDevise } from "../../context/DeviseContext";
 import { usePoches } from "../../context/PochesContext";
 import type { Livret, Position, Vente, Dividende, Versement, ScpiValuation } from "./types";
+import { fetchPriceMaps, isUsdTicker, fetchLiveQuote } from "../../hooks/useQuotes";
 
 // ── Layout helpers ─────────────────────────────────────────────────────────────
 const G2: React.CSSProperties = { display:"grid", gridTemplateColumns:"1fr 1fr", gap:"12px 16px", marginTop:16 };
@@ -325,6 +326,8 @@ export function SellModal({poche,ticker,nom,tickerPositions,tickerVentes,getPric
 
 // ── Dividende Modal ────────────────────────────────────────────────────────────
 const REINVEST_SUBCATS: readonly string[] = TRADEABLE_SUBCATS;
+const SUBS_REINVEST = INVEST_SUBCATS.filter(s => REINVEST_SUBCATS.includes(s.key));
+const NEW_DIV_KEY = "__NEW_DIV__";
 
 export function DividendeModal({poche,positions,ventes,mois=curMonth,getPriceForDate,onClose,onSave}:{
   poche:string;positions:Position[];ventes:Vente[];mois?:string;
@@ -332,42 +335,94 @@ export function DividendeModal({poche,positions,ventes,mois=curMonth,getPriceFor
   onClose:()=>void;onSave:()=>void;
 }) {
   const tickers=[...new Set(positions.map(p=>p.ticker))];
-  const allOptions=[...tickers,"_INTERETS_"];
   const nomByTicker=Object.fromEntries(positions.map(p=>[p.ticker,p.nom]));
   const subcatByTicker=Object.fromEntries(positions.map(p=>[p.ticker,p.sous_categorie??""]));
   const [form,setForm]=useState<Dividende>({ticker:tickers[0]??"_INTERETS_",poche,montant:0,date:defaultDateForMonth(mois)});
   const [quantite,setQuantite]=useState<number>(0);
+  // Nouveau ticker (mode création, comme TradeModal)
+  const [newTicker,setNewTicker]=useState<string>("");
+  const [newNom,setNewNom]=useState<string>("");
+  const [newSubcat,setNewSubcat]=useState<string>(SUBS_REINVEST[0]?.key??"stable_coin");
+  // Cours auto-fetché pour nouveau ticker
+  const [newPriceFetched,setNewPriceFetched]=useState<number>(0);
+  const [fetchingPrice,setFetchingPrice]=useState(false);
   const s=(k:keyof Dividende,v:string|number)=>setForm(f=>({...f,[k]:v}));
 
-  const selectedNom=form.ticker==="_INTERETS_"?"Intérêts / Cash":(nomByTicker[form.ticker]??"");
-  const selectedSubcat=subcatByTicker[form.ticker]??"";
-  const isReinvest=REINVEST_SUBCATS.includes(selectedSubcat);
+  const isNew=form.ticker===NEW_DIV_KEY;
+  const effectiveTicker=isNew?newTicker.toUpperCase():form.ticker;
+  const effectiveSubcat=isNew?newSubcat:(subcatByTicker[form.ticker]??"");
+  const effectiveNom=isNew?newNom:(form.ticker==="_INTERETS_"?"Intérêts / Cash":(nomByTicker[form.ticker]??""));
+  const isReinvest=REINVEST_SUBCATS.includes(effectiveSubcat);
 
-  // PRU du ticker à la date du dividende (pour getPriceForDate)
+  // PRU à la date du dividende (0 pour nouveau ticker)
   const pru=useMemo(()=>{
+    if(isNew) return 0;
     const {pru:p}=computeAtSellDate(
       positions.filter(p=>p.ticker===form.ticker),
       ventes.filter(v=>v.ticker===form.ticker),
       form.date,
     );
     return p;
-  },[positions,ventes,form.ticker,form.date]);
+  },[isNew,positions,ventes,form.ticker,form.date]);
 
-  // Pour les positions réinvesties : prix au cours du jour, montant calculé automatiquement
-  const priceAtDate=useMemo(()=>
-    isReinvest ? getPriceForDate(form.ticker,form.date,pru) : 0
-  ,[isReinvest,getPriceForDate,form.ticker,form.date,pru]);
+  // Auto-fetch du cours pour nouveau ticker (debounce 600ms sur ticker + date)
+  useEffect(()=>{
+    if(!isNew||!newTicker||newTicker.length<2){setNewPriceFetched(0);return;}
+    let cancelled=false;
+    const timer=setTimeout(async()=>{
+      setFetchingPrice(true);
+      try{
+        const fromMonth=form.date.slice(0,7);
+        const [{monthly,weekly},live]=await Promise.all([
+          fetchPriceMaps(newTicker.toUpperCase(),fromMonth),
+          fetchLiveQuote(newTicker.toUpperCase()),
+        ]);
+        if(cancelled)return;
+        const today=new Date().toISOString().slice(0,10);
+        let raw=0;
+        if(form.date>=today&&live){raw=live.price;}
+        else{
+          const wKeys=Object.keys(weekly).filter(k=>k<=form.date).sort();
+          if(wKeys.length) raw=weekly[wKeys[wKeys.length-1]];
+          else{const mKeys=Object.keys(monthly).filter(k=>k<=fromMonth).sort();if(mKeys.length)raw=monthly[mKeys[mKeys.length-1]];}
+        }
+        // Conversion USD→EUR si besoin
+        if(isUsdTicker(newTicker)&&raw>0){
+          const [{weekly:fxW,monthly:fxM},fxLive]=await Promise.all([
+            fetchPriceMaps("EURUSD=X",fromMonth),
+            fetchLiveQuote("EURUSD=X"),
+          ]);
+          if(!cancelled){
+            let fx=1;
+            if(form.date>=today&&fxLive)fx=fxLive.price;
+            else{const fxKeys=Object.keys(fxW).filter(k=>k<=form.date).sort();if(fxKeys.length)fx=fxW[fxKeys[fxKeys.length-1]];}
+            raw=fx>0?raw/fx:raw;
+          }
+        }
+        setNewPriceFetched(raw);
+      }catch{setNewPriceFetched(0);}
+      finally{if(!cancelled)setFetchingPrice(false);}
+    },600);
+    return()=>{cancelled=true;clearTimeout(timer);};
+  },[isNew,newTicker,form.date]);
+
+  // Cours effectif : auto-fetch pour nouveau ticker, cache parent pour existant
+  const priceAtDate=isNew ? newPriceFetched : (isReinvest&&effectiveTicker ? getPriceForDate(effectiveTicker,form.date,pru) : 0);
 
   const montantCalcule=isReinvest ? quantite*priceAtDate : form.montant;
   const prixUnitaire=quantite>0 ? montantCalcule/quantite : priceAtDate;
 
+  const canSave=isReinvest
+    ?(priceAtDate>0&&quantite>0&&effectiveTicker.length>0&&(!isNew||(newNom.length>0)))
+    :(form.montant>0);
+
   const handleSave=async()=>{
-    const dividende={...form, montant: isReinvest ? montantCalcule : form.montant};
+    const dividende={...form, ticker:effectiveTicker, montant: isReinvest ? montantCalcule : form.montant};
     await invoke("add_dividende",{dividende});
     if(isReinvest&&quantite>0){
       await invoke("add_position",{position:{
-        poche, ticker:form.ticker, nom:nomByTicker[form.ticker]??"",
-        sous_categorie:selectedSubcat, quantite,
+        poche, ticker:effectiveTicker, nom:effectiveNom,
+        sous_categorie:effectiveSubcat, quantite,
         prix_achat:prixUnitaire, date_achat:form.date, notes:"[REINVEST_DIV]",
       }});
     }
@@ -377,34 +432,50 @@ export function DividendeModal({poche,positions,ventes,mois=curMonth,getPriceFor
   return(<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
     <div className="modal-title">Ajouter un dividende / intérêt</div>
     <div style={G2}>
+      {/* ── Sélection ticker source ── */}
       <div className="field" style={F}><label>Ticker</label>
-        <select value={form.ticker} onChange={e=>{s("ticker",e.target.value);setQuantite(0);}}>
-          {allOptions.map(t=><option key={t} value={t}>{t==="_INTERETS_"?"Intérêts":t}</option>)}
+        <select value={form.ticker} onChange={e=>{s("ticker",e.target.value);setQuantite(0);setNewTicker("");setNewNom("");}}>
+          {tickers.map(t=><option key={t} value={t}>{t}</option>)}
+          <option value="_INTERETS_">Intérêts</option>
+          <option value={NEW_DIV_KEY}>+ Nouveau ticker…</option>
         </select></div>
-      <div className="field" style={F}><label>Nom</label>
-        <input value={selectedNom} readOnly tabIndex={-1}
-          style={{background:"var(--bg-2)",color:"var(--text-2)",cursor:"default"}}/></div>
 
-      {/* ── Montant : manuel pour dividendes classiques, calculé pour réinvestis ── */}
-      {isReinvest ? (<>
-        <div className="field" style={F}><label>Date</label>
-          <input type="date" value={form.date} onChange={e=>s("date",e.target.value)}/></div>
-        <div className="field" style={F}>
-          <label>Cours au {form.date||"…"}</label>
-          <input value={priceAtDate>0?`${priceAtDate.toFixed(6)} €/unité`:"—"} readOnly tabIndex={-1}
-            style={{background:"var(--bg-2)",color:"var(--text-2)",cursor:"default"}}/></div>
-        <div className="field" style={F}><label>Quantité reçue (réinvesti)</label>
-          <input type="number" step="any" min="0" value={quantite||""} placeholder="0"
-            onChange={e=>setQuantite(parseFloat(e.target.value)||0)}/></div>
-        <div className="field" style={F}><label>Valeur calculée</label>
-          <input value={quantite>0?`${montantCalcule.toFixed(8)} €`:"—"} readOnly tabIndex={-1}
-            style={{background:"var(--bg-2)",color:"var(--teal)",cursor:"default",fontWeight:600}}/></div>
-      </>) : (<>
-        <div className="field" style={F}><label>Montant (€)</label>
-          <input type="number" step="0.01" value={form.montant} onChange={e=>s("montant",parseFloat(e.target.value)||0)}/></div>
-        <div className="field" style={F}><label>Date</label>
-          <input type="date" value={form.date} onChange={e=>s("date",e.target.value)}/></div>
-      </>)}
+      {/* ── Champs nouveau ticker ── */}
+      {isNew && <div className="field" style={F}><label>Sous-catégorie</label>
+        <select value={newSubcat} onChange={e=>setNewSubcat(e.target.value)}>
+          {SUBS_REINVEST.map(sc=><option key={sc.key} value={sc.key}>{sc.label}</option>)}
+        </select></div>}
+      {isNew && <div className="field" style={F}><label>Ticker Yahoo Finance</label>
+        <input value={newTicker} placeholder="BTC-USD, WLD.PA…" onChange={e=>{setNewTicker(e.target.value.toUpperCase());setNewPriceFetched(0);}}/></div>}
+      {isNew && <div className="field" style={F}><label>Nom</label>
+        <input value={newNom} placeholder="Bitcoin…" onChange={e=>setNewNom(e.target.value)}/></div>}
+      {!isNew && <div className="field" style={F}><label>Nom</label>
+        <input value={effectiveNom} readOnly tabIndex={-1}
+          style={{background:"var(--bg-2)",color:"var(--text-2)",cursor:"default"}}/></div>}
+
+      {/* ── Date (commune) ── */}
+      <div className="field" style={F}><label>Date</label>
+        <input type="date" value={form.date} onChange={e=>s("date",e.target.value)}/></div>
+
+      {/* ── Bloc réinvesti : cours + quantité + valeur calculée ── */}
+      {isReinvest && <div className="field" style={F}>
+        <label style={{display:"flex",alignItems:"center",gap:6}}>
+          Cours au {form.date||"…"}
+          {fetchingPrice&&<span className="spinner" style={{width:10,height:10}}/>}
+        </label>
+        <input value={priceAtDate>0?`${priceAtDate.toFixed(6)} €/unité`:fetchingPrice?"chargement…":"—"} readOnly tabIndex={-1}
+          style={{background:"var(--bg-2)",color:priceAtDate>0?"var(--text-2)":"var(--text-2)",cursor:"default"}}/>
+      </div>}
+      {isReinvest && <div className="field" style={F}><label>Quantité reçue (réinvesti)</label>
+        <input type="number" step="any" min="0" value={quantite||""} placeholder="0"
+          onChange={e=>setQuantite(parseFloat(e.target.value)||0)}/></div>}
+      {isReinvest && <div className="field" style={F}><label>Valeur calculée</label>
+        <input value={quantite>0?`${montantCalcule.toFixed(8)} €`:"—"} readOnly tabIndex={-1}
+          style={{background:"var(--bg-2)",color:"var(--teal)",cursor:"default",fontWeight:600}}/></div>}
+
+      {/* ── Montant manuel pour dividendes classiques (non réinvestis) ── */}
+      {!isReinvest && <div className="field" style={F}><label>Montant (€)</label>
+        <input type="number" step="0.01" value={form.montant} onChange={e=>s("montant",parseFloat(e.target.value)||0)}/></div>}
 
       <div className="field" style={S2}><label>Notes</label>
         <textarea rows={2} value={form.notes??""} onChange={e=>s("notes",e.target.value)}/></div>
@@ -412,7 +483,7 @@ export function DividendeModal({poche,positions,ventes,mois=curMonth,getPriceFor
     <div className="form-actions">
       <button className="btn btn-ghost" onClick={onClose}>Annuler</button>
       <button className="btn btn-primary"
-        disabled={isReinvest&&(priceAtDate<=0||quantite<=0)}
+        disabled={!canSave}
         onClick={handleSave}>Enregistrer</button>
     </div>
   </div></div>);
