@@ -326,8 +326,10 @@ export function SellModal({poche,ticker,nom,tickerPositions,tickerVentes,getPric
 // ── Dividende Modal ────────────────────────────────────────────────────────────
 const REINVEST_SUBCATS: readonly string[] = TRADEABLE_SUBCATS;
 
-export function DividendeModal({poche,positions,mois=curMonth,onClose,onSave}:{
-  poche:string;positions:Position[];mois?:string;onClose:()=>void;onSave:()=>void;
+export function DividendeModal({poche,positions,ventes,mois=curMonth,getPriceForDate,onClose,onSave}:{
+  poche:string;positions:Position[];ventes:Vente[];mois?:string;
+  getPriceForDate:(ticker:string,date:string,pru?:number)=>number;
+  onClose:()=>void;onSave:()=>void;
 }) {
   const tickers=[...new Set(positions.map(p=>p.ticker))];
   const allOptions=[...tickers,"_INTERETS_"];
@@ -340,10 +342,28 @@ export function DividendeModal({poche,positions,mois=curMonth,onClose,onSave}:{
   const selectedNom=form.ticker==="_INTERETS_"?"Intérêts / Cash":(nomByTicker[form.ticker]??"");
   const selectedSubcat=subcatByTicker[form.ticker]??"";
   const isReinvest=REINVEST_SUBCATS.includes(selectedSubcat);
-  const prixUnitaire=quantite>0?form.montant/quantite:0;
+
+  // PRU du ticker à la date du dividende (pour getPriceForDate)
+  const pru=useMemo(()=>{
+    const {pru:p}=computeAtSellDate(
+      positions.filter(p=>p.ticker===form.ticker),
+      ventes.filter(v=>v.ticker===form.ticker),
+      form.date,
+    );
+    return p;
+  },[positions,ventes,form.ticker,form.date]);
+
+  // Pour les positions réinvesties : prix au cours du jour, montant calculé automatiquement
+  const priceAtDate=useMemo(()=>
+    isReinvest ? getPriceForDate(form.ticker,form.date,pru) : 0
+  ,[isReinvest,getPriceForDate,form.ticker,form.date,pru]);
+
+  const montantCalcule=isReinvest ? quantite*priceAtDate : form.montant;
+  const prixUnitaire=quantite>0 ? montantCalcule/quantite : priceAtDate;
 
   const handleSave=async()=>{
-    await invoke("add_dividende",{dividende:form});
+    const dividende={...form, montant: isReinvest ? montantCalcule : form.montant};
+    await invoke("add_dividende",{dividende});
     if(isReinvest&&quantite>0){
       await invoke("add_position",{position:{
         poche, ticker:form.ticker, nom:nomByTicker[form.ticker]??"",
@@ -364,24 +384,36 @@ export function DividendeModal({poche,positions,mois=curMonth,onClose,onSave}:{
       <div className="field" style={F}><label>Nom</label>
         <input value={selectedNom} readOnly tabIndex={-1}
           style={{background:"var(--bg-2)",color:"var(--text-2)",cursor:"default"}}/></div>
-      <div className="field" style={F}><label>Montant (€)</label>
-        <input type="number" step="0.01" value={form.montant} onChange={e=>s("montant",parseFloat(e.target.value)||0)}/></div>
-      <div className="field" style={F}><label>Date</label>
-        <input type="date" value={form.date} onChange={e=>s("date",e.target.value)}/></div>
-      {isReinvest&&<>
+
+      {/* ── Montant : manuel pour dividendes classiques, calculé pour réinvestis ── */}
+      {isReinvest ? (<>
+        <div className="field" style={F}><label>Date</label>
+          <input type="date" value={form.date} onChange={e=>s("date",e.target.value)}/></div>
+        <div className="field" style={F}>
+          <label>Cours au {form.date||"…"}</label>
+          <input value={priceAtDate>0?`${priceAtDate.toFixed(6)} €/unité`:"—"} readOnly tabIndex={-1}
+            style={{background:"var(--bg-2)",color:"var(--text-2)",cursor:"default"}}/></div>
         <div className="field" style={F}><label>Quantité reçue (réinvesti)</label>
           <input type="number" step="any" min="0" value={quantite||""} placeholder="0"
             onChange={e=>setQuantite(parseFloat(e.target.value)||0)}/></div>
-        <div className="field" style={F}><label>Prix unitaire calculé</label>
-          <input value={quantite>0?`${prixUnitaire.toFixed(6)} €/unité`:"—"} readOnly tabIndex={-1}
-            style={{background:"var(--bg-2)",color:"var(--text-2)",cursor:"default"}}/></div>
-      </>}
+        <div className="field" style={F}><label>Valeur calculée</label>
+          <input value={quantite>0?`${montantCalcule.toFixed(8)} €`:"—"} readOnly tabIndex={-1}
+            style={{background:"var(--bg-2)",color:"var(--teal)",cursor:"default",fontWeight:600}}/></div>
+      </>) : (<>
+        <div className="field" style={F}><label>Montant (€)</label>
+          <input type="number" step="0.01" value={form.montant} onChange={e=>s("montant",parseFloat(e.target.value)||0)}/></div>
+        <div className="field" style={F}><label>Date</label>
+          <input type="date" value={form.date} onChange={e=>s("date",e.target.value)}/></div>
+      </>)}
+
       <div className="field" style={S2}><label>Notes</label>
         <textarea rows={2} value={form.notes??""} onChange={e=>s("notes",e.target.value)}/></div>
     </div>
     <div className="form-actions">
       <button className="btn btn-ghost" onClick={onClose}>Annuler</button>
-      <button className="btn btn-primary" onClick={handleSave}>Enregistrer</button>
+      <button className="btn btn-primary"
+        disabled={isReinvest&&(priceAtDate<=0||quantite<=0)}
+        onClick={handleSave}>Enregistrer</button>
     </div>
   </div></div>);
 }

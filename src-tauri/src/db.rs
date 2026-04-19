@@ -190,5 +190,36 @@ pub fn init_db(conn: &Connection) -> Result<()> {
             PRAGMA user_version = 8;
         ")?;
     }
+    if version < 9 {
+        // Migration intermédiaire : renommage montant → quantite (jamais appliquée en prod,
+        // mais nécessaire pour que le versioning soit cohérent avec les BDs à user_version=9)
+        conn.execute_batch("
+            CREATE TABLE dividendes_v9 (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, position_id INTEGER,
+                ticker TEXT NOT NULL, poche TEXT NOT NULL, quantite REAL NOT NULL DEFAULT 0,
+                date TEXT NOT NULL, notes TEXT, created_at TEXT DEFAULT (datetime('now'))
+            );
+            INSERT INTO dividendes_v9 (id, position_id, ticker, poche, quantite, date, notes, created_at)
+                SELECT id, position_id, ticker, poche, montant, date, notes, created_at FROM dividendes;
+            DROP TABLE dividendes;
+            ALTER TABLE dividendes_v9 RENAME TO dividendes;
+            PRAGMA user_version = 9;
+        ")?;
+    }
+    if version < 10 {
+        // Revert : renommage quantite → montant (retour à l'état d'origine)
+        conn.execute_batch("
+            CREATE TABLE dividendes_v10 (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, position_id INTEGER,
+                ticker TEXT NOT NULL, poche TEXT NOT NULL, montant REAL NOT NULL DEFAULT 0,
+                date TEXT NOT NULL, notes TEXT, created_at TEXT DEFAULT (datetime('now'))
+            );
+            INSERT INTO dividendes_v10 (id, position_id, ticker, poche, montant, date, notes, created_at)
+                SELECT id, position_id, ticker, poche, quantite, date, notes, created_at FROM dividendes;
+            DROP TABLE dividendes;
+            ALTER TABLE dividendes_v10 RENAME TO dividendes;
+            PRAGMA user_version = 10;
+        ")?;
+    }
     Ok(())
 }

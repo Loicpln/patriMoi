@@ -948,7 +948,7 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
       )}
 
       {posModal    && <PositionModal poche={poche.key} existing={positions} mois={mois} onClose={() => setPosModal(false)}    onSave={() => { setPosModal(false);    onRefresh(); }}/>}
-      {divModal    && <DividendeModal poche={poche.key} positions={positions} mois={mois} onClose={() => setDivModal(false)}  onSave={() => { setDivModal(false);    onRefresh(); }}/>}
+      {divModal    && <DividendeModal poche={poche.key} positions={positions} ventes={ventes} mois={mois} getPriceForDate={getPriceForDateFull} onClose={() => setDivModal(false)}  onSave={() => { setDivModal(false);    onRefresh(); }}/>}
       {scpiModal && <ScpiValuationModal
         scpiTickers={[...new Set(positions.filter(p => p.sous_categorie === "scp").map(p => p.ticker))]}
         mois={mois}
