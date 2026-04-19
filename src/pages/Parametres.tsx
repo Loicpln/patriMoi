@@ -2,12 +2,15 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
 import {
   ExportBtn, ImportBtn, ImportModal, ImportPending,
-  exportDepenses, exportSalaires, exportLivrets,
+  exportDepenses, exportSalaires,
   importDepenses, importSalaires, importLivrets,
   exportScpiValuations, importScpi,
   exportPoche, importPoche,
+  exportLivretPoche, importLivretOps,
 } from "./patrimoine/InvestSettings";
 import { usePoches } from "../context/PochesContext";
+import { LIVRETS_DEF } from "../constants";
+import type { LivretPoche } from "./patrimoine/types";
 
 // ── Page ──────────────────────────────────────────────────────────────────
 export default function Parametres() {
@@ -15,10 +18,12 @@ export default function Parametres() {
   const [saved, setSaved] = useState(false);
   const [importPending, setImportPending] = useState<ImportPending | null>(null);
   const [exportAllState, setExportAllState] = useState<"idle"|"loading"|"done"|"error">("idle");
+  const [livretPoches, setLivretPoches] = useState<LivretPoche[]>([]);
   const { poches } = usePoches();
 
   useEffect(() => {
     invoke<string>("get_parametre", { cle: "pdf_folder" }).then(setPdfFolder).catch(() => {});
+    invoke<LivretPoche[]>("get_livret_poches").then(setLivretPoches).catch(() => {});
   }, []);
 
   const chooseFolder = async () => {
@@ -46,7 +51,7 @@ export default function Parametres() {
     try {
       const subfolder = await invoke<string>("choose_export_folder");
       if (!subfolder) { setExportAllState("idle"); return; }
-      await invoke("export_all_csv", { subfolder });
+      await invoke("export_all_csv", { subfolder, livretPoches });
       setExportAllState("done");
       setTimeout(() => setExportAllState("idle"), 2000);
     } catch {
@@ -56,9 +61,18 @@ export default function Parametres() {
   };
 
   const EXPORTS = [
-    { label: "Dépenses",               color: "var(--rose)",   exports: [{ name: "depenses.csv",          fn: exportDepenses        }], importFn: importDepenses  },
-    { label: "Fiches de paie & Primes", color: "var(--teal)",  exports: [{ name: "fiches_et_primes.csv",  fn: exportSalaires        }], importFn: importSalaires  },
-    { label: "Livrets",                 color: "var(--gold)",  exports: [{ name: "livrets.csv",           fn: exportLivrets         }], importFn: importLivrets   },
+    { label: "Dépenses",               color: "var(--rose)",    exports: [{ name: "depenses.csv",         fn: exportDepenses        }], importFn: importDepenses  },
+    { label: "Fiches de paie & Primes", color: "var(--teal)",   exports: [{ name: "fiches_et_primes.csv", fn: exportSalaires        }], importFn: importSalaires  },
+    ...livretPoches.map(p => {
+      const color = LIVRETS_DEF.find(l => l.key === p.type_livret)?.color ?? "var(--gold)";
+      const safeName = p.nom.replace(/[^a-z0-9]/gi, "_");
+      return {
+        label: `${p.nom}`,
+        color,
+        exports: [{ name: `${safeName}.csv`, fn: () => exportLivretPoche(p.type_livret, p.nom) }],
+        importFn: importLivretOps(p.type_livret, p.nom),
+      };
+    }),
     ...poches.map(p => ({
       label: p.label,
       color: p.color,

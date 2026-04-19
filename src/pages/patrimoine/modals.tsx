@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
 import { LIVRETS_DEF, INVEST_SUBCATS, TRADEABLE_SUBCATS, defaultDateForMonth } from "../../constants";
+import type { LivretPoche } from "./types";
 import { curMonth, useDevise } from "../../context/DeviseContext";
 import { usePoches } from "../../context/PochesContext";
 import type { Livret, Position, Vente, Dividende, Versement, ScpiValuation } from "./types";
@@ -15,9 +16,9 @@ const RO: React.CSSProperties = {
   background:"var(--bg-0)", fontSize:12, fontFamily:"var(--mono)",
 };
 
-// ── Livret Modal ───────────────────────────────────────────────────────────────
+// ── Livret Modal (legacy) ──────────────────────────────────────────────────────
 export function LivretModal({mois,onClose,onSave}:{mois:string;onClose:()=>void;onSave:()=>void}) {
-  const [form,setForm]=useState<Livret>({poche:LIVRETS_DEF[0].key,montant:0,taux:LIVRETS_DEF[0].taux,date:defaultDateForMonth(mois)});
+  const [form,setForm]=useState<Livret>({poche:LIVRETS_DEF[0].key,nom:"",montant:0,taux:LIVRETS_DEF[0].taux,date:defaultDateForMonth(mois)});
   const s=(k:keyof Livret,v:string|number)=>setForm(f=>({...f,[k]:v}));
   return(<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
     <div className="modal-title">Mise à jour livret</div>
@@ -42,7 +43,7 @@ export function LivretModal({mois,onClose,onSave}:{mois:string;onClose:()=>void;
   </div></div>);
 }
 
-// ── Intérêt Modal ──────────────────────────────────────────────────────────────
+// ── Intérêt Modal (legacy) ─────────────────────────────────────────────────────
 export function InteretModal({mois,onClose,onSave}:{mois:string;onClose:()=>void;onSave:()=>void}) {
   const anneeDefault=parseInt(mois.slice(0,4));
   const [poche,setPoche]=useState("livret_a");
@@ -66,9 +67,95 @@ export function InteretModal({mois,onClose,onSave}:{mois:string;onClose:()=>void
     <div className="form-actions">
       <button className="btn btn-ghost" onClick={onClose}>Annuler</button>
       <button className="btn btn-primary" onClick={async()=>{
-        await invoke("add_livret",{livret:{poche,montant,taux:0,date:`${annee}-12-31`,notes:"[INTERET " + annee + "] " + notes}});
+        await invoke("add_livret",{livret:{poche,nom:"",montant,taux:0,date:`${annee}-12-31`,notes:"[INTERET " + annee + "] " + notes}});
         onSave();
       }}>Enregistrer</button>
+    </div>
+  </div></div>);
+}
+
+// ── Livret Poche Form Modal (create or edit taux) ─────────────────────────────
+export function LivretPocheFormModal({onSave,onClose}:{onSave:(p:LivretPoche)=>void;onClose:()=>void}) {
+  const [typeLivret,setTypeLivret]=useState<string>(LIVRETS_DEF[0].key);
+  const [nom,setNom]=useState<string>("");
+  const typeDef=LIVRETS_DEF.find(l=>l.key===typeLivret)??LIVRETS_DEF[0];
+  return(<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()} style={{maxWidth:420}}>
+    <div className="modal-title">Nouveau livret</div>
+    <div style={{display:"flex",flexDirection:"column",gap:12,marginTop:16}}>
+      <div className="field" style={F}><label>Type de livret</label>
+        <select value={typeLivret} onChange={e=>setTypeLivret(e.target.value)}>
+          {LIVRETS_DEF.map(l=><option key={l.key} value={l.key}>{l.label}</option>)}
+        </select></div>
+      <div className="field" style={F}><label>Nom personnalisé</label>
+        <input value={nom} placeholder={`ex: ${typeDef.label} BNP`}
+          style={{width:"100%",boxSizing:"border-box"}}
+          onChange={e=>setNom(e.target.value)}/></div>
+    </div>
+    <div className="form-actions">
+      <button className="btn btn-ghost" onClick={onClose}>Annuler</button>
+      <button className="btn btn-primary"
+        disabled={!nom.trim()}
+        onClick={()=>onSave({type_livret:typeLivret,nom:nom.trim()})}>
+        Créer
+      </button>
+    </div>
+  </div></div>);
+}
+
+// ── Opération Livret Modal (versement / retrait / intérêts) ────────────────────
+export function OpLivretModal({poche,mois,initialOp,onClose,onSave}:{
+  poche:LivretPoche;mois:string;initialOp:"versement"|"retrait"|"interet";onClose:()=>void;onSave:()=>void;
+}) {
+  const anneeDefault=parseInt(mois.slice(0,4));
+  const [montant,setMontant]=useState<number>(0);
+  const [date,setDate]=useState<string>(defaultDateForMonth(mois));
+  const [annee,setAnnee]=useState<number>(anneeDefault);
+  const [notes,setNotes]=useState<string>("");
+
+  const opLabel=initialOp==="versement"?"Versement":initialOp==="retrait"?"Retrait":"Intérêts";
+  const opColor=initialOp==="versement"?"var(--teal)":initialOp==="retrait"?"var(--rose)":"var(--gold)";
+
+  const handleSave=async()=>{
+    if(initialOp==="interet"){
+      await invoke("add_livret",{livret:{
+        poche:poche.type_livret,nom:poche.nom,
+        montant,taux:0,
+        date:`${annee}-12-31`,
+        notes:"[INTERET " + annee + "] " + notes,
+      }});
+    } else {
+      const signed=initialOp==="retrait"?-Math.abs(montant):Math.abs(montant);
+      await invoke("add_livret",{livret:{
+        poche:poche.type_livret,nom:poche.nom,
+        montant:signed,taux:0,
+        date,notes:notes||null,
+      }});
+    }
+    onSave();
+  };
+
+  const typeDef=LIVRETS_DEF.find(l=>l.key===poche.type_livret);
+  return(<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
+    <div className="modal-title">
+      <span style={{color:opColor}}>{opLabel}</span>
+      <span style={{fontSize:11,color:"var(--text-2)",marginLeft:8}}>{poche.nom} · {typeDef?.label}</span>
+    </div>
+    <div style={G2}>
+      <div className="field" style={F}><label>Montant (€)</label>
+        <input type="number" step="0.01" value={montant} onChange={e=>setMontant(parseFloat(e.target.value)||0)}/></div>
+      {initialOp==="interet"?(
+        <div className="field" style={F}><label>Année</label>
+          <input type="number" value={annee} onChange={e=>setAnnee(parseInt(e.target.value)||anneeDefault)} min={2000} max={2100}/></div>
+      ):(
+        <div className="field" style={F}><label>Date</label>
+          <input type="date" value={date} onChange={e=>setDate(e.target.value)}/></div>
+      )}
+      <div className="field" style={S2}><label>Notes</label>
+        <textarea rows={2} value={notes} onChange={e=>setNotes(e.target.value)}/></div>
+    </div>
+    <div className="form-actions">
+      <button className="btn btn-ghost" onClick={onClose}>Annuler</button>
+      <button className="btn btn-primary" disabled={montant<=0} onClick={handleSave}>Enregistrer</button>
     </div>
   </div></div>);
 }

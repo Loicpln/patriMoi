@@ -102,16 +102,16 @@ pub fn list_pdf_files(folder: String) -> Result<Vec<serde_json::Value>, String> 
 #[tauri::command]
 pub fn get_livrets(state: State<DbState>) -> Result<Vec<Livret>, String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
-    let mut stmt = conn.prepare("SELECT id,poche,montant,taux,date,notes FROM livrets ORDER BY date DESC").map_err(|e| e.to_string())?;
-    let items = stmt.query_map([], |r| Ok(Livret{id:r.get(0)?,poche:r.get(1)?,montant:r.get(2)?,taux:r.get(3)?,date:r.get(4)?,notes:r.get(5)?}))
+    let mut stmt = conn.prepare("SELECT id,poche,nom,montant,taux,date,notes FROM livrets ORDER BY date ASC").map_err(|e| e.to_string())?;
+    let items = stmt.query_map([], |r| Ok(Livret{id:r.get(0)?,poche:r.get(1)?,nom:r.get(2)?,montant:r.get(3)?,taux:r.get(4)?,date:r.get(5)?,notes:r.get(6)?}))
         .map_err(|e| e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e| e.to_string())?;
     Ok(items)
 }
 #[tauri::command]
 pub fn add_livret(livret: Livret, state: State<DbState>) -> Result<i64, String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
-    conn.execute("INSERT INTO livrets (poche,montant,taux,date,notes) VALUES (?1,?2,?3,?4,?5)",
-        params![livret.poche,livret.montant,livret.taux,livret.date,livret.notes]).map_err(|e| e.to_string())?;
+    conn.execute("INSERT INTO livrets (poche,nom,montant,taux,date,notes) VALUES (?1,?2,?3,?4,?5,?6)",
+        params![livret.poche,livret.nom,livret.montant,livret.taux,livret.date,livret.notes]).map_err(|e| e.to_string())?;
     Ok(conn.last_insert_rowid())
 }
 #[tauri::command]
@@ -119,6 +119,43 @@ pub fn delete_livret(id: i64, state: State<DbState>) -> Result<(), String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     conn.execute("DELETE FROM livrets WHERE id=?1", params![id]).map_err(|e| e.to_string())?;
     Ok(())
+}
+
+// ═══ LIVRET POCHES ═══════════════════════════════════════════════════════════
+#[tauri::command]
+pub fn get_livret_poches(state: State<DbState>) -> Result<Vec<LivretPoche>, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let mut stmt = conn.prepare("SELECT id,type_livret,nom FROM livret_poches ORDER BY type_livret,nom").map_err(|e| e.to_string())?;
+    let items = stmt.query_map([], |r| Ok(LivretPoche{id:r.get(0)?,type_livret:r.get(1)?,nom:r.get(2)?}))
+        .map_err(|e| e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e| e.to_string())?;
+    Ok(items)
+}
+#[tauri::command]
+pub fn add_livret_poche(poche: LivretPoche, state: State<DbState>) -> Result<i64, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    conn.execute(
+        "INSERT INTO livret_poches (type_livret,nom) VALUES (?1,?2) ON CONFLICT(type_livret,nom) DO NOTHING",
+        params![poche.type_livret,poche.nom]).map_err(|e| e.to_string())?;
+    Ok(conn.last_insert_rowid())
+}
+#[tauri::command]
+pub fn delete_livret_poche(type_livret: String, nom: String, state: State<DbState>) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM livrets WHERE poche=?1 AND nom=?2", params![type_livret,nom]).map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM livret_poches WHERE type_livret=?1 AND nom=?2", params![type_livret,nom]).map_err(|e| e.to_string())?;
+    Ok(())
+}
+#[tauri::command]
+pub fn import_livret_ops(type_livret: String, nom: String, rows: Vec<Livret>, replace: bool, state: State<DbState>) -> Result<usize, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    if replace {
+        conn.execute("DELETE FROM livrets WHERE poche=?1 AND nom=?2", params![type_livret,nom]).map_err(|e| e.to_string())?;
+    }
+    for r in &rows {
+        conn.execute("INSERT INTO livrets (poche,nom,montant,taux,date,notes) VALUES (?1,?2,?3,?4,?5,?6)",
+            params![type_livret,nom,r.montant,r.taux,r.date,r.notes]).map_err(|e| e.to_string())?;
+    }
+    Ok(rows.len())
 }
 
 // ═══ POSITIONS ════════════════════════════════════════════════════════════════
@@ -387,7 +424,7 @@ fn days_to_ymd(z: i64) -> (i64, u8, u8) {
 /// Reads all tables from the DB and writes CSV files into `subfolder`.
 /// Returns the list of filenames written.
 #[tauri::command]
-pub fn export_all_csv(subfolder: String, state: State<DbState>) -> Result<Vec<String>, String> {
+pub fn export_all_csv(subfolder: String, livret_poches: Vec<LivretPoche>, state: State<DbState>) -> Result<Vec<String>, String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     let dir = std::path::Path::new(&subfolder);
     let mut written: Vec<String> = Vec::new();
@@ -452,15 +489,30 @@ pub fn export_all_csv(subfolder: String, state: State<DbState>) -> Result<Vec<St
         written.push("fiches_et_primes.csv".into());
     }
 
-    // ── Livrets ───────────────────────────────────────────────────────────
-    {
-        let mut stmt = conn.prepare("SELECT id,poche,date,montant,taux,notes FROM livrets ORDER BY date DESC").map_err(|e|e.to_string())?;
-        let lines: Vec<String> = stmt.query_map([],|r|{
-            let id:Option<i64>=r.get(0)?; let montant:f64=r.get(3)?; let taux:f64=r.get(4)?;
-            Ok(vec![id.map_or("".into(),|v|v.to_string()),r.get::<_,String>(1)?,r.get::<_,String>(2)?,format!("{:.2}",montant),format!("{}",taux),r.get::<_,Option<String>>(5)?.unwrap_or_default()])
-        }).map_err(|e|e.to_string())?.filter_map(|r|r.ok()).map(|f|row(&f)).collect();
-        write_csv(dir,"livrets.csv","id,poche,date,montant,taux,notes",lines)?;
-        written.push("livrets.csv".into());
+    // ── Livrets (par poche) ───────────────────────────────────────────────
+    for p in &livret_poches {
+        let safe = p.nom.chars().map(|c| if c.is_alphanumeric() || c == '-' { c } else { '_' }).collect::<String>();
+        let filename = format!("{}.csv", safe);
+        let mut stmt = conn.prepare(
+            "SELECT id,date,montant,notes FROM livrets WHERE poche=?1 AND nom=?2 ORDER BY date ASC"
+        ).map_err(|e| e.to_string())?;
+        let lines: Vec<String> = stmt.query_map(params![p.type_livret, p.nom], |r| {
+            let id: Option<i64> = r.get(0)?;
+            let montant: f64 = r.get(2)?;
+            let notes_str: String = r.get::<_, Option<String>>(3)?.unwrap_or_default();
+            let is_interet = notes_str.starts_with("[INTERET");
+            let is_retrait = !is_interet && montant < 0.0;
+            let type_str = if is_interet { "interet" } else if is_retrait { "retrait" } else { "versement" };
+            Ok(vec![
+                id.map_or("".into(), |v| v.to_string()),
+                r.get::<_, String>(1)?,
+                type_str.to_string(),
+                format!("{:.2}", montant.abs()),
+                notes_str,
+            ])
+        }).map_err(|e| e.to_string())?.filter_map(|r| r.ok()).map(|f| row(&f)).collect();
+        write_csv(dir, &filename, "id,date,type,montant,notes", lines)?;
+        written.push(filename);
     }
 
     // ── Poches ────────────────────────────────────────────────────────────
@@ -515,6 +567,117 @@ pub fn export_all_csv(subfolder: String, state: State<DbState>) -> Result<Vec<St
     Ok(written)
 }
 
+/// Pick a folder, create `{prefix}_{YYYY-MM-DD}` subfolder inside it, return its path.
+fn pick_named_dated_folder(prefix: &str) -> Result<std::path::PathBuf, String> {
+    let parent = rfd::FileDialog::new()
+        .set_title("Choisir le dossier de destination")
+        .pick_folder()
+        .ok_or_else(|| "Annulé".to_string())?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH).map_err(|e| e.to_string())?.as_secs();
+    let (y, m, d) = days_to_ymd((now / 86400) as i64);
+    let dir = parent.join(format!("{}_{:04}-{:02}-{:02}", prefix, y, m, d));
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Impossible de créer le dossier: {}", e))?;
+    Ok(dir)
+}
+
+/// Export toutes les poches d'investissement dans un dossier `investissements_DATE`.
+#[tauri::command]
+pub fn export_invest_csv(poches: Vec<String>, state: State<DbState>) -> Result<Vec<String>, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let dir = pick_named_dated_folder("investissements")?;
+    let mut written: Vec<String> = Vec::new();
+
+    fn esc(v: &str) -> String {
+        if v.contains(',') || v.contains('"') || v.contains('\n') { format!("\"{}\"", v.replace('"', "\"\"")) } else { v.to_string() }
+    }
+    fn row(fields: &[String]) -> String { fields.iter().map(|f| esc(f)).collect::<Vec<_>>().join(",") }
+    fn write_csv(dir: &std::path::Path, name: &str, header: &str, lines: Vec<String>) -> Result<(), String> {
+        let mut content = "\u{FEFF}".to_string();
+        content.push_str(header); content.push('\n');
+        for l in lines { content.push_str(&l); content.push('\n'); }
+        std::fs::write(dir.join(name), content).map_err(|e| format!("{}: {}", name, e))
+    }
+
+    let poche_header = "type,id,date,ticker,nom,sous_categorie,quantite,prix_achat,prix_vente,pnl,montant,notes";
+    for poche_key in &poches {
+        let filename = match poche_key.as_str() { "av" => "assurance_vie.csv".to_string(), k => format!("{}.csv", k) };
+        let mut lines: Vec<String> = Vec::new();
+        let mut stmt = conn.prepare("SELECT id,date_achat,ticker,nom,sous_categorie,quantite,prix_achat,notes FROM positions WHERE poche=?1 ORDER BY date_achat").map_err(|e|e.to_string())?;
+        let rows = stmt.query_map([poche_key],|r|{
+            let id:Option<i64>=r.get(0)?; let qty:f64=r.get(5)?; let px:f64=r.get(6)?;
+            Ok(vec!["Position".into(),id.map_or("".into(),|v|v.to_string()),r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,String>(3)?,r.get::<_,Option<String>>(4)?.unwrap_or_default(),format!("{}",qty),format!("{}",px),"".into(),"".into(),"".into(),r.get::<_,Option<String>>(7)?.unwrap_or_default()])
+        }).map_err(|e|e.to_string())?;
+        for r in rows { lines.push(row(&r.map_err(|e|e.to_string())?)); }
+        let mut stmt = conn.prepare("SELECT id,date_vente,ticker,nom,quantite,prix_achat,prix_vente,pnl,notes FROM ventes WHERE poche=?1 ORDER BY date_vente").map_err(|e|e.to_string())?;
+        let rows = stmt.query_map([poche_key],|r|{
+            let id:Option<i64>=r.get(0)?; let qty:f64=r.get(4)?; let pa:f64=r.get(5)?; let pv:f64=r.get(6)?; let pnl:f64=r.get(7)?;
+            Ok(vec!["Vente".into(),id.map_or("".into(),|v|v.to_string()),r.get::<_,String>(1)?,r.get::<_,String>(2)?,r.get::<_,String>(3)?,String::new(),format!("{}",qty),format!("{}",pa),format!("{}",pv),format!("{}",pnl),String::new(),r.get::<_,Option<String>>(8)?.unwrap_or_default()])
+        }).map_err(|e|e.to_string())?;
+        for r in rows { lines.push(row(&r.map_err(|e|e.to_string())?)); }
+        let mut stmt = conn.prepare("SELECT id,date,ticker,montant,notes FROM dividendes WHERE poche=?1 ORDER BY date").map_err(|e|e.to_string())?;
+        let rows = stmt.query_map([poche_key],|r|{
+            let id:Option<i64>=r.get(0)?; let m:f64=r.get(3)?;
+            Ok(vec!["Dividende".into(),id.map_or("".into(),|v|v.to_string()),r.get::<_,String>(1)?,r.get::<_,String>(2)?,String::new(),String::new(),String::new(),String::new(),String::new(),String::new(),format!("{}",m),r.get::<_,Option<String>>(4)?.unwrap_or_default()])
+        }).map_err(|e|e.to_string())?;
+        for r in rows { lines.push(row(&r.map_err(|e|e.to_string())?)); }
+        let mut stmt = conn.prepare("SELECT id,date,montant,notes FROM versements WHERE poche=?1 ORDER BY date").map_err(|e|e.to_string())?;
+        let rows = stmt.query_map([poche_key],|r|{
+            let id:Option<i64>=r.get(0)?; let m:f64=r.get(2)?;
+            Ok(vec!["Versement".into(),id.map_or("".into(),|v|v.to_string()),r.get::<_,String>(1)?,String::new(),String::new(),String::new(),String::new(),String::new(),String::new(),String::new(),format!("{}",m),r.get::<_,Option<String>>(3)?.unwrap_or_default()])
+        }).map_err(|e|e.to_string())?;
+        for r in rows { lines.push(row(&r.map_err(|e|e.to_string())?)); }
+        write_csv(&dir, &filename, poche_header, lines)?;
+        written.push(filename);
+    }
+    Ok(written)
+}
+
+/// Export toutes les poches de livrets dans un dossier `livrets_DATE`.
+#[tauri::command]
+pub fn export_livrets_batch(livret_poches: Vec<LivretPoche>, state: State<DbState>) -> Result<Vec<String>, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let dir = pick_named_dated_folder("livrets")?;
+    let mut written: Vec<String> = Vec::new();
+
+    fn esc(v: &str) -> String {
+        if v.contains(',') || v.contains('"') || v.contains('\n') { format!("\"{}\"", v.replace('"', "\"\"")) } else { v.to_string() }
+    }
+    fn row(fields: &[String]) -> String { fields.iter().map(|f| esc(f)).collect::<Vec<_>>().join(",") }
+    fn write_csv(dir: &std::path::Path, name: &str, header: &str, lines: Vec<String>) -> Result<(), String> {
+        let mut content = "\u{FEFF}".to_string();
+        content.push_str(header); content.push('\n');
+        for l in lines { content.push_str(&l); content.push('\n'); }
+        std::fs::write(dir.join(name), content).map_err(|e| format!("{}: {}", name, e))
+    }
+
+    for p in &livret_poches {
+        let safe = p.nom.chars().map(|c| if c.is_alphanumeric() || c == '-' { c } else { '_' }).collect::<String>();
+        let filename = format!("{}.csv", safe);
+        let mut stmt = conn.prepare(
+            "SELECT id,date,montant,notes FROM livrets WHERE poche=?1 AND nom=?2 ORDER BY date ASC"
+        ).map_err(|e| e.to_string())?;
+        let lines: Vec<String> = stmt.query_map(params![p.type_livret, p.nom], |r| {
+            let id: Option<i64> = r.get(0)?;
+            let montant: f64 = r.get(2)?;
+            let notes_str: String = r.get::<_, Option<String>>(3)?.unwrap_or_default();
+            let is_interet = notes_str.starts_with("[INTERET");
+            let is_retrait = !is_interet && montant < 0.0;
+            let type_str = if is_interet { "interet" } else if is_retrait { "retrait" } else { "versement" };
+            Ok(vec![
+                id.map_or("".into(), |v| v.to_string()),
+                r.get::<_, String>(1)?,
+                type_str.to_string(),
+                format!("{:.2}", montant.abs()),
+                notes_str,
+            ])
+        }).map_err(|e| e.to_string())?.filter_map(|r| r.ok()).map(|f| row(&f)).collect();
+        write_csv(&dir, &filename, "id,date,type,montant,notes", lines)?;
+        written.push(filename);
+    }
+    Ok(written)
+}
+
 // ═══ IMPORT ══════════════════════════════════════════════════════════════════
 #[tauri::command]
 pub fn import_depenses(rows: Vec<Depense>, replace: bool, state: State<DbState>) -> Result<usize, String> {
@@ -560,8 +723,8 @@ pub fn import_livrets(rows: Vec<Livret>, replace: bool, state: State<DbState>) -
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     if replace { conn.execute("DELETE FROM livrets", []).map_err(|e| e.to_string())?; }
     for r in &rows {
-        conn.execute("INSERT INTO livrets (poche,montant,taux,date,notes) VALUES (?1,?2,?3,?4,?5)",
-            params![r.poche,r.montant,r.taux,r.date,r.notes])
+        conn.execute("INSERT INTO livrets (poche,nom,montant,taux,date,notes) VALUES (?1,?2,?3,?4,?5,?6)",
+            params![r.poche,r.nom,r.montant,r.taux,r.date,r.notes])
             .map_err(|e| e.to_string())?;
     }
     Ok(rows.len())

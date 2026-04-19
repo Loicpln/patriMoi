@@ -187,6 +187,13 @@ export function NestedPie({inner,outer,total,fmt,toggleLabel,onToggle,h=260}:{
   );
 }
 
+// ── Active dot that hides zero/null values (bell-effect) ──────────────────────
+export const activeDotNoZero = (props: any) => {
+  if (!props.value) return <g/>;
+  const { cx, cy, fill, stroke } = props;
+  return <circle cx={cx} cy={cy} r={4} fill={fill ?? stroke} stroke="white" strokeWidth={1.5}/>;
+};
+
 // ── Accordion section ──────────────────────────────────────────────────────────
 export function AccordionSection({label,count,color,children}:{label:string;count:number;color?:string;children:ReactNode}) {
   const [open,setOpen]=useState(false);
