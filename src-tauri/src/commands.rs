@@ -141,6 +141,16 @@ pub fn add_livret_poche(poche: LivretPoche, state: State<DbState>) -> Result<i64
 #[tauri::command]
 pub fn update_livret_poche(id: i64, nom: String, couleur: String, state: State<DbState>) -> Result<(), String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
+    // Fetch current type_livret + nom before updating (needed to cascade to livrets table)
+    let (old_type, old_nom): (String, String) = conn
+        .query_row("SELECT type_livret, nom FROM livret_poches WHERE id=?1", params![id], |r| Ok((r.get(0)?, r.get(1)?)))
+        .map_err(|e| e.to_string())?;
+    // Cascade nom rename to livrets rows
+    if old_nom != nom {
+        conn.execute(
+            "UPDATE livrets SET nom=?1 WHERE poche=?2 AND nom=?3",
+            params![nom, old_type, old_nom]).map_err(|e| e.to_string())?;
+    }
     conn.execute(
         "UPDATE livret_poches SET nom=?1, couleur=?2 WHERE id=?3",
         params![nom, couleur, id]).map_err(|e| e.to_string())?;

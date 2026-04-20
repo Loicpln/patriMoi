@@ -6,8 +6,8 @@
 
 // ── Livrets ────────────────────────────────────────────────────
 export const LIVRETS_DEF = [
-  { key: "livret_a",     label: "Livret A",     taux: 1.50, color: "#F0BD40" },
   { key: "ldds",         label: "LDDS",         taux: 1.50, color: "#F09937" },
+  { key: "livret_a",     label: "Livret A",     taux: 1.50, color: "#F0BD40" },
   { key: "lep",          label: "LEP",          taux: 2.50, color: "#EC602A" },
   { key: "livret_jeune", label: "Livret Jeune", taux: 2.40, color: "#DB3B26" },
 ] as const;

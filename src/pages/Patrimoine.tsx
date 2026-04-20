@@ -635,8 +635,12 @@ function GlobalRecap({livrets,livretPoches,positions,ventes,dividendes,versement
   const outer=[
     // Legacy livrets (nom=''): one entry per type
     ...LIVRETS_DEF.map(l=>({name:l.label,group:"Livrets",value:latestLiv[l.key]?.montant??0,color:l.color})),
-    // New livrets (nom!=''): one entry per poche nom
-    ...livretPoches.map(p=>{
+    // New livrets (nom!=''): one entry per poche nom, sorted by LIVRETS_DEF order
+    ...[...livretPoches].sort((a,b)=>{
+      const ia=LIVRETS_DEF.findIndex(l=>l.key===a.type_livret);
+      const ib=LIVRETS_DEF.findIndex(l=>l.key===b.type_livret);
+      return (ia<0?999:ia)-(ib<0?999:ib)||a.nom.localeCompare(b.nom);
+    }).map(p=>{
       const typeDef=LIVRETS_DEF.find(l=>l.key===p.type_livret);
       const val=livrets.filter(lv=>lv.nom===p.nom&&lv.poche===p.type_livret&&!isInteret(lv)&&(lv.date??"").slice(0,7)<=mois).reduce((s,lv)=>s+lv.montant,0);
       return{name:p.nom,group:"Livrets",value:val,color:p.couleur||typeDef?.color||"#F0BD40"};

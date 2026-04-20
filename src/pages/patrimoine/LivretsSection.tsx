@@ -419,6 +419,15 @@ export function LivretsSection({
   const annee  = parseInt(mois.slice(0, 4));
   const newOps = useMemo(() => livrets.filter(l => l.nom !== ""), [livrets]);
 
+  // Sort livretPoches by LIVRETS_DEF order (bottom → top: LDDS, Livret A, LEP, Livret Jeune)
+  const defIdx = (type_livret: string) => {
+    const i = LIVRETS_DEF.findIndex(l => l.key === type_livret);
+    return i >= 0 ? i : 999;
+  };
+  const sortedPoches = useMemo(() =>
+    [...livretPoches].sort((a, b) => defIdx(a.type_livret) - defIdx(b.type_livret) || a.nom.localeCompare(b.nom)),
+  [livretPoches]);
+
   // Balance per poche at selected month
   const balanceMap = useMemo(() => {
     const m: Record<string, number> = {};
@@ -436,24 +445,26 @@ export function LivretsSection({
           .reduce((s, o) => s + o.montant, 0),
   [newOps, annee]);
 
-  // Pie data: inner = type, outer = individual nom
+  // Pie data: inner = type, outer = individual nom — both sorted by LIVRETS_DEF order
   const { pieInner, pieOuter } = useMemo(() => {
+    const typeOrder: string[] = [];
     const typeMap: Record<string, number> = {};
     const outer: { name:string; value:number; color:string; group:string }[] = [];
-    livretPoches.forEach(p => {
+    sortedPoches.forEach(p => {
       const val = balanceMap[keyId(p.type_livret, p.nom)] ?? 0;
       if (val <= 0) return;
+      if (!typeMap[p.type_livret]) typeOrder.push(p.type_livret);
       typeMap[p.type_livret] = (typeMap[p.type_livret] ?? 0) + val;
       const typeDef = LIVRETS_DEF.find(l => l.key === p.type_livret);
       const c = p.couleur || typeDef?.color || "#F0BD40";
       outer.push({ name:p.nom, value:val, color:c, group:typeDef?.label??p.type_livret });
     });
-    const inner = Object.entries(typeMap).map(([key, value]) => {
+    const inner = typeOrder.map(key => {
       const d = LIVRETS_DEF.find(l => l.key === key);
-      return { name:d?.label??key, value, color:d?.color??"#F0BD40" };
+      return { name:d?.label??key, value:typeMap[key], color:d?.color??"#F0BD40" };
     });
     return { pieInner:inner, pieOuter:outer };
-  }, [livretPoches, balanceMap]);
+  }, [sortedPoches, balanceMap]);
 
   // Global stacked chart
   const globalData = useMemo(() =>
@@ -515,7 +526,7 @@ export function LivretsSection({
       <ResponsiveContainer width="100%" height={h}>
         <ComposedChart data={globalData} margin={{ left:0, right:5, top:5, bottom: isExp ? 28 : 0 }}>
           <defs>
-            {livretPoches.map(p => {
+            {sortedPoches.map(p => {
               const k = keyId(p.type_livret, p.nom);
               const c = p.couleur || LIVRETS_DEF.find(l => l.key === p.type_livret)?.color || "#F0BD40";
               return (
@@ -531,7 +542,7 @@ export function LivretsSection({
             tickFormatter={d => MN_SHORT[parseInt(d.slice(5,7))-1]+" "+d.slice(2,4)}/>
           <YAxis tick={{ fontSize:8, fontFamily:"JetBrains Mono" }} width={32}/>
           <Tooltip content={<GlobalTooltip/>}/>
-          {livretPoches.map(p => {
+          {sortedPoches.map(p => {
             const k = keyId(p.type_livret, p.nom);
             const c = p.couleur || LIVRETS_DEF.find(l => l.key === p.type_livret)?.color || "#F0BD40";
             return (

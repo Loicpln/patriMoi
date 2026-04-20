@@ -112,24 +112,38 @@ export function LivretPocheEditModal({poche,onSave,onClose}:{poche:LivretPoche;o
 export function LivretPocheFormModal({onSave,onClose}:{onSave:(p:LivretPoche)=>void;onClose:()=>void}) {
   const [typeLivret,setTypeLivret]=useState<string>(LIVRETS_DEF[0].key);
   const [nom,setNom]=useState<string>("");
+  const [couleur,setCouleur]=useState<string>("");
   const typeDef=LIVRETS_DEF.find(l=>l.key===typeLivret)??LIVRETS_DEF[0];
+  const defaultColor=typeDef.color;
+  const displayColor=couleur||defaultColor;
   return(<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()} style={{maxWidth:420}}>
     <div className="modal-title">Nouveau livret</div>
     <div style={{display:"flex",flexDirection:"column",gap:12,marginTop:16}}>
       <div className="field" style={F}><label>Type de livret</label>
-        <select value={typeLivret} onChange={e=>setTypeLivret(e.target.value)}>
+        <select value={typeLivret} onChange={e=>{setTypeLivret(e.target.value);setCouleur("");}}>
           {LIVRETS_DEF.map(l=><option key={l.key} value={l.key}>{l.label}</option>)}
         </select></div>
       <div className="field" style={F}><label>Nom personnalisé</label>
         <input value={nom} placeholder={`ex: ${typeDef.label} BNP`}
           style={{width:"100%",boxSizing:"border-box"}}
           onChange={e=>setNom(e.target.value)}/></div>
+      <div className="field" style={F}><label>Couleur</label>
+        <div style={{display:"flex",gap:6,alignItems:"center",minWidth:0}}>
+          <input type="color" value={displayColor} onChange={e=>setCouleur(e.target.value)}
+            style={{width:36,height:32,flexShrink:0,padding:2,background:"none",border:"1px solid var(--border)",borderRadius:4,cursor:"pointer"}}/>
+          <input value={displayColor} placeholder={defaultColor}
+            onChange={e=>setCouleur(e.target.value)}
+            style={{flex:1,minWidth:0,fontFamily:"var(--mono)",fontSize:11,boxSizing:"border-box"}}/>
+          <button className="btn btn-ghost btn-sm" style={{fontSize:10,flexShrink:0}}
+            onClick={()=>setCouleur("")} title="Réinitialiser">↺</button>
+        </div>
+      </div>
     </div>
     <div className="form-actions">
       <button className="btn btn-ghost" onClick={onClose}>Annuler</button>
       <button className="btn btn-primary"
         disabled={!nom.trim()}
-        onClick={()=>onSave({type_livret:typeLivret,nom:nom.trim(),couleur:""})}>
+        onClick={()=>onSave({type_livret:typeLivret,nom:nom.trim(),couleur})}>
         Créer
       </button>
     </div>
