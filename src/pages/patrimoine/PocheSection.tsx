@@ -881,7 +881,11 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
             {dividendes.length === 0 ? <div className="empty">Aucun dividende</div> : (<>
               {tickersDivs.length&& (
                 <div style={{display:"flex",alignItems:"center",gap:6,marginInline:4,overflowX:"auto",padding:"4px 0"}}>
-                  <button className="btn btn-sm" style={{fontSize:10,padding:"2px 8px",opacity:filterDivs.size===0?1:0.4}}
+                  <button className="btn btn-sm" style={{fontSize:10,padding:"2px 8px",
+                      background:filterDivs.size===0?"var(--bg-0)":"transparent",
+                      color:filterDivs.size===0?"var(--text-0)":"var(--text-2)",
+                      borderColor:filterDivs.size===0?"var(--text-2)":"var(--border)",
+                      fontWeight:filterDivs.size===0?600:400}}
                     onClick={()=>{setFilterDivs(new Set());setPageDivs(0);}}>Tout</button>
                   {tickersDivs.map(t=>{const active=filterDivs.has(t);return(
                     <button key={t} className="btn btn-sm"
@@ -928,7 +932,11 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
             {ventes.length === 0 ? <div className="empty">Aucune vente</div> : (<>
               {tickersVentes.length&& (
                 <div style={{display:"flex",alignItems:"center",gap:6,marginInline:4,overflowX:"auto",padding:"4px 0"}}>
-                  <button className="btn btn-sm" style={{fontSize:10,padding:"2px 8px",opacity:filterVentes.size===0?1:0.4}}
+                  <button className="btn btn-sm" style={{fontSize:10,padding:"2px 8px",
+                      background:filterVentes.size===0?"var(--bg-0)":"transparent",
+                      color:filterVentes.size===0?"var(--text-0)":"var(--text-2)",
+                      borderColor:filterVentes.size===0?"var(--text-2)":"var(--border)",
+                      fontWeight:filterVentes.size===0?600:400}}
                     onClick={()=>{setFilterVentes(new Set());setPageVentes(0);}}>Tout</button>
                   {tickersVentes.map(t=>{const active=filterVentes.has(t);return(
                     <button key={t} className="btn btn-sm"

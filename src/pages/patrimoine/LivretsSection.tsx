@@ -331,7 +331,11 @@ function LivretPocheSection({
             {!opsSorted.length ? <div className="empty">Aucune opération</div> : (<>
               {/* Filtres par type */}
               <div style={{ display:"flex", alignItems:"center", gap:6, marginInline:4, flexWrap:"wrap", marginBottom:4, padding:"4px 0" }}>
-                <button className="btn btn-sm" style={{ fontSize:10, padding:"2px 8px", opacity:filterTypes.size===0?1:0.4 }}
+                <button className="btn btn-sm" style={{ fontSize:10, padding:"2px 8px",
+                    background: filterTypes.size===0 ? "var(--bg-0)" : "transparent",
+                    color: filterTypes.size===0 ? "var(--text-0)" : "var(--text-2)",
+                    borderColor: filterTypes.size===0 ? "var(--text-2)" : "var(--border)",
+                    fontWeight: filterTypes.size===0 ? 600 : 400 }}
                   onClick={() => { setFilterTypes(new Set()); setPageOps(0); }}>Tout</button>
                 {([ ["versement","Versement","var(--teal)"], ["retrait","Retrait","var(--rose)"], ["interet","Intérêts","var(--gold)"] ] as [OpType,string,string][]).map(([t, label, c]) => {
                   const active = filterTypes.has(t);
@@ -360,7 +364,7 @@ function LivretPocheSection({
                       <tr key={o.id}>
                         <td style={{ color:"var(--text-1)" }}>{o.date}</td>
                         <td><span style={{ color:lcolor, fontSize:10 }}>{label}</span></td>
-                        <td style={{ color: t==="retrait" ? "var(--rose)" : "var(--text-0)" }}>
+                        <td style={{ color: lcolor }}>
                           {t==="retrait" ? "−" : "+"}{fmt(Math.abs(o.montant))}
                         </td>
                         <td style={{ color:"var(--text-2)", fontSize:10 }}>{note}</td>
