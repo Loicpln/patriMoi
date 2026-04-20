@@ -179,7 +179,7 @@ body {
 .tab-btn.active { color: var(--gold); border-bottom-color: var(--gold); }
 
 /* â”€â”€ Stat cards â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
-.stat-row { display: flex; gap: 14px; margin-bottom: 28px; flex-wrap: wrap; }
+.stat-row { display: flex; gap: 14px; margin-bottom: 16px; flex-wrap: wrap; }
 
 .stat-card {
   flex: 1;
@@ -195,15 +195,15 @@ body {
   content: '';
   position: absolute;
   top: 0; left: 0; right: 0;
-  height: 2px;
-  border-radius: var(--r) var(--r) 0 0;
+  height: 3px;
 }
-.sc-gold::after  { background: var(--gold); }
-.sc-teal::after  { background: var(--teal); }
-.sc-rose::after  { background: var(--rose); }
-.sc-lav::after   { background: var(--lavender); }
-.sc-amber::after { background: var(--amber); }
+.sc-gold::after    { background: var(--gold); }
+.sc-teal::after    { background: var(--teal); }
+.sc-rose::after    { background: var(--rose); }
+.sc-lav::after     { background: var(--lavender); }
+.sc-amber::after   { background: var(--amber); }
 .sc-neutral::after { background: var(--text-2); }
+.sc-dyn::after     { background: var(--sc-color, transparent); }
 
 .sc-label { font-size: 9px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-2); margin-bottom: 10px; }
 .sc-value { font-family: var(--serif); font-size: 24px; color: var(--text-0); letter-spacing: -.01em; }
@@ -422,7 +422,7 @@ tbody tr:hover td { background: var(--bg-2); }
   gap: 12px;
   margin: 32px 0 20px;
 }
-.section-sep-label { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-2); white-space: nowrap; }
+.section-sep-label { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-2); white-space: nowrap; padding: 5px 0; }
 .section-sep-line { flex: 1; height: 1px; background: var(--border); }
 
 /* â”€â”€ Poche header card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */

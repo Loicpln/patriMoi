@@ -493,7 +493,7 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
         const gain=statCards.valeur-statCards.vers;
         const gainColor=gain>=0?"var(--teal)":"var(--rose)";
         return(
-          <div className="stat-card" style={{borderTop:`3px solid ${gainColor}`}}>
+          <div className="stat-card sc-dyn" style={{"--sc-color": gainColor} as React.CSSProperties}>
             <div className="sc-label">Valorisation · {mois}</div>
             <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
               <div className="sc-value">{fmt(statCards.valeur)}</div>

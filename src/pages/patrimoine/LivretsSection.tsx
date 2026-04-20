@@ -662,11 +662,11 @@ export function LivretsSection({
           {viewMode === "graphiques" && (
             <>
             <div style={{ display:"flex", gap:16, marginBottom:16, flexWrap:"wrap" }}>
-              <div className="stat-card sc-gold" style={{ minWidth:160 }}>
+              <div className="stat-card sc-neutral" style={{ minWidth:160 }}>
                 <div className="sc-label">Total · {mois}</div>
                 <div className="sc-value">{fmt(totalBalance)}</div>
               </div>
-              <div className="stat-card sc-neutral" style={{ minWidth:160 }}>
+              <div className="stat-card sc-gold" style={{ minWidth:160 }}>
                 <div className="sc-label">Intérêts {annee}</div>
                 <div className="sc-value" style={{ color:"var(--gold)" }}>
                   {totalInterests > 0 ? fmt(totalInterests) : "—"}
