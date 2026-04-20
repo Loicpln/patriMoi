@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
 import {
   Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip, ComposedChart,
-  Bar, BarChart, Cell,
+  Bar, BarChart, Cell, Brush, Customized, ReferenceArea,
 } from "recharts";
 import { useDevise } from "../../context/DeviseContext";
 import { LIVRETS_DEF, TOOLTIP_STYLE } from "../../constants";
@@ -13,6 +13,35 @@ import { ExportBtn, ImportBtn, ImportModal, exportLivretPoche,
 import type { Livret, LivretPoche } from "./types";
 
 const MN_SHORT = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
+
+const PAGE_SIZE = 10;
+function Pager({ page, total, onPage }: { page: number; total: number; onPage: (p: number) => void }) {
+  const pages = Math.ceil(total / PAGE_SIZE);
+  if (pages <= 1) return null;
+  return (
+    <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:6, padding:"6px 4px", userSelect:"none" }}>
+      <button className="btn btn-ghost btn-sm" disabled={page===0} onClick={()=>onPage(0)} style={{ padding:"2px 6px", fontSize:11 }}>«</button>
+      <button className="btn btn-ghost btn-sm" disabled={page===0} onClick={()=>onPage(page-1)} style={{ padding:"2px 6px", fontSize:11 }}>‹</button>
+      <span style={{ fontSize:10, color:"var(--text-2)", minWidth:60, textAlign:"center" }}>{page+1} / {pages}</span>
+      <button className="btn btn-ghost btn-sm" disabled={page>=pages-1} onClick={()=>onPage(page+1)} style={{ padding:"2px 6px", fontSize:11 }}>›</button>
+      <button className="btn btn-ghost btn-sm" disabled={page>=pages-1} onClick={()=>onPage(pages-1)} style={{ padding:"2px 6px", fontSize:11 }}>»</button>
+    </div>
+  );
+}
+
+function idxPx(data: any[], x1: string, x2: string, offset: any, bStart = 0, bEnd?: number) {
+  const end = bEnd ?? data.length - 1;
+  const N = end - bStart + 1;
+  if (N <= 0) return null;
+  const ai1 = data.findIndex((d: any) => d.date === x1);
+  let ai2 = -1; for (let i = data.length - 1; i >= 0; i--) { if ((data[i] as any).date === x2) { ai2 = i; break; } }
+  if (ai1 < 0 || ai2 < 0) return null;
+  const r1 = Math.max(0, ai1 - bStart); const r2 = Math.min(N - 1, ai2 - bStart);
+  if (r2 < 0 || r1 >= N) return null;
+  const denom = Math.max(1, N - 1);
+  const step = N > 1 ? offset.width / (N - 1) : offset.width;
+  return { rx1: offset.left + (r1 / denom) * offset.width, rx2: offset.left + (r2 / denom) * offset.width, step };
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const isInteret = (l: Livret) => (l.notes ?? "").startsWith("[INTERET");
@@ -114,22 +143,64 @@ function LivretPocheSection({
     const years = Object.keys(interestsMap).map(Number).sort();
     return years.map(y => ({ year: String(y), montant: interestsMap[y] }));
   }, [interestsMap]);
+
+  const [brushIdx, setBrushIdx] = useState<{ start: number; end: number } | null>(null);
+  const visibleData = useMemo(() =>
+    brushIdx ? dailyData.slice(brushIdx.start, brushIdx.end + 1) : dailyData,
+  [dailyData, brushIdx]);
+  const onBrushChange = (range: any) => {
+    const s = range?.startIndex ?? 0; const e = range?.endIndex ?? dailyData.length - 1;
+    setBrushIdx(s === 0 && e === dailyData.length - 1 ? null : { start: s, end: e });
+  };
+  const monthRange = useMemo(() => {
+    const inM = visibleData.filter((d: any) => (d.date as string).slice(0, 7) === mois);
+    if (!inM.length) return null;
+    return { x1: inM[0].date as string, x2: inM[inM.length - 1].date as string };
+  }, [visibleData, mois]);
+
   const xTicks = useMemo(() => {
     const seen = new Set<string>(), firsts: string[] = [];
-    dailyData.forEach((d: any) => {
+    visibleData.forEach((d: any) => {
       const m = (d.date as string).slice(0, 7);
       if (!seen.has(m)) { seen.add(m); firsts.push(d.date as string); }
     });
     return firsts.filter((_, i) => i % Math.max(1, Math.ceil(firsts.length / 6)) === 0);
-  }, [dailyData]);
+  }, [visibleData]);
   const opsSorted = useMemo(() => [...ops].sort((a, b) => b.date.localeCompare(a.date)), [ops]);
 
+  type OpType = "versement" | "retrait" | "interet";
+  const [filterTypes, setFilterTypes] = useState<Set<OpType>>(new Set());
+  const [pageOps, setPageOps] = useState(0);
+
+  const getOpType = (o: Livret): OpType =>
+    isInteret(o) ? "interet" : o.montant < 0 ? "retrait" : "versement";
+
+  const filteredOps = useMemo(() => {
+    if (!filterTypes.size) return opsSorted;
+    return opsSorted.filter(o => filterTypes.has(getOpType(o)));
+  }, [opsSorted, filterTypes]);
+
+  const countByType = useMemo(() => {
+    const m: Record<OpType, number> = { versement: 0, retrait: 0, interet: 0 };
+    opsSorted.forEach(o => { m[getOpType(o)]++; });
+    return m;
+  }, [opsSorted]);
+
+  const togType = (t: OpType) => {
+    setFilterTypes(prev => {
+      const next = new Set(prev);
+      if (next.has(t)) next.delete(t); else next.add(t);
+      return next;
+    });
+    setPageOps(0);
+  };
+
   // ── Chart nodes ────────────────────────────────────────────────────────────
-  const balanceNode = (h: number) => !dailyData.length
+  const balanceNode = (h: number, isExp: boolean) => !dailyData.length
     ? <div className="empty">Aucune opération</div>
     : (
       <ResponsiveContainer width="100%" height={h}>
-        <ComposedChart data={dailyData} margin={{ left:0, right:5, top:5, bottom:0 }}>
+        <ComposedChart data={dailyData} margin={{ left:0, right:5, top:5, bottom: isExp ? 28 : 0 }}>
           <defs>
             <linearGradient id={`gb_${kid}`} x1="0" y1="0" x2="0" y2="1">
               <stop offset="5%"  stopColor={color} stopOpacity={0.55}/>
@@ -138,13 +209,32 @@ function LivretPocheSection({
           </defs>
           <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
           <XAxis dataKey="date" ticks={xTicks} tick={{ fontSize:8, fontFamily:"JetBrains Mono" }}
-            tickFormatter={d => MN_SHORT[parseInt(d.slice(5,7))-1]}/>
+            tickFormatter={d => MN_SHORT[parseInt(d.slice(5,7))-1]+" "+d.slice(2,4)}/>
           <YAxis tick={{ fontSize:8, fontFamily:"JetBrains Mono" }} tickFormatter={fmtAxis} width={32}/>
           <Tooltip contentStyle={TOOLTIP_STYLE} labelStyle={{ color:"var(--text-2)", fontSize:9 }}
             formatter={(v:any) => [fmt(Number(v)), "Solde"]}/>
           <Area type="stepAfter" dataKey={kid} name="Solde"
             stroke={color} strokeWidth={1.5} fill={`url(#gb_${kid})`}
             dot={false} activeDot={activeDotNoZero}/>
+          {monthRange && (
+            <Customized component={(p: any) => {
+              const bS = isExp ? (brushIdx?.start ?? 0) : 0;
+              const bE = isExp ? (brushIdx?.end ?? dailyData.length - 1) : dailyData.length - 1;
+              const r = idxPx(dailyData, monthRange.x1, monthRange.x2, p.offset, bS, bE);
+              if (!r) return null;
+              return <g><rect x={r.rx1} y={p.offset.top}
+                width={Math.max(1, r.rx2 - r.rx1 + r.step)} height={p.offset.height}
+                fill="var(--gold)" fillOpacity={0.15} stroke="var(--gold)" strokeOpacity={0.5}
+                strokeDasharray="4 2" strokeWidth={1} pointerEvents="none"/></g>;
+            }}/>
+          )}
+          {isExp && (
+            <Brush dataKey="date" height={22} travellerWidth={6}
+              stroke="var(--border)" fill="var(--bg-2)"
+              startIndex={brushIdx?.start ?? 0}
+              endIndex={brushIdx?.end ?? dailyData.length - 1}
+              onChange={onBrushChange} tickFormatter={() => ""}/>
+          )}
         </ComposedChart>
       </ResponsiveContainer>
     );
@@ -158,9 +248,17 @@ function LivretPocheSection({
           <XAxis dataKey="year" tick={{ fontSize:8, fontFamily:"JetBrains Mono" }}/>
           <YAxis tick={{ fontSize:8, fontFamily:"JetBrains Mono" }} tickFormatter={fmtAxis} width={32}/>
           <Tooltip contentStyle={TOOLTIP_STYLE} labelStyle={{ color:"var(--text-2)", fontSize:9 }}
-            formatter={(v:any) => [fmt(Number(v)), "Intérêts"]}/>
+            itemStyle={{ color }} formatter={(v:any) => [fmt(Number(v)), "Intérêts"]}/>
+          {annualData.some(d => d.year === String(annee)) && (
+            <ReferenceArea x1={String(annee)} x2={String(annee)}
+              fill="var(--gold)" fillOpacity={0.15}
+              stroke="var(--gold)" strokeOpacity={0.5}
+              strokeDasharray="4 2" strokeWidth={1}/>
+          )}
           <Bar dataKey="montant" name="Intérêts" radius={[3,3,0,0]}>
-            {annualData.map((_,i) => <Cell key={i} fill={color} fillOpacity={0.75}/>)}
+            {annualData.map((d,i) => (
+              <Cell key={i} fill={color} fillOpacity={0.8}/>
+            ))}
           </Bar>
         </BarChart>
       </ResponsiveContainer>
@@ -220,41 +318,53 @@ function LivretPocheSection({
       {open && (
         <div>
           <ChartGrid charts={[
-            { key:`${kid}_bal`,  title:"Évolution du solde / jour", node:balanceNode },
-            { key:`${kid}_int`,  title:"Intérêts annuels",           node:interestNode },
+            { key:`${kid}_bal`, title:"Évolution du solde / jour", node:balanceNode,
+              brushActive:!!brushIdx, onResetZoom:()=>setBrushIdx(null) },
+            { key:`${kid}_int`, title:"Intérêts annuels",          node:interestNode },
           ]}/>
 
           <AccordionSection label="Opérations" count={opsSorted.length}>
-            {!opsSorted.length
-              ? <div className="empty">Aucune opération</div>
-              : (
-                <table>
-                  <thead><tr><th>Date</th><th>Type</th><th>Montant</th><th>Notes</th><th/></tr></thead>
-                  <tbody>
-                    {opsSorted.map(o => {
-                      const isInt     = isInteret(o);
-                      const isRetrait = !isInt && o.montant < 0;
-                      const label     = isInt ? `Intérêts ${extractYear(o)}` : isRetrait ? "Retrait" : "Versement";
-                      const lcolor    = isInt ? "var(--gold)" : isRetrait ? "var(--rose)" : "var(--teal)";
-                      const note      = isInt ? (o.notes ?? "").replace(/\[INTERET \d+\]\s*/,"") : (o.notes ?? "");
-                      return (
-                        <tr key={o.id}>
-                          <td style={{ color:"var(--text-1)" }}>{o.date}</td>
-                          <td><span style={{ color:lcolor, fontSize:10 }}>{label}</span></td>
-                          <td style={{ color:isRetrait?"var(--rose)":"var(--text-0)" }}>
-                            {isRetrait?"−":"+"}{fmt(Math.abs(o.montant))}
-                          </td>
-                          <td style={{ color:"var(--text-2)", fontSize:10 }}>{note}</td>
-                          <td>
-                            <button className="btn btn-danger btn-sm"
-                              onClick={() => onDeleteOp(o.id!)}>✕</button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              )}
+            {!opsSorted.length ? <div className="empty">Aucune opération</div> : (<>
+              {/* Filtres par type */}
+              <div style={{ display:"flex", alignItems:"center", gap:6, marginInline:4, flexWrap:"wrap", marginBottom:4 }}>
+                {([ ["versement","Versement","var(--teal)"], ["retrait","Retrait","var(--rose)"], ["interet","Intérêts","var(--gold)"] ] as [OpType,string,string][]).map(([t, label, c]) => (
+                  <button key={t}
+                    className={`btn btn-sm ${filterTypes.has(t) ? "btn-primary" : "btn-ghost"}`}
+                    style={{ fontSize:10, padding:"2px 8px",
+                      ...(filterTypes.has(t) ? {} : { color: c, borderColor: c+"55" }) }}
+                    onClick={() => togType(t)}>
+                    {label} ({countByType[t]})
+                  </button>
+                ))}
+                {filterTypes.size > 0 && (
+                  <button className="btn btn-ghost btn-sm" style={{ fontSize:10, padding:"2px 8px", opacity:0.6 }}
+                    onClick={() => { setFilterTypes(new Set()); setPageOps(0); }}>✕ Tout</button>
+                )}
+              </div>
+              <table>
+                <thead><tr><th>Date</th><th>Type</th><th>Montant</th><th>Notes</th><th/></tr></thead>
+                <tbody>
+                  {filteredOps.slice(pageOps * PAGE_SIZE, (pageOps + 1) * PAGE_SIZE).map(o => {
+                    const t       = getOpType(o);
+                    const lcolor  = t === "interet" ? "var(--gold)" : t === "retrait" ? "var(--rose)" : "var(--teal)";
+                    const label   = t === "interet" ? `Intérêts ${extractYear(o)}` : t === "retrait" ? "Retrait" : "Versement";
+                    const note    = t === "interet" ? (o.notes ?? "").replace(/\[INTERET \d+\]\s*/,"") : (o.notes ?? "");
+                    return (
+                      <tr key={o.id}>
+                        <td style={{ color:"var(--text-1)" }}>{o.date}</td>
+                        <td><span style={{ color:lcolor, fontSize:10 }}>{label}</span></td>
+                        <td style={{ color: t==="retrait" ? "var(--rose)" : "var(--text-0)" }}>
+                          {t==="retrait" ? "−" : "+"}{fmt(Math.abs(o.montant))}
+                        </td>
+                        <td style={{ color:"var(--text-2)", fontSize:10 }}>{note}</td>
+                        <td><button className="btn btn-danger btn-sm" onClick={() => onDeleteOp(o.id!)}>✕</button></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              <Pager page={pageOps} total={filteredOps.length} onPage={p => setPageOps(p)}/>
+            </>)}
           </AccordionSection>
         </div>
       )}
@@ -318,14 +428,29 @@ export function LivretsSection({
   // Global stacked chart
   const globalData = useMemo(() =>
     buildGlobalDailyData(newOps, livretPoches), [newOps, livretPoches]);
+
+  const [globalBrushIdx, setGlobalBrushIdx] = useState<{ start: number; end: number } | null>(null);
+  const globalVisibleData = useMemo(() =>
+    globalBrushIdx ? globalData.slice(globalBrushIdx.start, globalBrushIdx.end + 1) : globalData,
+  [globalData, globalBrushIdx]);
+  const onGlobalBrushChange = (range: any) => {
+    const s = range?.startIndex ?? 0; const e = range?.endIndex ?? globalData.length - 1;
+    setGlobalBrushIdx(s === 0 && e === globalData.length - 1 ? null : { start: s, end: e });
+  };
+  const globalMonthRange = useMemo(() => {
+    const inM = globalVisibleData.filter((d: any) => (d.date as string).slice(0, 7) === mois);
+    if (!inM.length) return null;
+    return { x1: inM[0].date as string, x2: inM[inM.length - 1].date as string };
+  }, [globalVisibleData, mois]);
+
   const globalXTicks = useMemo(() => {
     const seen = new Set<string>(), firsts: string[] = [];
-    globalData.forEach((d: any) => {
+    globalVisibleData.forEach((d: any) => {
       const m = (d.date as string).slice(0, 7);
       if (!seen.has(m)) { seen.add(m); firsts.push(d.date as string); }
     });
     return firsts.filter((_,i) => i % Math.max(1, Math.ceil(firsts.length/8)) === 0);
-  }, [globalData]);
+  }, [globalVisibleData]);
 
   const GlobalTooltip = ({ active, payload, label }: any) => {
     if (!active || !payload?.length) return null;
@@ -354,11 +479,11 @@ export function LivretsSection({
     ? <div className="empty">Aucun livret</div>
     : <NestedPie inner={pieInner} outer={pieOuter} total={totalBalance} fmt={fmt} h={h}/>;
 
-  const stackNode = (h: number) => !globalData.length
+  const stackNode = (h: number, isExp: boolean) => !globalData.length
     ? <div className="empty">Aucune donnée</div>
     : (
       <ResponsiveContainer width="100%" height={h}>
-        <ComposedChart data={globalData} margin={{ left:0, right:5, top:5, bottom:0 }}>
+        <ComposedChart data={globalData} margin={{ left:0, right:5, top:5, bottom: isExp ? 28 : 0 }}>
           <defs>
             {livretPoches.map(p => {
               const k = keyId(p.type_livret, p.nom);
@@ -373,7 +498,7 @@ export function LivretsSection({
           </defs>
           <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
           <XAxis dataKey="date" ticks={globalXTicks} tick={{ fontSize:8, fontFamily:"JetBrains Mono" }}
-            tickFormatter={d => MN_SHORT[parseInt(d.slice(5,7))-1]}/>
+            tickFormatter={d => MN_SHORT[parseInt(d.slice(5,7))-1]+" "+d.slice(2,4)}/>
           <YAxis tick={{ fontSize:8, fontFamily:"JetBrains Mono" }} width={32}/>
           <Tooltip content={<GlobalTooltip/>}/>
           {livretPoches.map(p => {
@@ -385,6 +510,25 @@ export function LivretsSection({
                 dot={false} activeDot={activeDotNoZero}/>
             );
           })}
+          {globalMonthRange && (
+            <Customized component={(p: any) => {
+              const bS = isExp ? (globalBrushIdx?.start ?? 0) : 0;
+              const bE = isExp ? (globalBrushIdx?.end ?? globalData.length - 1) : globalData.length - 1;
+              const r = idxPx(globalData, globalMonthRange.x1, globalMonthRange.x2, p.offset, bS, bE);
+              if (!r) return null;
+              return <g><rect x={r.rx1} y={p.offset.top}
+                width={Math.max(1, r.rx2 - r.rx1 + r.step)} height={p.offset.height}
+                fill="var(--gold)" fillOpacity={0.15} stroke="var(--gold)" strokeOpacity={0.5}
+                strokeDasharray="4 2" strokeWidth={1} pointerEvents="none"/></g>;
+            }}/>
+          )}
+          {isExp && (
+            <Brush dataKey="date" height={22} travellerWidth={6}
+              stroke="var(--border)" fill="var(--bg-2)"
+              startIndex={globalBrushIdx?.start ?? 0}
+              endIndex={globalBrushIdx?.end ?? globalData.length - 1}
+              onChange={onGlobalBrushChange} tickFormatter={() => ""}/>
+          )}
         </ComposedChart>
       </ResponsiveContainer>
     );
@@ -483,8 +627,9 @@ export function LivretsSection({
               </div>
             </div>
             <ChartGrid charts={[
-              { key:"liv_pie",   title:`Répartition · ${mois}`,     node:pieNode  },
-              { key:"liv_stack", title:"Évolution globale par jour", node:stackNode },
+              { key:"liv_pie",   title:`Répartition · ${mois}`,     node:pieNode   },
+              { key:"liv_stack", title:"Évolution globale par jour", node:stackNode,
+                brushActive:!!globalBrushIdx, onResetZoom:()=>setGlobalBrushIdx(null) },
             ]}/>
             </>
           )}

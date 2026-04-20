@@ -451,7 +451,7 @@ export default function Depenses() {
             </defs>
             <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
             <XAxis dataKey="mois" tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
-              tickFormatter={mo => { const n = parseInt(mo.slice(5,7)); return MN_SHORT_D[n-1]; }}
+              tickFormatter={mo => { const n = parseInt(mo.slice(5,7)); return MN_SHORT_D[n-1]+" "+mo.slice(2,4); }}
               interval={Math.max(0, Math.ceil(d.length / 8) - 1)}/>
             <YAxis tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
               tickFormatter={fmtAxis} width={32}/>

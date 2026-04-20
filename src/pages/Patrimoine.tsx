@@ -410,7 +410,7 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
           </defs>
           <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
           <XAxis dataKey="date" ticks={xTicks} tick={{fontSize:8,fontFamily:"JetBrains Mono"}}
-            tickFormatter={dd=>{const mo=parseInt(dd.slice(5,7));return MN_SHORT[mo-1];}}/>
+            tickFormatter={dd=>{const mo=parseInt(dd.slice(5,7));return MN_SHORT[mo-1]+" "+dd.slice(2,4);}}/>
           <YAxis tick={{fontSize:8,fontFamily:"JetBrains Mono"}} tickFormatter={fmtAxis} width={32} domain={[0,"auto"]}/>
           <Tooltip content={<RecapTooltip/>}/>
           {poches.map(p=><Area key={p.key} type="monotone" dataKey={p.label} stackId="r" name={p.label} stroke={p.color} strokeWidth={1.5} fill={`url(#gr_${p.key})`} dot={false}/>)}
@@ -859,7 +859,7 @@ function GlobalRecap({livrets,livretPoches,positions,ventes,dividendes,versement
           </defs>
           <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
           <XAxis dataKey="date" ticks={xTicksG} tick={{fontSize:8,fontFamily:"JetBrains Mono"}}
-            tickFormatter={dd=>{const mo=parseInt(dd.slice(5,7));return MN_SHORT_G[mo-1];}}/>
+            tickFormatter={dd=>{const mo=parseInt(dd.slice(5,7));return MN_SHORT_G[mo-1]+" "+dd.slice(2,4);}}/>
           <YAxis tick={{fontSize:8,fontFamily:"JetBrains Mono"}} tickFormatter={fmtAxis} width={32}/>
           <Tooltip content={<GlobalTooltip/>}/>
           {/* Livrets — stacked at bottom, one area per livret */}

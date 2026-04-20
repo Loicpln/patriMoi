@@ -63,7 +63,7 @@ export function ChartGrid({charts}:{charts:{key:string;title:string;node:(h:numb
         if(exp&&!isExp)return null;
         const h=isExp?520:260;
         return(
-          <div key={c.key} className="chart-card" style={{margin:0,height:h+52}}>
+          <div key={c.key} className="chart-card" style={{margin:0,height:h+52,overflow:"hidden"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
               <div className="chart-title" style={{marginBottom:0,fontSize:12}}>{c.title}</div>
               <div style={{display:"flex",gap:4,alignItems:"center"}}>
@@ -78,7 +78,7 @@ export function ChartGrid({charts}:{charts:{key:string;title:string;node:(h:numb
                 </button>
               </div>
             </div>
-            <div style={{height:h}}>{c.node(h,isExp)}</div>
+            <div style={{height:h,overflow:"hidden"}}>{c.node(h,isExp)}</div>
           </div>
         );
       })}

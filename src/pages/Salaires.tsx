@@ -217,7 +217,7 @@ export default function Salaires() {
             <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
             <XAxis dataKey="mois" tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
               interval={Math.max(0, Math.floor(d.length / 7) - 1)}
-              tickFormatter={m => { const mo = parseInt(m.slice(5, 7)); return MN_SHORT[mo - 1]; }}/>
+              tickFormatter={m => { const mo = parseInt(m.slice(5, 7)); return MN_SHORT[mo - 1]+" "+m.slice(2,4); }}/>
             <YAxis tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
               tickFormatter={fmtAxis} width={32}/>
             <Tooltip content={({ active, payload, label }: any) => {
@@ -278,7 +278,7 @@ export default function Salaires() {
           <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
           <XAxis dataKey="mois" tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
             interval={Math.max(0, Math.floor(primeChartData.length / 7) - 1)}
-            tickFormatter={m => { const mo = parseInt(m.slice(5, 7)); return MN_SHORT[mo - 1]; }}/>
+            tickFormatter={m => { const mo = parseInt(m.slice(5, 7)); return MN_SHORT[mo - 1]+" "+m.slice(2,4); }}/>
           <YAxis tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
             tickFormatter={fmtAxis} width={32}/>
           <Tooltip content={<PrimeTooltip/>}/>

@@ -630,7 +630,7 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
             <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
             <XAxis dataKey="date" tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
               ticks={xTicks}
-              tickFormatter={d => { const mo = parseInt(d.slice(5, 7)); return MN_SHORT[mo - 1]; }}/>
+              tickFormatter={d => { const mo = parseInt(d.slice(5, 7)); return MN_SHORT[mo - 1]+" "+d.slice(2,4); }}/>
             {/* Y-axis clamped to [0, auto] — portfolio value can't be negative */}
             <YAxis tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
               tickFormatter={fmtAxis} width={32}
@@ -697,7 +697,7 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
                 <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
                 <XAxis dataKey="date" tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
                   ticks={pnlXTicks}
-                  tickFormatter={d => { const mo = parseInt(d.slice(5, 7)); return MN_SHORT[mo - 1]; }}/>
+                  tickFormatter={d => { const mo = parseInt(d.slice(5, 7)); return MN_SHORT[mo - 1]+" "+d.slice(2,4); }}/>
                 {pnlMode !== "divs" ? (
                   <YAxis tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
                     tickFormatter={fmtAxis} width={32}/>
