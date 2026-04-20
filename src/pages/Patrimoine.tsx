@@ -638,8 +638,8 @@ function GlobalRecap({livrets,livretPoches,positions,ventes,dividendes,versement
     // New livrets (nom!=''): one entry per poche nom
     ...livretPoches.map(p=>{
       const typeDef=LIVRETS_DEF.find(l=>l.key===p.type_livret);
-      const val=livrets.filter(lv=>lv.nom===p.nom&&lv.poche===p.type_livret&&!isInteret(lv)).reduce((s,lv)=>s+lv.montant,0);
-      return{name:p.nom,group:"Livrets",value:val,color:typeDef?.color??"#F0BD40"};
+      const val=livrets.filter(lv=>lv.nom===p.nom&&lv.poche===p.type_livret&&!isInteret(lv)&&(lv.date??"").slice(0,7)<=mois).reduce((s,lv)=>s+lv.montant,0);
+      return{name:p.nom,group:"Livrets",value:val,color:p.couleur||typeDef?.color||"#F0BD40"};
     }),
     ...poches.map(p=>({name:p.label,group:"Investissements",value:pieToggle==="versements"?(versParPoche[p.key]??0):(portfolioParPoche[p.key]??0),color:p.color})),
   ].filter(p=>p.value>0);

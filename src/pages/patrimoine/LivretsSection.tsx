@@ -133,6 +133,10 @@ function LivretPocheSection({
   const annee   = parseInt(mois.slice(0, 4));
 
   const balance          = useMemo(() => computeBalance(ops), [ops]);
+  const balanceAtMois    = useMemo(() =>
+    ops.filter(o => !isInteret(o) && o.date.slice(0, 7) <= mois)
+       .reduce((s, o) => s + o.montant, 0),
+  [ops, mois]);
   const interestsMap     = useMemo(() => {
     const m: Record<number, number> = {};
     ops.filter(isInteret).forEach(o => { const y = extractYear(o); m[y] = (m[y] ?? 0) + o.montant; });
@@ -257,7 +261,7 @@ function LivretPocheSection({
               stroke="var(--gold)" strokeOpacity={0.5}
               strokeDasharray="4 2" strokeWidth={1}/>
           )}
-          <Bar dataKey="montant" name="Intérêts" radius={[3,3,0,0]}>
+          <Bar dataKey="montant" name="Intérêts" radius={[0,0,0,0]}>
             {annualData.map((d,i) => (
               <Cell key={i} fill={color} fillOpacity={0.8}/>
             ))}
@@ -282,10 +286,10 @@ function LivretPocheSection({
             {typeDef?.label ?? poche.type_livret}
           </span>
           <span style={{ fontSize:11, color:"var(--text-1)" }}>
-            {fmt(balance)}
+            {fmt(balanceAtMois)}
             {interestThisYear > 0 && (
               <span style={{ color:"var(--gold)", marginLeft:6 }}>
-                +{fmt(interestThisYear)} int.
+                +{fmt(interestThisYear)}
               </span>
             )}
           </span>
@@ -408,15 +412,16 @@ export function LivretsSection({
   const annee  = parseInt(mois.slice(0, 4));
   const newOps = useMemo(() => livrets.filter(l => l.nom !== ""), [livrets]);
 
-  // Balance per poche
+  // Balance per poche at selected month
   const balanceMap = useMemo(() => {
     const m: Record<string, number> = {};
     livretPoches.forEach(p => {
-      m[keyId(p.type_livret, p.nom)] =
-        computeBalance(newOps.filter(o => o.poche === p.type_livret && o.nom === p.nom));
+      m[keyId(p.type_livret, p.nom)] = newOps
+        .filter(o => o.poche === p.type_livret && o.nom === p.nom && !isInteret(o) && o.date.slice(0, 7) <= mois)
+        .reduce((s, o) => s + o.montant, 0);
     });
     return m;
-  }, [newOps, livretPoches]);
+  }, [newOps, livretPoches, mois]);
 
   const totalBalance   = Object.values(balanceMap).reduce((s, v) => s + v, 0);
   const totalInterests = useMemo(() =>
