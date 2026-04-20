@@ -7,7 +7,7 @@ import {
 import { useDevise } from "../../context/DeviseContext";
 import { LIVRETS_DEF, TOOLTIP_STYLE } from "../../constants";
 import { ChartGrid, NestedPie, AccordionSection, bellEffect, activeDotNoZero } from "./shared";
-import { LivretPocheFormModal, OpLivretModal } from "./modals";
+import { LivretPocheFormModal, LivretPocheEditModal, OpLivretModal } from "./modals";
 import { ExportBtn, ImportBtn, ImportModal, exportLivretPoche,
   importLivretOps, exportLivretsBatch, type ImportPending } from "./InvestSettings";
 import type { Livret, LivretPoche } from "./types";
@@ -111,7 +111,7 @@ function buildGlobalDailyData(livrets: Livret[], livretPoches: LivretPoche[]): a
 
 // ── Per-livret poche accordion ────────────────────────────────────────────────
 function LivretPocheSection({
-  poche, ops, mois, onAdd, onDeleteOp, onDelete, onImportParsed,
+  poche, ops, mois, onAdd, onDeleteOp, onDelete, onEdit, onImportParsed,
 }: {
   poche:         LivretPoche;
   ops:           Livret[];
@@ -119,14 +119,16 @@ function LivretPocheSection({
   onAdd:         (op: "versement"|"retrait"|"interet") => void;
   onDeleteOp:    (id: number) => void;
   onDelete:      () => void;
+  onEdit:        (nom: string, couleur: string) => void;
   onImportParsed:(rows: string[][], rowCount: number) => void;
 }) {
   const { fmt, fmtAxis } = useDevise();
   const [open, setOpen]             = useState(false);
   const [headerMode, setHeaderMode] = useState<"actions"|"gestion">("actions");
+  const [editModal, setEditModal]   = useState(false);
 
   const typeDef = LIVRETS_DEF.find(l => l.key === poche.type_livret);
-  const color   = typeDef?.color ?? "#F0BD40";
+  const color   = poche.couleur || typeDef?.color || "#F0BD40";
   const kid     = keyId(poche.type_livret, poche.nom);
   const annee   = parseInt(mois.slice(0, 4));
 
@@ -294,13 +296,15 @@ function LivretPocheSection({
           onClick={e => e.stopPropagation()}>
           {headerMode === "actions" && (<>
             <button className="btn btn-ghost btn-sm" onClick={() => onAdd("versement")}>+ Versement</button>
-            <button className="btn btn-danger btn-sm" onClick={() => onAdd("retrait")}>− Retrait</button>
-            <button className="btn btn-primary btn-sm" onClick={() => onAdd("interet")}>＋ Intérêts</button>
+            <button className="btn btn-danger btn-sm" onClick={() => onAdd("retrait")}>- Retrait</button>
+            <button className="btn btn-primary btn-sm" onClick={() => onAdd("interet")}>+ Intérêts</button>
           </>)}
           {headerMode === "gestion" && <>
             <ExportBtn label={`${poche.nom}.csv`}
               onExport={() => exportLivretPoche(poche.type_livret, poche.nom)}/>
             <ImportBtn label={poche.nom} onParsed={onImportParsed}/>
+            <button className="btn btn-ghost btn-sm" style={{ fontSize:10 }}
+              onClick={() => setEditModal(true)} title="Modifier le livret">✎</button>
             <button className="btn btn-danger btn-sm" style={{ fontSize:10 }}
               onClick={onDelete} title="Supprimer le livret">✕</button>
           </>}
@@ -326,20 +330,23 @@ function LivretPocheSection({
           <AccordionSection label="Opérations" count={opsSorted.length}>
             {!opsSorted.length ? <div className="empty">Aucune opération</div> : (<>
               {/* Filtres par type */}
-              <div style={{ display:"flex", alignItems:"center", gap:6, marginInline:4, flexWrap:"wrap", marginBottom:4 }}>
-                {([ ["versement","Versement","var(--teal)"], ["retrait","Retrait","var(--rose)"], ["interet","Intérêts","var(--gold)"] ] as [OpType,string,string][]).map(([t, label, c]) => (
-                  <button key={t}
-                    className={`btn btn-sm ${filterTypes.has(t) ? "btn-primary" : "btn-ghost"}`}
-                    style={{ fontSize:10, padding:"2px 8px",
-                      ...(filterTypes.has(t) ? {} : { color: c, borderColor: c+"55" }) }}
-                    onClick={() => togType(t)}>
-                    {label} ({countByType[t]})
-                  </button>
-                ))}
-                {filterTypes.size > 0 && (
-                  <button className="btn btn-ghost btn-sm" style={{ fontSize:10, padding:"2px 8px", opacity:0.6 }}
-                    onClick={() => { setFilterTypes(new Set()); setPageOps(0); }}>✕ Tout</button>
-                )}
+              <div style={{ display:"flex", alignItems:"center", gap:6, marginInline:4, flexWrap:"wrap", marginBottom:4, padding:"4px 0" }}>
+                <button className="btn btn-sm" style={{ fontSize:10, padding:"2px 8px", opacity:filterTypes.size===0?1:0.4 }}
+                  onClick={() => { setFilterTypes(new Set()); setPageOps(0); }}>Tout</button>
+                {([ ["versement","Versement","var(--teal)"], ["retrait","Retrait","var(--rose)"], ["interet","Intérêts","var(--gold)"] ] as [OpType,string,string][]).map(([t, label, c]) => {
+                  const active = filterTypes.has(t);
+                  return (
+                    <button key={t} className="btn btn-sm"
+                      style={{ fontSize:10, padding:"2px 8px",
+                        color: active ? c : "var(--text-2)",
+                        borderColor: active ? c : "var(--border)",
+                        background: active ? c+"33" : "transparent",
+                        fontWeight: active ? 600 : 400 }}
+                      onClick={() => togType(t)}>
+                      {label} ({countByType[t]})
+                    </button>
+                  );
+                })}
               </div>
               <table>
                 <thead><tr><th>Date</th><th>Type</th><th>Montant</th><th>Notes</th><th/></tr></thead>
@@ -367,6 +374,13 @@ function LivretPocheSection({
             </>)}
           </AccordionSection>
         </div>
+      )}
+      {editModal && (
+        <LivretPocheEditModal
+          poche={poche}
+          onSave={(nom, couleur) => { setEditModal(false); onEdit(nom, couleur); }}
+          onClose={() => setEditModal(false)}
+        />
       )}
     </div>
   );
@@ -415,8 +429,8 @@ export function LivretsSection({
       if (val <= 0) return;
       typeMap[p.type_livret] = (typeMap[p.type_livret] ?? 0) + val;
       const typeDef = LIVRETS_DEF.find(l => l.key === p.type_livret);
-      outer.push({ name:p.nom, value:val, color:typeDef?.color??"#F0BD40",
-        group:typeDef?.label??p.type_livret });
+      const c = p.couleur || typeDef?.color || "#F0BD40";
+      outer.push({ name:p.nom, value:val, color:c, group:typeDef?.label??p.type_livret });
     });
     const inner = Object.entries(typeMap).map(([key, value]) => {
       const d = LIVRETS_DEF.find(l => l.key === key);
@@ -487,7 +501,7 @@ export function LivretsSection({
           <defs>
             {livretPoches.map(p => {
               const k = keyId(p.type_livret, p.nom);
-              const c = LIVRETS_DEF.find(l => l.key === p.type_livret)?.color ?? "#F0BD40";
+              const c = p.couleur || LIVRETS_DEF.find(l => l.key === p.type_livret)?.color || "#F0BD40";
               return (
                 <linearGradient key={k} id={`gg_${k}`} x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%"  stopColor={c} stopOpacity={0.55}/>
@@ -503,7 +517,7 @@ export function LivretsSection({
           <Tooltip content={<GlobalTooltip/>}/>
           {livretPoches.map(p => {
             const k = keyId(p.type_livret, p.nom);
-            const c = LIVRETS_DEF.find(l => l.key === p.type_livret)?.color ?? "#F0BD40";
+            const c = p.couleur || LIVRETS_DEF.find(l => l.key === p.type_livret)?.color || "#F0BD40";
             return (
               <Area key={k} type="stepAfter" dataKey={k} stackId="a" name={p.nom}
                 stroke={c} strokeWidth={1.5} fill={`url(#gg_${k})`}
@@ -546,6 +560,12 @@ export function LivretsSection({
     setConfirmDelete(null);
     onRefresh();
   };
+
+  async function handleEditPoche(p: LivretPoche, nom: string, couleur: string) {
+    if (!p.id) return;
+    await invoke("update_livret_poche", { id: p.id, nom, couleur });
+    onRefresh();
+  }
 
   function makeImportHandler(p: LivretPoche) {
     return (rows: string[][], rowCount: number) => {
@@ -644,6 +664,7 @@ export function LivretsSection({
               onAdd={(op) => setAddOpTarget({ poche: p, op })}
               onDeleteOp={async id => { await invoke("delete_livret", { id }); onRefresh(); }}
               onDelete={() => setConfirmDelete(p)}
+              onEdit={(nom, couleur) => handleEditPoche(p, nom, couleur)}
               onImportParsed={makeImportHandler(p)}
             />
           ))}

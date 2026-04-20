@@ -74,6 +74,40 @@ export function InteretModal({mois,onClose,onSave}:{mois:string;onClose:()=>void
   </div></div>);
 }
 
+// ── Livret Poche Edit Modal (modifier nom + couleur) ──────────────────────────
+export function LivretPocheEditModal({poche,onSave,onClose}:{poche:LivretPoche;onSave:(nom:string,couleur:string)=>void;onClose:()=>void}) {
+  const typeDef = LIVRETS_DEF.find(l => l.key === poche.type_livret);
+  const defaultColor = typeDef?.color ?? "#F0BD40";
+  const [nom, setNom] = useState(poche.nom);
+  const [couleur, setCouleur] = useState(poche.couleur || defaultColor);
+  return (
+    <div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()} style={{maxWidth:420}}>
+      <div className="modal-title">Modifier le livret</div>
+      <div style={{display:"flex",flexDirection:"column",gap:12,marginTop:16}}>
+        <div className="field" style={{margin:0}}><label>Nom affiché</label>
+          <input value={nom} placeholder="ex: Livret A BNP"
+            style={{width:"100%",boxSizing:"border-box"}}
+            onChange={e=>setNom(e.target.value)}/></div>
+        <div className="field" style={{margin:0}}><label>Couleur</label>
+          <div style={{display:"flex",gap:6,alignItems:"center",minWidth:0}}>
+            <input type="color" value={couleur} onChange={e=>setCouleur(e.target.value)}
+              style={{width:36,height:32,flexShrink:0,padding:2,background:"none",border:"1px solid var(--border)",borderRadius:4,cursor:"pointer"}}/>
+            <input value={couleur} placeholder={defaultColor}
+              onChange={e=>setCouleur(e.target.value)}
+              style={{flex:1,minWidth:0,fontFamily:"var(--mono)",fontSize:11,boxSizing:"border-box"}}/>
+            <button className="btn btn-ghost btn-sm" style={{fontSize:10,flexShrink:0}}
+              onClick={()=>setCouleur(defaultColor)} title="Réinitialiser">↺</button>
+          </div>
+        </div>
+      </div>
+      <div className="form-actions">
+        <button className="btn btn-ghost" onClick={onClose}>Annuler</button>
+        <button className="btn btn-primary" disabled={!nom.trim()} onClick={()=>onSave(nom.trim(),couleur)}>Sauvegarder</button>
+      </div>
+    </div></div>
+  );
+}
+
 // ── Livret Poche Form Modal (create or edit taux) ─────────────────────────────
 export function LivretPocheFormModal({onSave,onClose}:{onSave:(p:LivretPoche)=>void;onClose:()=>void}) {
   const [typeLivret,setTypeLivret]=useState<string>(LIVRETS_DEF[0].key);
@@ -95,7 +129,7 @@ export function LivretPocheFormModal({onSave,onClose}:{onSave:(p:LivretPoche)=>v
       <button className="btn btn-ghost" onClick={onClose}>Annuler</button>
       <button className="btn btn-primary"
         disabled={!nom.trim()}
-        onClick={()=>onSave({type_livret:typeLivret,nom:nom.trim()})}>
+        onClick={()=>onSave({type_livret:typeLivret,nom:nom.trim(),couleur:""})}>
         Créer
       </button>
     </div>

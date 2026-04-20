@@ -125,8 +125,8 @@ pub fn delete_livret(id: i64, state: State<DbState>) -> Result<(), String> {
 #[tauri::command]
 pub fn get_livret_poches(state: State<DbState>) -> Result<Vec<LivretPoche>, String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
-    let mut stmt = conn.prepare("SELECT id,type_livret,nom FROM livret_poches ORDER BY type_livret,nom").map_err(|e| e.to_string())?;
-    let items = stmt.query_map([], |r| Ok(LivretPoche{id:r.get(0)?,type_livret:r.get(1)?,nom:r.get(2)?}))
+    let mut stmt = conn.prepare("SELECT id,type_livret,nom,couleur FROM livret_poches ORDER BY type_livret,nom").map_err(|e| e.to_string())?;
+    let items = stmt.query_map([], |r| Ok(LivretPoche{id:r.get(0)?,type_livret:r.get(1)?,nom:r.get(2)?,couleur:r.get(3)?}))
         .map_err(|e| e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e| e.to_string())?;
     Ok(items)
 }
@@ -134,9 +134,17 @@ pub fn get_livret_poches(state: State<DbState>) -> Result<Vec<LivretPoche>, Stri
 pub fn add_livret_poche(poche: LivretPoche, state: State<DbState>) -> Result<i64, String> {
     let conn = state.0.lock().map_err(|e| e.to_string())?;
     conn.execute(
-        "INSERT INTO livret_poches (type_livret,nom) VALUES (?1,?2) ON CONFLICT(type_livret,nom) DO NOTHING",
-        params![poche.type_livret,poche.nom]).map_err(|e| e.to_string())?;
+        "INSERT INTO livret_poches (type_livret,nom,couleur) VALUES (?1,?2,?3) ON CONFLICT(type_livret,nom) DO NOTHING",
+        params![poche.type_livret,poche.nom,poche.couleur]).map_err(|e| e.to_string())?;
     Ok(conn.last_insert_rowid())
+}
+#[tauri::command]
+pub fn update_livret_poche(id: i64, nom: String, couleur: String, state: State<DbState>) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE livret_poches SET nom=?1, couleur=?2 WHERE id=?3",
+        params![nom, couleur, id]).map_err(|e| e.to_string())?;
+    Ok(())
 }
 #[tauri::command]
 pub fn delete_livret_poche(type_livret: String, nom: String, state: State<DbState>) -> Result<(), String> {

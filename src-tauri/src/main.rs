@@ -19,7 +19,7 @@ fn main() {
             commands::get_salaires, commands::add_salaire, commands::update_salaire, commands::delete_salaire,
             commands::open_pdf, commands::list_pdf_files,
             commands::get_livrets, commands::add_livret, commands::delete_livret,
-            commands::get_livret_poches, commands::add_livret_poche, commands::delete_livret_poche, commands::import_livret_ops,
+            commands::get_livret_poches, commands::add_livret_poche, commands::update_livret_poche, commands::delete_livret_poche, commands::import_livret_ops,
             commands::get_positions, commands::add_position, commands::delete_position,
             commands::get_ventes, commands::sell_position, commands::delete_vente,
             commands::get_dividendes, commands::add_dividende, commands::delete_dividende,

@@ -880,19 +880,26 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
           <AccordionSection label="Dividendes" count={dividendes.length} color="var(--gold)">
             {dividendes.length === 0 ? <div className="empty">Aucun dividende</div> : (<>
               {tickersDivs.length&& (
-                <div style={{display:"flex",alignItems:"center",gap:6,marginInline:4,overflowX:"auto"}}>
-                  {tickersDivs.map(t=>(
-                    <button key={t} className={`btn btn-sm ${filterDivs.has(t)?"btn-primary":"btn-ghost"}`}
-                      style={{fontSize:10,padding:"2px 8px"}} onClick={()=>togDivTicker(t)}>
+                <div style={{display:"flex",alignItems:"center",gap:6,marginInline:4,overflowX:"auto",padding:"4px 0"}}>
+                  <button className="btn btn-sm" style={{fontSize:10,padding:"2px 8px",opacity:filterDivs.size===0?1:0.4}}
+                    onClick={()=>{setFilterDivs(new Set());setPageDivs(0);}}>Tout</button>
+                  {tickersDivs.map(t=>{const active=filterDivs.has(t);return(
+                    <button key={t} className="btn btn-sm"
+                      style={{fontSize:10,padding:"2px 8px",
+                        color:active?tickerColor(t):"var(--text-2)",
+                        borderColor:active?tickerColor(t):"var(--border)",
+                        background:active?tickerColor(t)+"33":"transparent",
+                        fontWeight:active?600:400}}
+                      onClick={()=>togDivTicker(t)}>
                       {t} ({dividendes.filter(d=>d.ticker===t).length})
                     </button>
-                  ))}
+                  );})}
                 </div>
               )}
               <table><thead><tr><th>Ticker</th><th>Montant</th><th>Date</th><th></th></tr></thead>
               <tbody>{filteredDivs.slice(pageDivs * PAGE_SIZE, (pageDivs + 1) * PAGE_SIZE).map(d => (
                 <tr key={d.id}>
-                  <td><span className="badge b-neutral">{d.ticker}</span></td>
+                  <td><span className="badge" style={{color:tickerColor(d.ticker),borderColor:tickerColor(d.ticker),background:tickerColor(d.ticker)+"22"}}>{d.ticker}</span></td>
                   <td style={{ color: "var(--gold)" }}>{fmt(d.montant,8)}</td>
                   <td style={{ color: "var(--text-1)" }}>{d.date}</td>
                   <td><button className="btn btn-danger btn-sm" onClick={async () => { await invoke("delete_dividende", { id: d.id }); onRefresh(); }}>✕</button></td>
@@ -920,19 +927,26 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
           <AccordionSection label="Historique ventes" count={ventes.length} color="var(--rose)">
             {ventes.length === 0 ? <div className="empty">Aucune vente</div> : (<>
               {tickersVentes.length&& (
-                <div style={{display:"flex",alignItems:"center",gap:6,marginInline:4,overflowX:"auto"}}>
-                  {tickersVentes.map(t=>(
-                    <button key={t} className={`btn btn-sm ${filterVentes.has(t)?"btn-primary":"btn-ghost"}`}
-                      style={{fontSize:10,padding:"2px 8px"}} onClick={()=>togVentTicker(t)}>
+                <div style={{display:"flex",alignItems:"center",gap:6,marginInline:4,overflowX:"auto",padding:"4px 0"}}>
+                  <button className="btn btn-sm" style={{fontSize:10,padding:"2px 8px",opacity:filterVentes.size===0?1:0.4}}
+                    onClick={()=>{setFilterVentes(new Set());setPageVentes(0);}}>Tout</button>
+                  {tickersVentes.map(t=>{const active=filterVentes.has(t);return(
+                    <button key={t} className="btn btn-sm"
+                      style={{fontSize:10,padding:"2px 8px",
+                        color:active?tickerColor(t):"var(--text-2)",
+                        borderColor:active?tickerColor(t):"var(--border)",
+                        background:active?tickerColor(t)+"33":"transparent",
+                        fontWeight:active?600:400}}
+                      onClick={()=>togVentTicker(t)}>
                       {t} ({ventes.filter(v=>v.ticker===t).length})
                     </button>
-                  ))}
+                  );})}
                 </div>
               )}
               <table><thead><tr><th>Ticker</th><th>Qté</th><th>PRU</th><th>Px vente</th><th>PnL</th><th>Date</th><th></th></tr></thead>
               <tbody>{filteredVentes.slice(pageVentes * PAGE_SIZE, (pageVentes + 1) * PAGE_SIZE).map(v => (
                 <tr key={v.id}>
-                  <td><span className="badge b-neutral">{v.ticker}</span></td>
+                  <td><span className="badge" style={{color:tickerColor(v.ticker),borderColor:tickerColor(v.ticker),background:tickerColor(v.ticker)+"22"}}>{v.ticker}</span></td>
                   <td style={{ fontFamily: "var(--mono)", fontSize: 11 }}>{v.quantite.toFixed(ventPrec)}</td>
                   <td style={{ color: "var(--text-1)" }}>{fmt(v.prix_achat)}</td>
                   <td>{fmt(v.prix_vente)}</td>

@@ -36,6 +36,7 @@ pub struct LivretPoche {
     pub id: Option<i64>,
     pub type_livret: String,
     pub nom: String,
+    pub couleur: String,
 }
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Position {
@@ -239,6 +240,10 @@ pub fn init_db(conn: &Connection) -> Result<()> {
             );
             PRAGMA user_version = 11;
         ")?;
+    }
+    if version < 12 {
+        let _ = conn.execute_batch("ALTER TABLE livret_poches ADD COLUMN couleur TEXT NOT NULL DEFAULT '';");
+        conn.execute_batch("PRAGMA user_version = 12;")?;
     }
     Ok(())
 }
