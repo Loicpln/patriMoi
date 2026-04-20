@@ -5,7 +5,7 @@ import {
   Bar, BarChart, Cell, Brush, Customized, ReferenceArea,
 } from "recharts";
 import { useDevise } from "../../context/DeviseContext";
-import { LIVRETS_DEF, TOOLTIP_STYLE } from "../../constants";
+import { LIVRETS_DEF, TOOLTIP_ITEM_STYLE, TOOLTIP_LABEL_STYLE, TOOLTIP_STYLE } from "../../constants";
 import { ChartGrid, NestedPie, AccordionSection, bellEffect, activeDotNoZero } from "./shared";
 import { LivretPocheFormModal, LivretPocheEditModal, OpLivretModal } from "./modals";
 import { ExportBtn, ImportBtn, ImportModal, exportLivretPoche,
@@ -42,6 +42,12 @@ function idxPx(data: any[], x1: string, x2: string, offset: any, bStart = 0, bEn
   const step = N > 1 ? offset.width / (N - 1) : offset.width;
   return { rx1: offset.left + (r1 / denom) * offset.width, rx2: offset.left + (r2 / denom) * offset.width, step };
 }
+
+// ── Bar cursor: thin vertical line ───────────────────────────────────────────
+const BarLineCursor = ({ x = 0, y = 0, width = 0, height = 0 }: any) => (
+  <line x1={x + width / 2} y1={y} x2={x + width / 2} y2={y + height}
+    stroke="var(--text-0)" strokeWidth={1}/>
+);
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const isInteret = (l: Livret) => (l.notes ?? "").startsWith("[INTERET");
@@ -254,7 +260,8 @@ function LivretPocheSection({
           <XAxis dataKey="year" tick={{ fontSize:8, fontFamily:"JetBrains Mono" }}/>
           <YAxis tick={{ fontSize:8, fontFamily:"JetBrains Mono" }} tickFormatter={fmtAxis} width={32}/>
           <Tooltip contentStyle={TOOLTIP_STYLE} labelStyle={{ color:"var(--text-2)", fontSize:9 }}
-            itemStyle={{ color }} formatter={(v:any) => [fmt(Number(v)), "Intérêts"]}/>
+            itemStyle={{ color }} formatter={(v:any) => [fmt(Number(v)), "Intérêts"]}
+            cursor={<BarLineCursor/>}/>
           {annualData.some(d => d.year === String(annee)) && (
             <ReferenceArea x1={String(annee)} x2={String(annee)}
               fill="var(--gold)" fillOpacity={0.15}
@@ -263,7 +270,7 @@ function LivretPocheSection({
           )}
           <Bar dataKey="montant" name="Intérêts" radius={[0,0,0,0]}>
             {annualData.map((d,i) => (
-              <Cell key={i} fill={color} fillOpacity={0.8}/>
+              <Cell key={i} fill={color}/>
             ))}
           </Bar>
         </BarChart>
