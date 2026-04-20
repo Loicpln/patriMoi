@@ -146,13 +146,13 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
             Object.entries(byT).forEach(([,d])=>{
               const prop=d.inv/totalInv;
               const outKey=`${p.key}||${d.subcat}`;
-              const subcatColor=(INVEST_SUBCAT_COLOR[d.subcat]??p.color)+"cc";
+              const subcatColor=(INVEST_SUBCAT_COLOR[d.subcat]??p.color);
               if(!outerMap[outKey])outerMap[outKey]={value:0,color:subcatColor};
               outerMap[outKey].value+=versP*prop;
             });
           } else {
             const cashKey=`${p.key}||especes`;
-            if(!outerMap[cashKey])outerMap[cashKey]={value:0,color:(INVEST_SUBCAT_COLOR["especes"]??"#78909c")+"cc"};
+            if(!outerMap[cashKey])outerMap[cashKey]={value:0,color:(INVEST_SUBCAT_COLOR["especes"]??"#78909c")};
             outerMap[cashKey].value+=versP;
           }
         }
@@ -167,7 +167,7 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
           pocheMap[p.key].value+=val;
           pocheCost+=d.inv;
           const outKey=`${p.key}||${d.subcat}`;
-          const subcatColor=(INVEST_SUBCAT_COLOR[d.subcat]??p.color)+"cc";
+          const subcatColor=(INVEST_SUBCAT_COLOR[d.subcat]??p.color);
           if(!outerMap[outKey])outerMap[outKey]={value:0,color:subcatColor};
           outerMap[outKey].value+=val;
         });
@@ -180,7 +180,7 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
           if(!pocheMap[p.key])pocheMap[p.key]={value:0,color:p.color};
           pocheMap[p.key].value+=esp;
           const cashKey=`${p.key}||especes`;
-          if(!outerMap[cashKey])outerMap[cashKey]={value:0,color:(INVEST_SUBCAT_COLOR["especes"]??"#78909c")+"cc"};
+          if(!outerMap[cashKey])outerMap[cashKey]={value:0,color:(INVEST_SUBCAT_COLOR["especes"]??"#78909c")};
           outerMap[cashKey].value+=esp;
         }
       }
