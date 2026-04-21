@@ -640,7 +640,7 @@ export function LivretsSection({
         <ExportBtn label="↓ Livrets" onExport={() => exportLivretsBatch(livretPoches)}/>
         <button className="btn btn-primary btn-sm"
           onClick={() => setPocheFormOpen(true)}>
-          + Nouveau livret
+          + Livret
         </button>
         {/* Single toggle button — same pattern as investments */}
         <button
