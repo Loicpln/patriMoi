@@ -291,7 +291,8 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
                 </defs>
                 <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
                 <XAxis dataKey="mois" stroke="var(--text-2)" tick={{ fontSize: 9, fontFamily: "JetBrains Mono" }}
-                  interval={Math.max(0, Math.floor(salChartData.length / 8) - 1)}/>
+                  interval={Math.max(0, Math.floor(salChartData.length / 8) - 1)}
+                  tickFormatter={(m: string) => { const mo = parseInt(m.slice(5,7)); return ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"][mo-1]+" "+m.slice(2,4); }}/>
                 <YAxis stroke="var(--text-2)" tick={{ fontSize: 9, fontFamily: "JetBrains Mono" }}
                   tickFormatter={fmtAxis}/>
                 <Tooltip content={({ active, payload, label }: any) => {

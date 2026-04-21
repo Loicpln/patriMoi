@@ -8,6 +8,7 @@ import {
 } from "recharts";
 import { useDevise, curMonth } from "../context/DeviseContext";
 import { DEPENSE_CATEGORIES, TOOLTIP_STYLE, depenseSubColor, defaultDateForMonth } from "../constants";
+import DatePicker from "../components/DatePicker";
 import MonthSelector from "../components/MonthSelector";
 import { NestedPie, bellEffect } from "./patrimoine/shared";
 
@@ -112,7 +113,7 @@ function Modal({ initial, libelles, onClose, onSave, title }: {
           </div>
           <div className="field">
             <label>Date</label>
-            <input type="date" value={form.date} onChange={e => set("date", e.target.value)} />
+            <DatePicker value={form.date} onChange={v => set("date", v)} />
           </div>
           <div className="field span2">
             <label>Notes</label>
@@ -185,11 +186,11 @@ function RecurrenteModal({ initial, title, onClose, onSave }: {
           </div>
           <div className="field" style={{ margin: 0 }}>
             <label>Date de début</label>
-            <input type="date" value={form.date_debut} onChange={e => s("date_debut", e.target.value)} />
+            <DatePicker value={form.date_debut} onChange={v => s("date_debut", v)} />
           </div>
           <div className="field" style={{ margin: 0 }}>
             <label>Date de fin (optionnelle)</label>
-            <input type="date" value={form.date_fin ?? ""} onChange={e => setForm(f => ({ ...f, date_fin: e.target.value || undefined }))} />
+            <DatePicker value={form.date_fin ?? ""} onChange={v => setForm(f => ({ ...f, date_fin: v || undefined }))} />
           </div>
           <div className="field" style={{ margin: 0 }} />
           <div className="field" style={{ margin: 0, gridColumn: "1/-1" }}>

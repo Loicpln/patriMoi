@@ -6,6 +6,7 @@ import { curMonth, useDevise } from "../../context/DeviseContext";
 import { usePoches } from "../../context/PochesContext";
 import type { Livret, Position, Vente, Dividende, Versement, ScpiValuation } from "./types";
 import { fetchPriceMaps, isUsdTicker, fetchLiveQuote } from "../../hooks/useQuotes";
+import DatePicker from "../../components/DatePicker";
 
 // ── Layout helpers ─────────────────────────────────────────────────────────────
 const G2: React.CSSProperties = { display:"grid", gridTemplateColumns:"1fr 1fr", gap:"12px 16px", marginTop:16 };
@@ -32,7 +33,7 @@ export function LivretModal({mois,onClose,onSave}:{mois:string;onClose:()=>void;
       <div className="field" style={F}><label>Taux (%)</label>
         <input type="number" step="0.01" value={form.taux} onChange={e=>s("taux",parseFloat(e.target.value)||0)}/></div>
       <div className="field" style={F}><label>Date</label>
-        <input type="date" value={form.date} onChange={e=>s("date",e.target.value)}/></div>
+        <DatePicker value={form.date} onChange={v=>s("date",v)}/></div>
       <div className="field" style={S2}><label>Notes</label>
         <textarea rows={2} value={form.notes??""} onChange={e=>s("notes",e.target.value)}/></div>
     </div>
@@ -196,7 +197,7 @@ export function OpLivretModal({poche,mois,initialOp,onClose,onSave}:{
           <input type="number" value={annee} onChange={e=>setAnnee(parseInt(e.target.value)||anneeDefault)} min={2000} max={2100}/></div>
       ):(
         <div className="field" style={F}><label>Date</label>
-          <input type="date" value={date} onChange={e=>setDate(e.target.value)}/></div>
+          <DatePicker value={date} onChange={setDate}/></div>
       )}
       <div className="field" style={S2}><label>Notes</label>
         <textarea rows={2} value={notes} onChange={e=>setNotes(e.target.value)}/></div>
@@ -296,7 +297,7 @@ export function PositionModal({poche,existing,mois=curMonth,onClose,onSave}:{
         {prixUnitaire>0&&<div style={{fontSize:10,color:"var(--text-1)",marginTop:3}}>→ Prix unitaire : {prixUnitaire.toFixed(6)} €</div>}
       </div>
       <div className="field" style={F}><label>Date d'achat</label>
-        <input type="date" value={form.date_achat} onChange={e=>s("date_achat",e.target.value)}/></div>
+        <DatePicker value={form.date_achat??""} onChange={v=>s("date_achat",v)}/></div>
       <div className="field" style={S2}><label>Notes</label>
         <textarea rows={2} value={form.notes??""} onChange={e=>s("notes",e.target.value)}/></div>
     </div>
@@ -319,7 +320,7 @@ export function VersementModal({poche,mois=curMonth,onClose,onSave}:{poche:strin
       <div className="field" style={F}><label>Montant (€)</label>
         <input type="number" step="0.01" value={form.montant} onChange={e=>s("montant",parseFloat(e.target.value)||0)}/></div>
       <div className="field" style={F}><label>Date</label>
-        <input type="date" value={form.date} onChange={e=>s("date",e.target.value)}/></div>
+        <DatePicker value={form.date} onChange={v=>s("date",v)}/></div>
       <div className="field" style={S2}><label>Notes</label>
         <textarea rows={2} value={form.notes??""} onChange={e=>s("notes",e.target.value)}/></div>
     </div>
@@ -416,7 +417,7 @@ export function SellModal({poche,ticker,nom,tickerPositions,tickerVentes,getPric
     <div style={G2}>
       <div className="field" style={F}>
         <label>Date{minDate&&<span style={{color:"var(--text-2)",fontSize:9,marginLeft:4}}>min {minDate}</span>}</label>
-        <input type="date" value={date} min={minDate||undefined} onChange={e=>setDate(clamp(e.target.value))}/>
+        <DatePicker value={date} min={minDate||undefined} onChange={v=>setDate(clamp(v))}/>
       </div>
       <div className="field" style={F}>
         <label>Disponible à cette date</label>
@@ -590,7 +591,7 @@ export function DividendeModal({poche,positions,ventes,mois=curMonth,getPriceFor
 
       {/* ── Date (commune) ── */}
       <div className="field" style={F}><label>Date</label>
-        <input type="date" value={form.date} onChange={e=>s("date",e.target.value)}/></div>
+        <DatePicker value={form.date} onChange={v=>s("date",v)}/></div>
 
       {/* ── Bloc réinvesti : cours + quantité + valeur calculée ── */}
       {isReinvest && <div className="field" style={F}>
@@ -762,7 +763,7 @@ export function TradeModal({poche,ticker,nom,subcat:_subcat,tickerPositions,tick
         <div style={LBL}>Source — {ticker}</div>
         <div className="field" style={F}>
           <label>Date{minDate&&<span style={{color:"var(--text-2)",fontSize:9,marginLeft:4}}>min {minDate}</span>}</label>
-          <input type="date" value={date} min={minDate||undefined} onChange={e=>setDate(clamp(e.target.value))}/>
+          <DatePicker value={date} min={minDate||undefined} onChange={v=>setDate(clamp(v))}/>
         </div>
         <div className="field" style={F}>
           <label>Disponible à cette date</label>

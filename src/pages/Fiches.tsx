@@ -6,6 +6,7 @@ import { useDevise } from "../context/DeviseContext";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Customized, Brush } from "recharts";
 import { TOOLTIP_STYLE, tickerColor, PRIME_TYPE_COLORS, monthsBetween, curMonthStr } from "../constants";
 import YearSelector from "../components/YearSelector";
+import DatePicker from "../components/DatePicker";
 
 function xPixel(scale: any, value: string): number | null {
   if (!scale) return null;
@@ -34,7 +35,8 @@ interface Prime {
 
 interface PdfFile { name: string; path: string; }
 
-const MOIS_FR = ["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
+const MOIS_FR    = ["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
+const MOIS_SHORT = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
 
 // ── Streak calculator ──────────────────────────────────────────────────────
 function calcStreak(salaires: Salaire[]): number {
@@ -88,7 +90,7 @@ function PrimeModal({ onClose, onSave, defaultDate }: { onClose: ()=>void; onSav
             <input type="number" step="0.01" value={montant} onChange={e => setMontant(parseFloat(e.target.value)||0)}/>
           </div>
           <div className="field"><label>Date</label>
-            <input type="date" value={date} onChange={e => setDate(e.target.value)}/>
+            <DatePicker value={date} onChange={setDate}/>
           </div>
           <div className="field span2"><label>Notes</label>
             <textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)}/>
@@ -141,7 +143,7 @@ function SalaireForm({
           </div>
           <div className="field">
             <label>Date</label>
-            <input type="date" value={form.date} onChange={e => set("date", e.target.value)} />
+            <DatePicker value={form.date} onChange={v => set("date", v)} />
           </div>
           <div className="field">
             <label>Salaire brut (€)</label>
@@ -469,7 +471,8 @@ export default function Fiches() {
                 </defs>
                 <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
                 <XAxis dataKey="mois" stroke="var(--text-2)" tick={{ fontSize: 9, fontFamily: "JetBrains Mono" }}
-                  interval={Math.max(0, Math.floor(chartData.length / 8) - 1)}/>
+                  interval={Math.max(0, Math.floor(chartData.length / 8) - 1)}
+                  tickFormatter={m => { const mo = parseInt(m.slice(5,7)); return MOIS_SHORT[mo-1]+" "+m.slice(2,4); }}/>
                 <YAxis stroke="var(--text-2)" tick={{ fontSize: 9, fontFamily: "JetBrains Mono" }}
                   tickFormatter={fmtAxis} width={32}/>
                 <Tooltip content={<EvoTooltip/>}/>

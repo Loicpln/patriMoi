@@ -4,6 +4,7 @@ import { useDevise } from "../context/DeviseContext";
 import { AreaChart, Area, ComposedChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Brush, Customized } from "recharts";
 import { TOOLTIP_STYLE, PRIME_TYPE_COLORS, tickerColor } from "../constants";
 import { bellEffect } from "./patrimoine/shared";
+import DatePicker from "../components/DatePicker";
 
 interface Salaire {
   id?: number;
@@ -43,7 +44,7 @@ function SalaireModal({ onClose, onSave }: { onClose: () => void; onSave: () => 
           </div>
           <div className="form-field">
             <label>Date</label>
-            <input type="date" value={form.date} onChange={(e) => set("date", e.target.value)} />
+            <DatePicker value={form.date} onChange={v => set("date", v)} />
           </div>
           <div className="form-field">
             <label>Salaire brut (€)</label>
