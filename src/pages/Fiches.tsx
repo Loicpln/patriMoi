@@ -445,7 +445,7 @@ export default function Fiches() {
         return (
           <div className="chart-card" style={{ marginBottom: 20, height:h+52 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-              <div className="chart-title" style={{ marginBottom: 0 }}>Évolution du salaire net + primes</div>
+              <div className="chart-title">Évolution du salaire net + primes</div>
               <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
                 <button className="btn btn-ghost btn-sm" style={{ fontSize: 10, opacity: brushFiches ? 1 : 0.35, cursor: brushFiches ? "pointer" : "default" }}
                   onClick={() => brushFiches && setBrushFiches(null)} title="Réinitialiser le zoom">↺</button>

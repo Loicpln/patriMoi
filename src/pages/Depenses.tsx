@@ -51,7 +51,7 @@ function ChartGrid({charts}:{charts:{key:string;title:string;node:(h:number,isEx
         return(
           <div key={c.key} className="chart-card" style={{margin:0,height:h+52}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-              <div className="chart-title" style={{marginBottom:0,fontSize:12}}>{c.title}</div>
+              <div className="chart-title">{c.title}</div>
               <div style={{display:"flex",gap:4,alignItems:"center"}}>
                 {c.onResetZoom&&(
                   <button className="btn btn-ghost btn-sm" style={{fontSize:10,opacity:c.brushActive?1:0.35,cursor:c.brushActive?"pointer":"default"}}

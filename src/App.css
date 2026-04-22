@@ -220,7 +220,7 @@ body {
   padding: 24px 28px;
   margin-bottom: 24px;
 }
-.chart-title { font-family: var(--serif); font-size: 15px; color: var(--text-0); margin-bottom: 10px; }
+.chart-title { font-family: var(--serif); font-size: 15px; color: var(--text-0); margin-bottom: 0px; }
 
 /* â”€â”€ Table card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .table-card {

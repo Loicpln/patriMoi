@@ -288,7 +288,7 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
         {/* Évolution salaire net + prime types empilées */}
         {expChart !== "pie" && <div className="chart-card" style={{marginBottom: 20, height:hSal+52, gridColumn: expSal?"1 / -1":"" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <div className="chart-title" style={{ marginBottom: 0 }}>Évolution du salaire net + primes</div>
+            <div className="chart-title">Évolution du salaire net + primes</div>
             <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
               <button className="btn btn-ghost btn-sm" style={{ fontSize: 10, opacity: brushDash ? 1 : 0.35, cursor: brushDash ? "pointer" : "default" }}
                 onClick={() => brushDash && setBrushDash(null)} title="Réinitialiser le zoom">↺</button>
@@ -397,7 +397,7 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
         {/* Dépenses du mois — camembert 2 anneaux dynamique */}
         {expChart !== "sal" && <div className="chart-card" style={{marginBottom: 20, height:hPie+52, gridColumn: expPie?"1 / -1":""}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-            <div className="chart-title" style={{marginBottom:0}}>Dépenses par catégorie · {mois}</div>
+            <div className="chart-title">Dépenses par catégorie · {mois}</div>
             <button className="btn btn-ghost btn-sm" style={{fontSize:10}}
               onClick={() => setExpChart(v => v === "pie" ? null : "pie")}>
               {expPie ? "-" : "+"}

@@ -335,7 +335,7 @@ export default function Salaires() {
             return (
               <div key={c.key} className="chart-card" style={{ margin: 0, height: h + 52 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                  <div className="chart-title" style={{ marginBottom: 0, fontSize: 12 }}>{c.title}</div>
+                  <div className="chart-title">{c.title}</div>
                   <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
                     {(() => {
                       const brushActive = c.key === "sal" ? !!brushSal : !!brushPrime;
