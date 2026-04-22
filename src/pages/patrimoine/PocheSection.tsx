@@ -887,28 +887,36 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
                       borderColor:filterDivs.size===0?"var(--text-2)":"var(--border)",
                       fontWeight:filterDivs.size===0?600:400}}
                     onClick={()=>{setFilterDivs(new Set());setPageDivs(0);}}>Tout</button>
-                  {tickersDivs.map(t=>{const active=filterDivs.has(t);return(
-                    <button key={t} className="btn btn-sm"
-                      style={{fontSize:10,padding:"2px 8px",
-                        color:active?tickerColor(t):"var(--text-2)",
-                        borderColor:active?tickerColor(t):"var(--border)",
-                        background:active?tickerColor(t)+"33":"transparent",
-                        fontWeight:active?600:400}}
-                      onClick={()=>togDivTicker(t)}>
-                      {t} ({dividendes.filter(d=>d.ticker===t).length})
-                    </button>
-                  );})}
+                  {tickersDivs.map(t=>{
+                    const active=filterDivs.has(t);
+                    const tc = t === "_INTERETS_" ? (INVEST_SUBCAT_COLOR["especes"] ?? "#78909c") : tickerColor(t);
+                    const tl = t === "_INTERETS_" ? "Intérêts" : t;
+                    return(
+                      <button key={t} className="btn btn-sm"
+                        style={{fontSize:10,padding:"2px 8px",
+                          color:active?tc:"var(--text-2)",
+                          borderColor:active?tc:"var(--border)",
+                          background:active?tc+"33":"transparent",
+                          fontWeight:active?600:400}}
+                        onClick={()=>togDivTicker(t)}>
+                        {tl} ({dividendes.filter(d=>d.ticker===t).length})
+                      </button>
+                    );})}
                 </div>
               )}
               <table><thead><tr><th>Ticker</th><th>Montant</th><th>Date</th><th></th></tr></thead>
-              <tbody>{filteredDivs.slice(pageDivs * PAGE_SIZE, (pageDivs + 1) * PAGE_SIZE).map(d => (
+              <tbody>{filteredDivs.slice(pageDivs * PAGE_SIZE, (pageDivs + 1) * PAGE_SIZE).map(d => {
+                const tc = d.ticker === "_INTERETS_" ? (INVEST_SUBCAT_COLOR["especes"] ?? "#78909c") : tickerColor(d.ticker);
+                const tl = d.ticker === "_INTERETS_" ? "Intérêts" : d.ticker;
+                return (
                 <tr key={d.id}>
-                  <td><span className="badge" style={{color:tickerColor(d.ticker),borderColor:tickerColor(d.ticker),background:tickerColor(d.ticker)+"22"}}>{d.ticker}</span></td>
+                  <td><span className="badge" style={{color:tc,borderColor:tc,background:tc+"22"}}>{tl}</span></td>
                   <td style={{ color: "var(--gold)" }}>{fmt(d.montant,8)}</td>
                   <td style={{ color: "var(--text-1)" }}>{d.date}</td>
                   <td><button className="btn btn-danger btn-sm" onClick={async () => { await invoke("delete_dividende", { id: d.id }); onRefresh(); }}>✕</button></td>
                 </tr>
-              ))}</tbody></table>
+                );})}
+              </tbody></table>
               <Pager page={pageDivs} total={filteredDivs.length} onPage={setPageDivs}/>
             </>)}
           </AccordionSection>
