@@ -7,6 +7,7 @@ import { usePoches } from "../../context/PochesContext";
 import type { Livret, Position, Vente, Dividende, Versement, ScpiValuation } from "./types";
 import { fetchPriceMaps, isUsdTicker, fetchLiveQuote } from "../../hooks/useQuotes";
 import DatePicker from "../../components/DatePicker";
+import NumInput from "../../components/NumInput";
 
 // ── Layout helpers ─────────────────────────────────────────────────────────────
 const G2: React.CSSProperties = { display:"grid", gridTemplateColumns:"1fr 1fr", gap:"12px 16px", marginTop:16 };
@@ -29,9 +30,9 @@ export function LivretModal({mois,onClose,onSave}:{mois:string;onClose:()=>void;
           {LIVRETS_DEF.map(l=><option key={l.key} value={l.key}>{l.label}</option>)}
         </select></div>
       <div className="field" style={F}><label>Montant (€)</label>
-        <input type="number" step="0.01" value={form.montant} onChange={e=>s("montant",parseFloat(e.target.value)||0)}/></div>
+        <NumInput value={form.montant} onChange={v=>s("montant",v)}/></div>
       <div className="field" style={F}><label>Taux (%)</label>
-        <input type="number" step="0.01" value={form.taux} onChange={e=>s("taux",parseFloat(e.target.value)||0)}/></div>
+        <NumInput value={form.taux} onChange={v=>s("taux",v)}/></div>
       <div className="field" style={F}><label>Date</label>
         <DatePicker value={form.date} onChange={v=>s("date",v)}/></div>
       <div className="field" style={S2}><label>Notes</label>
@@ -59,7 +60,7 @@ export function InteretModal({mois,onClose,onSave}:{mois:string;onClose:()=>void
           {LIVRETS_DEF.map(l=><option key={l.key} value={l.key}>{l.label}</option>)}
         </select></div>
       <div className="field" style={F}><label>Montant (€)</label>
-        <input type="number" step="0.01" value={montant} onChange={e=>setMontant(parseFloat(e.target.value)||0)}/></div>
+        <NumInput value={montant} onChange={setMontant}/></div>
       <div className="field" style={F}><label>Année</label>
         <input type="number" value={annee} onChange={e=>setAnnee(parseInt(e.target.value)||anneeDefault)} min={2000} max={2100}/></div>
       <div className="field" style={S2}><label>Notes</label>
@@ -191,7 +192,7 @@ export function OpLivretModal({poche,mois,initialOp,onClose,onSave}:{
     </div>
     <div style={G2}>
       <div className="field" style={F}><label>Montant (€)</label>
-        <input type="number" step="0.01" value={montant} onChange={e=>setMontant(parseFloat(e.target.value)||0)}/></div>
+        <NumInput value={montant} onChange={setMontant}/></div>
       {initialOp==="interet"?(
         <div className="field" style={F}><label>Année</label>
           <input type="number" value={annee} onChange={e=>setAnnee(parseInt(e.target.value)||anneeDefault)} min={2000} max={2100}/></div>
@@ -290,10 +291,10 @@ export function PositionModal({poche,existing,mois=curMonth,onClose,onSave}:{
           {SUBS_NO_ESPECES.map(sc=><option key={sc.key} value={sc.key}>{sc.label}</option>)}
         </select></div>
       <div className="field" style={F}><label>Quantité</label>
-        <input type="number" step="0.0001" value={form.quantite} onChange={e=>s("quantite",parseFloat(e.target.value)||0)}/></div>
+        <NumInput value={form.quantite} onChange={v=>s("quantite",v)}/></div>
       <div className="field" style={F}>
         <label>Total commande (€) <span style={{color:"var(--text-2)",fontSize:9}}>montant global</span></label>
-        <input type="number" step="0.01" value={totalCmd} onChange={e=>setTotalCmd(parseFloat(e.target.value)||0)}/>
+        <NumInput value={totalCmd} onChange={setTotalCmd}/>
         {prixUnitaire>0&&<div style={{fontSize:10,color:"var(--text-1)",marginTop:3}}>→ Prix unitaire : {prixUnitaire.toFixed(6)} €</div>}
       </div>
       <div className="field" style={F}><label>Date d'achat</label>
@@ -318,7 +319,7 @@ export function VersementModal({poche,mois=curMonth,onClose,onSave}:{poche:strin
     <div className="modal-title">Versement cash · {poches.find(p=>p.key===poche)?.label??poche}</div>
     <div style={G2}>
       <div className="field" style={F}><label>Montant (€)</label>
-        <input type="number" step="0.01" value={form.montant} onChange={e=>s("montant",parseFloat(e.target.value)||0)}/></div>
+        <NumInput value={form.montant} onChange={v=>s("montant",v)}/></div>
       <div className="field" style={F}><label>Date</label>
         <DatePicker value={form.date} onChange={v=>s("date",v)}/></div>
       <div className="field" style={S2}><label>Notes</label>
@@ -429,13 +430,12 @@ export function SellModal({poche,ticker,nom,tickerPositions,tickerVentes,getPric
       </div>
       <div className="field" style={F}>
         <label>Quantité (max {availQty.toFixed(4)})</label>
-        <input type="number" step="0.0001" min="0.0001" max={availQty} value={qty} disabled={availQty<=0}
-          onChange={e=>{const q=Math.min(parseFloat(e.target.value)||0,availQty);setQty(q);setTotalVente(parseFloat((priceAtDate*q).toFixed(2)));}}/>
+        <NumInput value={qty} disabled={availQty<=0}
+          onChange={q=>{const clamped=Math.min(q,availQty);setQty(clamped);setTotalVente(parseFloat((priceAtDate*clamped).toFixed(2)));}}/>
       </div>
       <div className="field" style={F}>
         <label>Total vente (€) <span style={{color:"var(--text-2)",fontSize:9}}>montant global</span></label>
-        <input type="number" step="0.01" value={totalVente} disabled={availQty<=0}
-          onChange={e=>setTotalVente(parseFloat(e.target.value)||0)}/>
+        <NumInput value={totalVente} disabled={availQty<=0} onChange={setTotalVente}/>
         {qty>0&&<div style={{fontSize:10,color:"var(--text-1)",marginTop:3}}>→ Prix unitaire : {prixUnitaire.toFixed(6)} €</div>}
       </div>
       <div className="field" style={F}>
@@ -603,15 +603,14 @@ export function DividendeModal({poche,positions,ventes,mois=curMonth,getPriceFor
           style={{background:"var(--bg-2)",color:priceAtDate>0?"var(--text-2)":"var(--text-2)",cursor:"default"}}/>
       </div>}
       {isReinvest && <div className="field" style={F}><label>Quantité reçue (réinvesti)</label>
-        <input type="number" step="any" min="0" value={quantite||""} placeholder="0"
-          onChange={e=>setQuantite(parseFloat(e.target.value)||0)}/></div>}
+        <NumInput value={quantite} onChange={setQuantite}/></div>}
       {isReinvest && <div className="field" style={F}><label>Valeur calculée</label>
         <input value={quantite>0?`${montantCalcule.toFixed(8)} €`:"—"} readOnly tabIndex={-1}
           style={{background:"var(--bg-2)",color:"var(--teal)",cursor:"default",fontWeight:600}}/></div>}
 
       {/* ── Montant manuel pour dividendes classiques (non réinvestis) ── */}
       {!isReinvest && <div className="field" style={F}><label>Montant (€)</label>
-        <input type="number" step="0.01" value={form.montant} onChange={e=>s("montant",parseFloat(e.target.value)||0)}/></div>}
+        <NumInput value={form.montant} onChange={v=>s("montant",v)}/></div>}
 
       <div className="field" style={S2}><label>Notes</label>
         <textarea rows={2} value={form.notes??""} onChange={e=>s("notes",e.target.value)}/></div>
@@ -647,7 +646,7 @@ export function ScpiValuationModal({scpiTickers,mois=curMonth,valuations,onClose
         <div className="field" style={F}><label>Mois (YYYY-MM)</label>
           <input type="month" value={month} onChange={e=>setMonth(e.target.value)}/></div>
         <div className="field" style={F}><label>Valeur unitaire (€)</label>
-          <input type="number" step="0.01" value={valeur} onChange={e=>setValeur(parseFloat(e.target.value)||0)}/></div>
+          <NumInput value={valeur} onChange={setValeur}/></div>
       </div>
       {/* ── Col droite : historique ── */}
       <div>
@@ -773,8 +772,8 @@ export function TradeModal({poche,ticker,nom,subcat:_subcat,tickerPositions,tick
         </div>
         <div className="field" style={F}>
           <label>Quantité à trader (max {availQty.toFixed(4)})</label>
-          <input type="number" step="0.0001" min="0.0001" max={availQty} value={qtyToTrade} disabled={availQty<=0}
-            onChange={e=>setQtyToTrade(Math.min(parseFloat(e.target.value)||0,availQty))}/>
+          <NumInput value={qtyToTrade} disabled={availQty<=0}
+            onChange={q=>setQtyToTrade(Math.min(q,availQty))}/>
         </div>
         <div className="field" style={F}>
           <label>Base de coût transférée</label>

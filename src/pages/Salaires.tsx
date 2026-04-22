@@ -5,6 +5,7 @@ import { AreaChart, Area, ComposedChart, Line, XAxis, YAxis, Tooltip, Responsive
 import { TOOLTIP_STYLE, PRIME_TYPE_COLORS, tickerColor } from "../constants";
 import { bellEffect } from "./patrimoine/shared";
 import DatePicker from "../components/DatePicker";
+import NumInput from "../components/NumInput";
 
 interface Salaire {
   id?: number;
@@ -48,15 +49,15 @@ function SalaireModal({ onClose, onSave }: { onClose: () => void; onSave: () => 
           </div>
           <div className="form-field">
             <label>Salaire brut (€)</label>
-            <input type="number" value={form.salaire_brut} onChange={(e) => set("salaire_brut", parseFloat(e.target.value))} />
+            <NumInput value={form.salaire_brut} onChange={v => set("salaire_brut", v)} />
           </div>
           <div className="form-field">
             <label>Salaire net (€)</label>
-            <input type="number" value={form.salaire_net} onChange={(e) => set("salaire_net", parseFloat(e.target.value))} />
+            <NumInput value={form.salaire_net} onChange={v => set("salaire_net", v)} />
           </div>
           <div className="form-field">
             <label>Primes (€)</label>
-            <input type="number" value={form.primes ?? 0} onChange={(e) => set("primes", parseFloat(e.target.value))} />
+            <NumInput value={form.primes ?? 0} onChange={v => set("primes", v)} />
           </div>
           <div className="form-field full">
             <label>Notes</label>

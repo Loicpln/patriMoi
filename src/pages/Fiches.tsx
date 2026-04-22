@@ -7,6 +7,7 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { TOOLTIP_STYLE, tickerColor, PRIME_TYPE_COLORS, monthsBetween, curMonthStr } from "../constants";
 import YearSelector from "../components/YearSelector";
 import DatePicker from "../components/DatePicker";
+import NumInput from "../components/NumInput";
 
 function xPixel(scale: any, value: string): number | null {
   if (!scale) return null;
@@ -87,7 +88,7 @@ function PrimeModal({ onClose, onSave, defaultDate }: { onClose: ()=>void; onSav
             </select>
           </div>
           <div className="field"><label>Montant (€)</label>
-            <input type="number" step="0.01" value={montant} onChange={e => setMontant(parseFloat(e.target.value)||0)}/>
+            <NumInput value={montant} onChange={setMontant}/>
           </div>
           <div className="field"><label>Date</label>
             <DatePicker value={date} onChange={setDate}/>
@@ -147,15 +148,15 @@ function SalaireForm({
           </div>
           <div className="field">
             <label>Salaire brut (€)</label>
-            <input type="number" step="0.01" value={form.salaire_brut} onChange={e => set("salaire_brut", parseFloat(e.target.value)||0)} />
+            <NumInput value={form.salaire_brut} onChange={v => set("salaire_brut", v)} />
           </div>
           <div className="field">
             <label>Salaire net (€)</label>
-            <input type="number" step="0.01" value={form.salaire_net} onChange={e => set("salaire_net", parseFloat(e.target.value)||0)} />
+            <NumInput value={form.salaire_net} onChange={v => set("salaire_net", v)} />
           </div>
           <div className="field">
             <label>Primes (€)</label>
-            <input type="number" step="0.01" value={form.primes ?? 0} onChange={e => set("primes", parseFloat(e.target.value)||0)} />
+            <NumInput value={form.primes ?? 0} onChange={v => set("primes", v)} />
           </div>
           {pdfs.length > 0 && (
             <div className="field span2">

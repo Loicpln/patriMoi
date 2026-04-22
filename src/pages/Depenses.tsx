@@ -9,6 +9,7 @@ import {
 import { useDevise, curMonth } from "../context/DeviseContext";
 import { DEPENSE_CATEGORIES, TOOLTIP_STYLE, depenseSubColor, defaultDateForMonth } from "../constants";
 import DatePicker from "../components/DatePicker";
+import NumInput from "../components/NumInput";
 import MonthSelector from "../components/MonthSelector";
 import { NestedPie, bellEffect } from "./patrimoine/shared";
 
@@ -108,8 +109,7 @@ function Modal({ initial, libelles, onClose, onSave, title }: {
           </div>
           <div className="field">
             <label>Montant (€)</label>
-            <input type="number" step="0.01" value={form.montant}
-              onChange={e => set("montant", parseFloat(e.target.value) || 0)} />
+            <NumInput value={form.montant} onChange={v => set("montant", v)} />
           </div>
           <div className="field">
             <label>Date</label>
@@ -173,8 +173,7 @@ function RecurrenteModal({ initial, title, onClose, onSave }: {
           </div>
           <div className="field" style={{ margin: 0 }}>
             <label>Montant (€)</label>
-            <input type="number" step="0.01" value={form.montant}
-              onChange={e => s("montant", parseFloat(e.target.value) || 0)} />
+            <NumInput value={form.montant} onChange={v => s("montant", v)} />
           </div>
           <div className="field" style={{ margin: 0 }}>
             <label>Périodicité</label>
