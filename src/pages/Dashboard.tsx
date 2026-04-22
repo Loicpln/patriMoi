@@ -90,10 +90,13 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
       : `${y}-${String(m - 1).padStart(2, "0")}`;
   }, [mois]);
   const salaireMois = salaires.find(s => s.employeur !== "_PRIME" && s.date.slice(0, 7) === moisPrec) ?? null;
-  const primesMoisPrec = salaires
-    .filter(s => s.employeur === "_PRIME" && s.date.slice(0, 7) === moisPrec)
+  // Primes liées au salaire = champ primes de la fiche du mois précédent
+  const salPrimesMoisPrec = salaireMois?.primes ?? 0;
+  // Primes & aides (_PRIME) = du mois sélectionné
+  const primesMoisCourant = salaires
+    .filter(s => s.employeur === "_PRIME" && s.date.slice(0, 7) === mois)
     .reduce((s, p) => s + (p.primes ?? 0), 0);
-  const totalPrimes = (salaireMois?.primes ?? 0) + primesMoisPrec;
+  const totalPrimes = salPrimesMoisPrec + primesMoisCourant;
   const totalRevenus = (salaireMois?.salaire_net ?? 0) + totalPrimes;
   const totalDepenses = depenses.reduce((s, d) => s + d.montant, 0);
 
@@ -246,18 +249,18 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
           <div className="stat-card sc-teal" style={{ cursor: "pointer" }} onClick={() => onNavigate("fiches")}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div className="sc-label">Revenus · {moisPrec}</div>
+                <div className="sc-label">Revenus · {mois}</div>
                 <div className="sc-value">{fmt(totalRevenus)}</div>
                 {salaireMois && <div className="sc-sub">{salaireMois.employeur}</div>}
               </div>
               <div style={{ textAlign: "right", flexShrink: 0, paddingTop: 2 }}>
                 {salaireMois && <>
-                  <div style={{ fontSize: 10, color: "var(--text-2)", marginBottom: 3 }}>Salaire net</div>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-1)", fontFamily: "var(--font-mono)" }}>{fmt(salaireMois.salaire_net)}</div>
+                  <div style={{ fontSize: 10, color: "var(--text-2)", marginBottom: 2 }}>Salaire · {moisPrec}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-1)", fontFamily: "var(--font-mono)" }}>{fmt(salaireMois.salaire_net + salPrimesMoisPrec)}</div>
                 </>}
-                {totalPrimes > 0 && <>
-                  <div style={{ fontSize: 10, color: "var(--text-2)", marginTop: salaireMois ? 6 : 0, marginBottom: 3 }}>Primes & aides</div>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--teal)", fontFamily: "var(--font-mono)" }}>{fmt(totalPrimes)}</div>
+                {primesMoisCourant > 0 && <>
+                  <div style={{ fontSize: 10, color: "var(--text-2)", marginTop: salaireMois ? 5 : 0, marginBottom: 2 }}>Primes · {mois}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--gold)", fontFamily: "var(--font-mono)" }}>{fmt(primesMoisCourant)}</div>
                 </>}
               </div>
             </div>
