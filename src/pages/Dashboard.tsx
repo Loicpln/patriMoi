@@ -92,7 +92,7 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
   const salaireMois = salaires.find(s => s.employeur !== "_PRIME" && s.date.slice(0, 7) === moisPrec) ?? null;
   const primesMoisPrec = salaires
     .filter(s => s.employeur === "_PRIME" && s.date.slice(0, 7) === moisPrec)
-    .reduce((s, p) => s + (p.salaire_net ?? 0), 0);
+    .reduce((s, p) => s + (p.primes ?? 0), 0);
   const totalPrimes = (salaireMois?.primes ?? 0) + primesMoisPrec;
   const totalRevenus = (salaireMois?.salaire_net ?? 0) + totalPrimes;
   const totalDepenses = depenses.reduce((s, d) => s + d.montant, 0);
@@ -163,7 +163,7 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
     ? Math.max(0, ((totalRevenus - totalDepenses) / totalRevenus) * 100)
     : null;
 
-  // Évolution salaire — net + prime types empilées
+  // Évolution salaire — net + prime types empilées + primes fiche de paie
   const activePrimeTypesDash = useMemo(() => {
     const types = new Set<string>();
     salaires.filter(s => s.employeur === "_PRIME").forEach(p => {
@@ -180,9 +180,11 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
     const fm = sorted[0].date.slice(0, 7);
     const allMonths = monthsBetween(fm, curMonth);
     const netByMonth: Record<string, number> = {};
+    const salPrimesByMonth: Record<string, number> = {};
     salaires.filter(s => s.employeur !== "_PRIME").forEach(s => {
       const m = s.date.slice(0, 7);
       netByMonth[m] = (netByMonth[m] ?? 0) + s.salaire_net;
+      if (s.primes) salPrimesByMonth[m] = (salPrimesByMonth[m] ?? 0) + s.primes;
     });
     const primeByTypeM: Record<string, Record<string, number>> = {};
     salaires.filter(s => s.employeur === "_PRIME").forEach(p => {
@@ -193,11 +195,11 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
       primeByTypeM[t][m] = (primeByTypeM[t][m] ?? 0) + (p.primes ?? 0);
     });
     const raw = allMonths.map(m => {
-      const entry: any = { mois: m, net: netByMonth[m] ?? null };
+      const entry: any = { mois: m, net: netByMonth[m] ?? null, salPrimes: salPrimesByMonth[m] ?? null };
       activePrimeTypesDash.forEach(type => { entry[type] = primeByTypeM[type]?.[m] ?? null; });
       return entry;
     });
-    return bellEffect(raw, ["net", ...activePrimeTypesDash]);
+    return bellEffect(raw, ["net", "salPrimes", ...activePrimeTypesDash]);
   }, [salaires, activePrimeTypesDash]);
 
   // Visible slice for compact zoom preservation
@@ -240,19 +242,21 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
       <MonthSelector value={mois} onChange={setMois} firstMonth={firstMonth}/>
 
       <div className="stat-row">
-        {salaireMois && (
+        {totalRevenus > 0 && (
           <div className="stat-card sc-teal" style={{ cursor: "pointer" }} onClick={() => onNavigate("fiches")}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="sc-label">Revenus · {moisPrec}</div>
                 <div className="sc-value">{fmt(totalRevenus)}</div>
-                <div className="sc-sub">{salaireMois.employeur}</div>
+                {salaireMois && <div className="sc-sub">{salaireMois.employeur}</div>}
               </div>
               <div style={{ textAlign: "right", flexShrink: 0, paddingTop: 2 }}>
-                <div style={{ fontSize: 10, color: "var(--text-2)", marginBottom: 3 }}>Salaire net</div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-1)", fontFamily: "var(--font-mono)" }}>{fmt(salaireMois.salaire_net)}</div>
+                {salaireMois && <>
+                  <div style={{ fontSize: 10, color: "var(--text-2)", marginBottom: 3 }}>Salaire net</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-1)", fontFamily: "var(--font-mono)" }}>{fmt(salaireMois.salaire_net)}</div>
+                </>}
                 {totalPrimes > 0 && <>
-                  <div style={{ fontSize: 10, color: "var(--text-2)", marginTop: 6, marginBottom: 3 }}>Primes</div>
+                  <div style={{ fontSize: 10, color: "var(--text-2)", marginTop: salaireMois ? 6 : 0, marginBottom: 3 }}>Primes & aides</div>
                   <div style={{ fontSize: 13, fontWeight: 600, color: "var(--teal)", fontFamily: "var(--font-mono)" }}>{fmt(totalPrimes)}</div>
                 </>}
               </div>
@@ -301,6 +305,10 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
                     <stop offset="5%"  stopColor="#5fa89e" stopOpacity={.4}/>
                     <stop offset="95%" stopColor="#5fa89e" stopOpacity={0}/>
                   </linearGradient>
+                  <linearGradient id="gSalPrimes" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%"  stopColor="var(--gold)" stopOpacity={.5}/>
+                    <stop offset="95%" stopColor="var(--gold)" stopOpacity={0}/>
+                  </linearGradient>
                   {activePrimeTypesDash.map(type => {
                     const c = PRIME_TYPE_COLORS[type] ?? tickerColor(type);
                     return (
@@ -330,8 +338,8 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
                         <span style={{ color: "var(--text-0)", fontSize: 11, fontWeight: 700 }}>{fmt(total)}</span>
                       </div>
                       {items.map((p: any, i: number) => {
-                        const col = p.dataKey === "net" ? "var(--teal)" : (PRIME_TYPE_COLORS[p.dataKey] ?? p.stroke ?? tickerColor(p.dataKey));
-                        const lbl = p.dataKey === "net" ? "Salaire net" : p.dataKey;
+                        const col = p.dataKey === "net" ? "var(--teal)" : p.dataKey === "salPrimes" ? "var(--gold)" : (PRIME_TYPE_COLORS[p.dataKey] ?? p.stroke ?? tickerColor(p.dataKey));
+                        const lbl = p.dataKey === "net" ? "Salaire net" : p.dataKey === "salPrimes" ? "Primes salaire" : p.dataKey;
                         return (
                           <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 2 }}>
                             <span style={{ color: col, fontSize: 10 }}>{lbl}</span>
@@ -363,6 +371,9 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
                   );
                 })}
                 <Area type="monotone" dataKey="net" stackId="s" stroke="#5fa89e" strokeWidth={2} fill="url(#gSal)"
+                  dot={false} connectNulls={false}/>
+                <Area type="monotone" dataKey="salPrimes" stackId="s" name="Primes salaire"
+                  stroke="var(--gold)" strokeWidth={1.5} fill="url(#gSalPrimes)"
                   dot={false} connectNulls={false}/>
                 {expSal && <Brush dataKey="mois" height={22} travellerWidth={6}
                   stroke="var(--border)" fill="var(--bg-2)"

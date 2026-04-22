@@ -307,9 +307,11 @@ export default function Fiches() {
     const dates = all.map(s => s.date.slice(0, 7)).filter(Boolean).sort();
     const months = monthsBetween(dates[0], curMonthStr());
     const netByM: Record<string, number> = {};
+    const salPrimesByM: Record<string, number> = {};
     fichesNormales.forEach(s => {
       const m = s.date.slice(0, 7);
       netByM[m] = (netByM[m] ?? 0) + s.salaire_net;
+      if (s.primes) salPrimesByM[m] = (salPrimesByM[m] ?? 0) + s.primes;
     });
     const primeByTypeM: Record<string, Record<string, number>> = {};
     primes.forEach(p => {
@@ -320,11 +322,11 @@ export default function Fiches() {
       primeByTypeM[t][m] = (primeByTypeM[t][m] ?? 0) + (p.primes ?? 0);
     });
     const raw = months.map(m => {
-      const entry: any = { mois: m, net: netByM[m] ?? null };
+      const entry: any = { mois: m, net: netByM[m] ?? null, salPrimes: salPrimesByM[m] ?? null };
       activePrimeTypes.forEach(type => { entry[type] = primeByTypeM[type]?.[m] ?? null; });
       return entry;
     });
-    return bellEffect(raw, ["net", ...activePrimeTypes]);
+    return bellEffect(raw, ["net", "salPrimes", ...activePrimeTypes]);
   }, [fichesNormales, primes, activePrimeTypes]);
 
   // Visible slice for compact view zoom preservation
@@ -375,8 +377,8 @@ export default function Fiches() {
           <span style={{ color: "var(--text-0)", fontSize: 11, fontWeight: 700 }}>{fmt(total)}</span>
         </div>
         {items.map((p: any, i: number) => {
-          const col = p.dataKey === "net" ? "var(--teal)" : (PRIME_TYPE_COLORS[p.dataKey] ?? p.stroke ?? tickerColor(p.dataKey));
-          const lbl = p.dataKey === "net" ? "Salaire net" : p.dataKey;
+          const col = p.dataKey === "net" ? "var(--teal)" : p.dataKey === "salPrimes" ? "var(--gold)" : (PRIME_TYPE_COLORS[p.dataKey] ?? p.stroke ?? tickerColor(p.dataKey));
+          const lbl = p.dataKey === "net" ? "Salaire net" : p.dataKey === "salPrimes" ? "Primes salaire" : p.dataKey;
           return (
             <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 2 }}>
               <span style={{ color: col, fontSize: 10 }}>{lbl}</span>
@@ -460,6 +462,10 @@ export default function Fiches() {
                     <stop offset="5%"  stopColor="#5fa89e" stopOpacity={.4}/>
                     <stop offset="95%" stopColor="#5fa89e" stopOpacity={0}/>
                   </linearGradient>
+                  <linearGradient id="gFSalPrimes" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%"  stopColor="var(--gold)" stopOpacity={.5}/>
+                    <stop offset="95%" stopColor="var(--gold)" stopOpacity={0}/>
+                  </linearGradient>
                   {activePrimeTypes.map(type => {
                     const c = PRIME_TYPE_COLORS[type] ?? tickerColor(type);
                     return (
@@ -487,6 +493,9 @@ export default function Fiches() {
                 })}
                 <Area type="monotone" dataKey="net" stackId="s" name="net"
                   stroke="#5fa89e" strokeWidth={2} fill="url(#gFNet)"
+                  dot={false} connectNulls={false}/>
+                <Area type="monotone" dataKey="salPrimes" stackId="s" name="Primes salaire"
+                  stroke="var(--gold)" strokeWidth={1.5} fill="url(#gFSalPrimes)"
                   dot={false} connectNulls={false}/>
                 {yearRange && (
                   <Customized component={(p: any) => {
