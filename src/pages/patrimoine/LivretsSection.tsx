@@ -658,27 +658,27 @@ export function LivretsSection({
         </div>
       ) : (
         <>
-          {/* ── Graphiques view ── */}
-          {viewMode === "graphiques" && (
-            <>
-            <div style={{ display:"flex", gap:16, marginBottom:16, flexWrap:"wrap" }}>
-              <div className="stat-card sc-neutral" style={{ minWidth:160 }}>
-                <div className="sc-label">Total · {mois}</div>
-                <div className="sc-value">{fmt(totalBalance)}</div>
-              </div>
-              <div className="stat-card sc-gold" style={{ minWidth:160 }}>
-                <div className="sc-label">Intérêts {annee}</div>
-                <div className="sc-value" style={{ color:"var(--gold)" }}>
-                  {totalInterests > 0 ? fmt(totalInterests) : "—"}
-                </div>
+          {/* ── Stat cards — toujours visibles ── */}
+          <div style={{ display:"flex", gap:16, marginBottom:16, flexWrap:"wrap" }}>
+            <div className="stat-card sc-lav" style={{ minWidth:160 }}>
+              <div className="sc-label">Total · {mois}</div>
+              <div className="sc-value">{fmt(totalBalance)}</div>
+            </div>
+            <div className="stat-card sc-gold" style={{ minWidth:160 }}>
+              <div className="sc-label">Intérêts {annee}</div>
+              <div className="sc-value" style={{ color:"var(--gold)" }}>
+                {totalInterests > 0 ? fmt(totalInterests) : "—"}
               </div>
             </div>
+          </div>
+
+          {/* ── Graphiques view ── */}
+          {viewMode === "graphiques" && (
             <ChartGrid charts={[
               { key:"liv_pie",   title:`Répartition · ${mois}`,     node:pieNode   },
               { key:"liv_stack", title:"Évolution globale par jour", node:stackNode,
                 brushActive:!!globalBrushIdx, onResetZoom:()=>setGlobalBrushIdx(null) },
             ]}/>
-            </>
           )}
 
           {/* ── Livrets (accordions) view ── */}

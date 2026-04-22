@@ -451,7 +451,7 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
       <div className="section-sep-line"/>
       <button
         className="btn btn-ghost btn-sm"
-        style={{marginLeft:12,whiteSpace:"nowrap",fontSize:10,
+        style={{whiteSpace:"nowrap",fontSize:10,
           borderColor:exportAllState==="done"?"var(--teal)":exportAllState==="error"?"var(--rose)":undefined,
           color:exportAllState==="done"?"var(--teal)":exportAllState==="error"?"var(--rose)":undefined,
           opacity:exportAllState==="loading"?0.6:1}}
@@ -469,23 +469,22 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
         }}>
         {exportAllState==="loading"?"…":exportAllState==="done"?"✓ Exporté":exportAllState==="error"?"⚠ Erreur":"↓ Export"}
       </button>
-      {onAddPoche&&<button className="btn btn-primary btn-sm" style={{marginLeft:6,whiteSpace:"nowrap"}} onClick={onAddPoche}>+ Poche</button>}
+      {onAddPoche&&<button className="btn btn-primary btn-sm" style={{whiteSpace:"nowrap"}} onClick={onAddPoche}>+ Poche</button>}
       <button
         className={`btn btn-sm ${viewMode==="poches"?"btn-primary":"btn-ghost"}`}
-        style={{marginLeft:6,whiteSpace:"nowrap",fontSize:10}}
+        style={{whiteSpace:"nowrap"}}
         title={viewMode==="graphiques"?"Afficher les poches":"Afficher les graphiques"}
         onClick={onToggleView}>
         {viewMode==="graphiques"?"Investissements":"Graphiques"}
       </button>
     </div>
-    {viewMode==="graphiques"&&<>
-    {/* ── Stat cards ── */}
+    {/* ── Stat cards — toujours visibles ── */}
     <div className="stat-row">
       <div className="stat-card sc-neutral">
         <div className="sc-label">Versements</div>
         <div className="sc-value">{fmt(statCards.vers)}</div>
       </div>
-      <div className="stat-card sc-neutral">
+      <div className="stat-card sc-teal">
         <div className="sc-label">Investi</div>
         <div className="sc-value">{fmt(statCards.investi)}</div>
       </div>
@@ -493,7 +492,7 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
         const gain=statCards.valeur-statCards.vers;
         const gainColor=gain>=0?"var(--teal)":"var(--rose)";
         return(
-          <div className="stat-card sc-dyn" style={{"--sc-color": gainColor} as React.CSSProperties}>
+          <div className="stat-card sc-lav">
             <div className="sc-label">Valorisation · {mois}</div>
             <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
               <div className="sc-value">{fmt(statCards.valeur)}</div>
@@ -507,12 +506,12 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
         );
       })()}
     </div>
-    <ChartGrid charts={[
+    {/* ── Graphiques view ── */}
+    {viewMode==="graphiques"&&<ChartGrid charts={[
       {key:"recap_pie",   title:`Poche / Sous-catégorie · ${mois}`, node:pieNode},
       {key:"recap_stack", title:"Valeur par poche / jour",           node:stackNode,
         onResetZoom:()=>setBrushIdxR(null), brushActive:!!brushIdxR},
-    ]}/>
-    </>}
+    ]}/>}
   </div>);
 }
 

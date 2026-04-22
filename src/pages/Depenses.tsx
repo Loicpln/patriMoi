@@ -267,6 +267,7 @@ export default function Depenses() {
   const [loading, setLoading]           = useState(false);
   const [firstMonth, setFirstMonth]     = useState<string | undefined>(undefined);
   const [brushIdxD, setBrushIdxD]       = useState<{start:number;end:number}|null>(null);
+  const [viewMode, setViewMode]         = useState<"graphiques"|"depenses">("graphiques");
   const [importPending, setImportPending] = useState<ImportPending | null>(null);
   const [recurrentes, setRecurrentes]   = useState<DepenseRecurrente[]>([]);
   const [recModal, setRecModal]         = useState(false);
@@ -615,9 +616,16 @@ export default function Depenses() {
         <ImportBtn label="Dépenses" onParsed={(rows, rowCount) => setImportPending({ label: "Dépenses", rowCount, onConfirm: async (replace) => { await importDepenses(rows, replace); load(mois); loadAll(); }})}/>
         <button className="btn btn-ghost btn-sm" onClick={() => { setEditingRec(null); setRecModal(true); }}>+ Récurrente</button>
         <button className="btn btn-primary btn-sm" onClick={() => setModal(true)}>+ Dépense</button>
+        <button
+          className={`btn btn-sm ${viewMode === "depenses" ? "btn-primary" : "btn-ghost"}`}
+          style={{ whiteSpace: "nowrap" }}
+          title={viewMode === "graphiques" ? "Afficher les dépenses" : "Afficher les graphiques"}
+          onClick={() => setViewMode(v => v === "graphiques" ? "depenses" : "graphiques")}>
+          {viewMode === "graphiques" ? "Dépenses" : "Graphiques"}
+        </button>
       </div>
 
-      {/* Stats */}
+      {/* Stats — toujours visibles */}
       <div className="stat-row">
         <div className="stat-card sc-rose">
           <div className="sc-label">Total du mois</div>
@@ -632,35 +640,38 @@ export default function Depenses() {
         ))}
       </div>
 
-      {/* Charts */}
-      <ChartGrid charts={[
-        { key:"pie",     title:"Répartition par catégorie / sous-catégorie",  node: pieNode },
-        { key:"monthly", title:"Évolution des dépenses / mois",               node: monthlyNode,
-          onResetZoom: () => setBrushIdxD(null), brushActive: !!brushIdxD },
-      ]}/>
-
-      {/* Recurring templates section — only those with an occurrence this month */}
-      {recurrentesDuMois.length > 0 && (
-        <RecurrenteSection recurrentes={recurrentesDuMois} fmt={fmt}
-          onEdit={r => { setEditingRec(r); setRecModal(true); }}
-          onDelete={r => setConfirmDeleteRec({ id: r.id!, label: r.libelle })}
-        />
+      {/* Vue graphiques */}
+      {viewMode === "graphiques" && (
+        <ChartGrid charts={[
+          { key:"pie",     title:"Répartition par catégorie / sous-catégorie",  node: pieNode },
+          { key:"monthly", title:"Évolution des dépenses / mois",               node: monthlyNode,
+            onResetZoom: () => setBrushIdxD(null), brushActive: !!brushIdxD },
+        ]}/>
       )}
 
-      {/* Detail by category — accordion */}
-      {orderedCats.map(cat => {
-        const subs = grouped[cat];
-        const catTotal = Object.values(subs).flat().reduce((s,d) => s+d.montant, 0);
-        return (
-          <CatAccordion key={cat} cat={cat} subs={subs} catTotal={catTotal} fmt={fmt}
-            onEdit={d => setEditing(d)}
-            onDelete={async (d) => { await invoke("delete_depense",{id:d.id}); load(mois); loadAll(); }}/>
-        );
-      })}
+      {/* Vue dépenses — récurrentes + accordéons */}
+      {viewMode === "depenses" && (<>
+        {recurrentesDuMois.length > 0 && (
+          <RecurrenteSection recurrentes={recurrentesDuMois} fmt={fmt}
+            onEdit={r => { setEditingRec(r); setRecModal(true); }}
+            onDelete={r => setConfirmDeleteRec({ id: r.id!, label: r.libelle })}
+          />
+        )}
 
-      {depenses.length === 0 && !loading && (
-        <div className="empty">Aucune dépense enregistrée pour ce mois.</div>
-      )}
+        {orderedCats.map(cat => {
+          const subs = grouped[cat];
+          const catTotal = Object.values(subs).flat().reduce((s,d) => s+d.montant, 0);
+          return (
+            <CatAccordion key={cat} cat={cat} subs={subs} catTotal={catTotal} fmt={fmt}
+              onEdit={d => setEditing(d)}
+              onDelete={async (d) => { await invoke("delete_depense",{id:d.id}); load(mois); loadAll(); }}/>
+          );
+        })}
+
+        {depenses.length === 0 && !loading && (
+          <div className="empty">Aucune dépense enregistrée pour ce mois.</div>
+        )}
+      </>)}
 
       {modal && (
         <Modal initial={emptyDep} libelles={libelles} title="Ajouter une dépense"
