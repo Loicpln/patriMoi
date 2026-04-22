@@ -82,16 +82,26 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
     return dates[0];
   }, [salaires, livrets, positions]);
 
-  // Salaire du mois sélectionné (pour stats)
-  const salaireMois = salaires.find(s => s.employeur !== "_PRIME" && s.date.slice(0, 7) === mois) ?? null;
+  // Salaire du mois précédent (pour stats)
+  const moisPrec = useMemo(() => {
+    const [y, m] = mois.split("-").map(Number);
+    return m === 1
+      ? `${y - 1}-12`
+      : `${y}-${String(m - 1).padStart(2, "0")}`;
+  }, [mois]);
+  const salaireMois = salaires.find(s => s.employeur !== "_PRIME" && s.date.slice(0, 7) === moisPrec) ?? null;
+  const primesMoisPrec = salaires
+    .filter(s => s.employeur === "_PRIME" && s.date.slice(0, 7) === moisPrec)
+    .reduce((s, p) => s + (p.salaire_net ?? 0), 0);
+  const totalPrimes = (salaireMois?.primes ?? 0) + primesMoisPrec;
+  const totalRevenus = (salaireMois?.salaire_net ?? 0) + totalPrimes;
   const totalDepenses = depenses.reduce((s, d) => s + d.montant, 0);
 
   // ── Livrets au mois sélectionné ───────────────────────────────────────────────
   const isInteret = (l: Livret) => (l.notes ?? "").startsWith("[INTERET");
-  const latestLivrets: Record<string, Livret> = {};
-  livrets.filter(l => !isInteret(l) && l.date.slice(0, 7) <= mois)
-    .forEach(l => { if (!latestLivrets[l.poche] || l.date > latestLivrets[l.poche].date) latestLivrets[l.poche] = l; });
-  const totalLivrets = Object.values(latestLivrets).reduce((s, l) => s + l.montant, 0);
+  const totalLivrets = livrets
+    .filter(l => !isInteret(l) && l.date.slice(0, 7) <= mois)
+    .reduce((s, l) => s + l.montant, 0);
 
   // ── Portfolio value au mois sélectionné (valeur de marché) ────────────────────
   const scpiPriceMap = useMemo(() => buildScpiMapD(scpiVals), [scpiVals]);
@@ -149,8 +159,8 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [positions, ventes, versements, dividendes, mois, getPriceD]);
 
-  const tauxEpargne = salaireMois && salaireMois.salaire_net > 0
-    ? Math.max(0, ((salaireMois.salaire_net - totalDepenses) / salaireMois.salaire_net) * 100)
+  const tauxEpargne = totalRevenus > 0
+    ? Math.max(0, ((totalRevenus - totalDepenses) / totalRevenus) * 100)
     : null;
 
   // Évolution salaire — net + prime types empilées
@@ -232,9 +242,21 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
       <div className="stat-row">
         {salaireMois && (
           <div className="stat-card sc-teal" style={{ cursor: "pointer" }} onClick={() => onNavigate("fiches")}>
-            <div className="sc-label">Salaire net · {mois}</div>
-            <div className="sc-value">{fmt(salaireMois.salaire_net)}</div>
-            <div className="sc-sub">{salaireMois.employeur}</div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="sc-label">Revenus · {moisPrec}</div>
+                <div className="sc-value">{fmt(totalRevenus)}</div>
+                <div className="sc-sub">{salaireMois.employeur}</div>
+              </div>
+              <div style={{ textAlign: "right", flexShrink: 0, paddingTop: 2 }}>
+                <div style={{ fontSize: 10, color: "var(--text-2)", marginBottom: 3 }}>Salaire net</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-1)", fontFamily: "var(--font-mono)" }}>{fmt(salaireMois.salaire_net)}</div>
+                {totalPrimes > 0 && <>
+                  <div style={{ fontSize: 10, color: "var(--text-2)", marginTop: 6, marginBottom: 3 }}>Primes</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--teal)", fontFamily: "var(--font-mono)" }}>{fmt(totalPrimes)}</div>
+                </>}
+              </div>
+            </div>
           </div>
         )}
         <div className="stat-card sc-rose" style={{ cursor: "pointer" }} onClick={() => onNavigate("depenses")}>
@@ -372,25 +394,6 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
             : <NestedPie inner={depPieInner} outer={depPieOuter} total={totalDepenses} fmt={fmt} h={hPie}/>
           }
         </div>}
-      </div>
-
-      <div className="section-sep">
-        <span className="section-sep-label">Accès rapide</span>
-        <div className="section-sep-line"/>
-      </div>
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-        {[
-          { label: "Ajouter une dépense",       page: "depenses",   color: "var(--rose)"     },
-          { label: "Ajouter une fiche de paie", page: "fiches",     color: "var(--teal)"     },
-          { label: "Mettre à jour mes livrets",  page: "patrimoine", color: "var(--gold)"     },
-          { label: "Ajouter une position",       page: "patrimoine", color: "var(--lavender)" },
-        ].map(item => (
-          <button key={item.label} className="btn btn-ghost"
-            style={{ borderColor: item.color, color: item.color }}
-            onClick={() => onNavigate(item.page as Page)}>
-            {item.label}
-          </button>
-        ))}
       </div>
     </div>
   );

@@ -697,7 +697,7 @@ export function ScpiValuationModal({scpiTickers,mois=curMonth,valuations,onClose
 
   const history=valuations.filter(v=>v.ticker===ticker).sort((a,b)=>b.mois.localeCompare(a.mois));
 
-  return(<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()} style={{maxWidth:600}}>
+  return(<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
     <div className="modal-title">Valorisation SCPI</div>
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,marginTop:16}}>
       {/* ── Col gauche : saisie ── */}
@@ -810,7 +810,7 @@ export function TradeModal({poche,ticker,nom,subcat:_subcat,tickerPositions,tick
     letterSpacing:".08em",fontWeight:600,marginBottom:2,
   };
 
-  return(<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()} style={{maxWidth:680}}>
+  return(<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
     <div className="sell-header">
       <span className="sell-icon">🔄</span>
       <div>

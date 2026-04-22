@@ -196,6 +196,7 @@ body {
   position: absolute;
   top: 0; left: 0; right: 0;
   height: 3px;
+  background: var(--sc-accent, var(--gold));
 }
 .sc-gold::after    { background: var(--gold); }
 .sc-teal::after    { background: var(--teal); }
@@ -317,7 +318,7 @@ tbody tr:hover td { background: var(--bg-2); }
   border: 1px solid var(--border-l);
   border-radius: 14px;
   padding: 32px;
-  width: 600px;
+  width: 650px;
   max-width: 92vw;
   max-height: 90vh;
   overflow-y: auto;

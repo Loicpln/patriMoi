@@ -623,8 +623,8 @@ export default function Depenses() {
           <div className="sc-label">Total du mois</div>
           <div className="sc-value">{fmt(total)}</div>
         </div>
-        {pieInner.slice(0,3).map((p,i) => (
-          <div key={p.name} className={`stat-card ${["sc-gold","sc-teal","sc-lav"][i]}`}>
+        {pieInner.map(p => (
+          <div key={p.name} className="stat-card" style={{"--sc-accent": p.color} as React.CSSProperties}>
             <div className="sc-label">{p.name}</div>
             <div className="sc-value">{fmt(p.value)}</div>
             <div className="sc-sub">{total>0?`${((p.value/total)*100).toFixed(1)} %`:"—"}</div>
