@@ -364,7 +364,7 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
 
       <div className="two-col">
         {/* Évolution salaire net + prime types empilées */}
-        {expChart !== "pie" && <div className="chart-card" style={{marginBottom: 20, height:hSal+52, gridColumn: expSal?"1 / -1":"" }}>
+        {(expChart === null || expSal) && <div className="chart-card" style={{marginBottom: 20, height:hSal+52, gridColumn: expSal?"1 / -1":"" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
             <div className="chart-title">Évolution du salaire net + primes</div>
             <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
@@ -472,43 +472,8 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
           })()}
         </div>}
 
-        {/* Dépenses du mois — camembert 2 anneaux dynamique */}
-        {expChart !== "sal" && <div className="chart-card" style={{marginBottom: 20, height:hPie+52, gridColumn: expPie?"1 / -1":""}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-            <div className="chart-title">Dépenses par catégorie · {mois}</div>
-            <button className="btn btn-ghost btn-sm" style={{fontSize:10}}
-              onClick={() => setExpChart(v => v === "pie" ? null : "pie")}>
-              {expPie ? "-" : "+"}
-            </button>
-          </div>
-          {depPieInner.length === 0
-            ? <div className="empty">Aucune dépense ce mois.</div>
-            : <NestedPie inner={depPieInner} outer={depPieOuter} total={totalDepenses} fmt={fmt} h={hPie}/>
-          }
-        </div>}
-      </div>
-
-      {/* ── Deuxième rangée : delta patrimoine + évolution globale ── */}
-      <div className="two-col">
-        {/* Camembert delta patrimoine du mois */}
-        {expChart !== "pat" && (
-          <div className="chart-card" style={{ marginBottom: 20, height: hPatPie + 52, gridColumn: expPatPie ? "1 / -1" : "" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-              <div className="chart-title" style={{ marginBottom: 0 }}>Flux patrimoine · {mois}</div>
-              <button className="btn btn-ghost btn-sm" style={{ fontSize: 10 }}
-                onClick={() => setExpChart(v => v === "patPie" ? null : "patPie")}>
-                {expPatPie ? "-" : "+"}
-              </button>
-            </div>
-            {patriPieInner.length === 0
-              ? <div className="empty">Aucun versement ni dépôt ce mois.</div>
-              : <NestedPie inner={patriPieInner} outer={patriPieOuter} total={patriPieTotal} fmt={fmt} h={hPatPie}/>
-            }
-          </div>
-        )}
-
-        {/* Évolution mensuelle livrets + portefeuille */}
-        {expChart !== "patPie" && (
+{/* Évolution mensuelle livrets + portefeuille */}
+        {(expChart === null || expPat) && (
           <div className="chart-card" style={{ marginBottom: 20, height: hPat + 52, gridColumn: expPat ? "1 / -1" : "" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
               <div className="chart-title" style={{ marginBottom: 0 }}>Évolution patrimoine financier</div>
@@ -580,6 +545,42 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
                   </ResponsiveContainer>
                 );
               })()
+            }
+          </div>
+        )}
+      </div>
+
+      {/* ── Deuxième rangée : delta patrimoine + évolution globale ── */}
+      <div className="two-col">
+        {/* Dépenses du mois — camembert 2 anneaux dynamique */}
+        {(expChart === null || expPie) && <div className="chart-card" style={{marginBottom: 20, height:hPie+52, gridColumn: expPie?"1 / -1":""}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+            <div className="chart-title">Dépenses par catégorie · {mois}</div>
+            <button className="btn btn-ghost btn-sm" style={{fontSize:10}}
+              onClick={() => setExpChart(v => v === "pie" ? null : "pie")}>
+              {expPie ? "-" : "+"}
+            </button>
+          </div>
+          {depPieInner.length === 0
+            ? <div className="empty">Aucune dépense ce mois.</div>
+            : <NestedPie inner={depPieInner} outer={depPieOuter} total={totalDepenses} fmt={fmt} h={hPie}/>
+          }
+        </div>
+        }
+
+        {/* Camembert delta patrimoine du mois */}
+        {(expChart === null || expPatPie) && (
+          <div className="chart-card" style={{ marginBottom: 20, height: hPatPie + 52, gridColumn: expPatPie ? "1 / -1" : "" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <div className="chart-title" style={{ marginBottom: 0 }}>Flux patrimoine · {mois}</div>
+              <button className="btn btn-ghost btn-sm" style={{ fontSize: 10 }}
+                onClick={() => setExpChart(v => v === "patPie" ? null : "patPie")}>
+                {expPatPie ? "-" : "+"}
+              </button>
+            </div>
+            {patriPieInner.length === 0
+              ? <div className="empty">Aucun versement ni dépôt ce mois.</div>
+              : <NestedPie inner={patriPieInner} outer={patriPieOuter} total={patriPieTotal} fmt={fmt} h={hPatPie}/>
             }
           </div>
         )}
