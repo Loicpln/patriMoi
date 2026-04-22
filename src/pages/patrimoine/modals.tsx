@@ -156,11 +156,33 @@ export function LivretPocheFormModal({onSave,onClose}:{onSave:(p:LivretPoche)=>v
 export function OpLivretModal({poche,mois,initialOp,onClose,onSave}:{
   poche:LivretPoche;mois:string;initialOp:"versement"|"retrait"|"interet";onClose:()=>void;onSave:()=>void;
 }) {
+  const { fmt } = useDevise();
   const anneeDefault=parseInt(mois.slice(0,4));
   const [montant,setMontant]=useState<number>(0);
   const [date,setDate]=useState<string>(defaultDateForMonth(mois));
   const [annee,setAnnee]=useState<number>(anneeDefault);
   const [notes,setNotes]=useState<string>("");
+
+  // ── Solde disponible à la date (retrait uniquement) ──────────────────────
+  const [livretOps,setLivretOps]=useState<Livret[]>([]);
+  useEffect(()=>{
+    invoke<Livret[]>("get_livrets").then(all=>
+      setLivretOps(all.filter(l=>l.poche===poche.type_livret&&l.nom===poche.nom))
+    );
+  },[poche]);
+
+  const balanceAtDate=useMemo(()=>{
+    if(initialOp!=="retrait") return null;
+    return livretOps
+      .filter(l=>!(l.notes??"").startsWith("[INTERET")&&l.date<=date)
+      .reduce((s,l)=>s+l.montant,0);
+  },[livretOps,date,initialOp]);
+
+  // Pré-remplir le montant avec le solde disponible (se met à jour avec la date)
+  useEffect(()=>{
+    if(initialOp==="retrait"&&balanceAtDate!==null)
+      setMontant(parseFloat(Math.max(0, balanceAtDate).toFixed(8)));
+  },[balanceAtDate,initialOp]);
 
   const opLabel=initialOp==="versement"?"Versement":initialOp==="retrait"?"Retrait":"Intérêts";
   const opColor=initialOp==="versement"?"var(--teal)":initialOp==="retrait"?"var(--rose)":"var(--gold)";
@@ -191,8 +213,17 @@ export function OpLivretModal({poche,mois,initialOp,onClose,onSave}:{
       <span style={{fontSize:11,color:"var(--text-2)",marginLeft:8}}>{poche.nom} · {typeDef?.label}</span>
     </div>
     <div style={G2}>
-      <div className="field" style={F}><label>Montant (€)</label>
-        <NumInput value={montant} onChange={setMontant}/></div>
+      <div className="field" style={F}>
+        <label style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <span>Montant (€)</span>
+          {balanceAtDate!==null&&(
+            <span style={{color:"var(--text-2)",fontSize:7}}>
+              solde : <span style={{color:balanceAtDate>0?"var(--teal)":"var(--rose)"}}>{fmt(balanceAtDate)}</span>
+            </span>
+          )}
+        </label>
+        <NumInput value={montant} onChange={setMontant}/>
+      </div>
       {initialOp==="interet"?(
         <div className="field" style={F}><label>Année</label>
           <input type="number" value={annee} onChange={e=>setAnnee(parseInt(e.target.value)||anneeDefault)} min={2000} max={2100}/></div>
@@ -263,6 +294,7 @@ export function PositionModal({poche,existing,mois=curMonth,onClose,onSave}:{
   poche:string;existing:Position[];mois?:string;onClose:()=>void;onSave:()=>void;
 }) {
   const { poches } = usePoches();
+  const { fmt } = useDevise();
   const [form,setForm]=useState<Position>({
     poche,ticker:"",nom:"",sous_categorie:SUBS_NO_ESPECES[0].key,
     quantite:0,prix_achat:0,date_achat:defaultDateForMonth(mois),
@@ -271,6 +303,32 @@ export function PositionModal({poche,existing,mois=curMonth,onClose,onSave}:{
   const s=(k:keyof Position,v:string|number)=>setForm(f=>({...f,[k]:v}));
   const known=[...new Set(existing.map(p=>p.ticker))];
   const prixUnitaire=form.quantite>0?totalCmd/form.quantite:0;
+
+  // ── Espèces disponibles à la date d'achat ────────────────────────────────
+  const [versements,setVersements]=useState<Versement[]>([]);
+  const [ventes,setVentes]=useState<Vente[]>([]);
+  const [dividendes,setDividendes]=useState<Dividende[]>([]);
+  useEffect(()=>{
+    Promise.all([
+      invoke<Versement[]>("get_versements",{poche}),
+      invoke<Vente[]>("get_ventes",{poche}),
+      invoke<Dividende[]>("get_dividendes",{poche}),
+    ]).then(([v,ve,d])=>{setVersements(v);setVentes(ve);setDividendes(d);});
+  },[poche]);
+
+  const cashAtDate=useMemo(()=>{
+    const d=form.date_achat??"";
+    const totalV=versements.filter(v=>v.date<=d).reduce((s,v)=>s+v.montant,0);
+    const totalPos=existing.filter(p=>p.sous_categorie!=="especes"&&(p.date_achat??"")<=d).reduce((s,p)=>s+p.quantite*p.prix_achat,0);
+    const totalVentes=ventes.filter(v=>(v.date_vente??"")<=d).reduce((s,v)=>s+v.quantite*v.prix_vente,0);
+    const totalDiv=dividendes.filter(d2=>d2.date<=d).reduce((s,d2)=>s+d2.montant,0);
+    return totalV-totalPos+totalVentes+totalDiv;
+  },[versements,ventes,dividendes,existing,form.date_achat]);
+
+  // Pré-remplir le total commande avec les espèces disponibles (se met à jour avec la date)
+  useEffect(()=>{
+    setTotalCmd(parseFloat(Math.max(0,cashAtDate).toFixed(8)));
+  },[cashAtDate]);
 
   const handleTickerChange=(t:string)=>{
     const upper=t.toUpperCase();
@@ -293,7 +351,12 @@ export function PositionModal({poche,existing,mois=curMonth,onClose,onSave}:{
       <div className="field" style={F}><label>Quantité</label>
         <NumInput value={form.quantite} onChange={v=>s("quantite",v)}/></div>
       <div className="field" style={F}>
-        <label>Total commande (€) <span style={{color:"var(--text-2)",fontSize:9}}>montant global</span></label>
+        <label style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <span>Total commande (€)</span>
+          <span style={{color:"var(--text-2)",fontSize:7}}>
+            espèces : <span style={{color:cashAtDate>0?"var(--teal)":"var(--rose)"}}>{fmt(cashAtDate,8)}</span>
+          </span>
+        </label>
         <NumInput value={totalCmd} onChange={setTotalCmd}/>
         {prixUnitaire>0&&<div style={{fontSize:10,color:"var(--text-1)",marginTop:3}}>→ Prix unitaire : {prixUnitaire.toFixed(6)} €</div>}
       </div>
@@ -434,7 +497,7 @@ export function SellModal({poche,ticker,nom,tickerPositions,tickerVentes,getPric
           onChange={q=>{const clamped=Math.min(q,availQty);setQty(clamped);setTotalVente(parseFloat((priceAtDate*clamped).toFixed(2)));}}/>
       </div>
       <div className="field" style={F}>
-        <label>Total vente (€) <span style={{color:"var(--text-2)",fontSize:9}}>montant global</span></label>
+        <label>Total vente (€)</label>
         <NumInput value={totalVente} disabled={availQty<=0} onChange={setTotalVente}/>
         {qty>0&&<div style={{fontSize:10,color:"var(--text-1)",marginTop:3}}>→ Prix unitaire : {prixUnitaire.toFixed(6)} €</div>}
       </div>
