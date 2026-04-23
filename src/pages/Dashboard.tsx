@@ -405,7 +405,7 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
                   interval={Math.max(0, Math.floor(salChartData.length / 8) - 1)}
                   tickFormatter={(m: string) => { const mo = parseInt(m.slice(5,7)); return ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"][mo-1]+" "+m.slice(2,4); }}/>
                 <YAxis stroke="var(--text-2)" tick={{ fontSize: 9, fontFamily: "JetBrains Mono" }}
-                  tickFormatter={fmtAxis}/>
+                  tickFormatter={fmtAxis} width={34}/>
                 <Tooltip content={({ active, payload, label }: any) => {
                   if (!active || !payload?.length) return null;
                   const items = payload.filter((p: any) => p.value != null && p.value > 0);
@@ -504,7 +504,7 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
                       <XAxis dataKey="mois" stroke="var(--text-2)" tick={{ fontSize: 9, fontFamily: "JetBrains Mono" }}
                         interval={Math.max(0, Math.floor(monthlyPatrimoine.length / 8) - 1)}
                         tickFormatter={(m: string) => { const mo = parseInt(m.slice(5,7)); return ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"][mo-1]+" "+m.slice(2,4); }}/>
-                      <YAxis stroke="var(--text-2)" tick={{ fontSize: 9, fontFamily: "JetBrains Mono" }} tickFormatter={fmtAxis}/>
+                      <YAxis stroke="var(--text-2)" tick={{ fontSize: 9, fontFamily: "JetBrains Mono" }} tickFormatter={fmtAxis} width={34}/>
                       <Tooltip content={({ active, payload, label }: any) => {
                         if (!active || !payload?.length) return null;
                         const items = payload.filter((p: any) => p.value != null && p.value > 0);
