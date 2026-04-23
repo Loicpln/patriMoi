@@ -237,32 +237,57 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
 
   // ── Delta patrimoine du mois — pie (versements invest + delta livrets) ────────
   const { patriPieInner, patriPieOuter, patriPieTotal } = useMemo(() => {
+    // Deltas signés par entité (retrait = négatif)
     const livByType: Record<string, number> = {};
     livrets.filter(l => !isInteret(l) && l.date.slice(0, 7) === mois)
       .forEach(l => { livByType[l.poche] = (livByType[l.poche] ?? 0) + l.montant; });
     const invByPoche: Record<string, number> = {};
     versements.filter(v => v.date.slice(0, 7) === mois)
       .forEach(v => { invByPoche[v.poche] = (invByPoche[v.poche] ?? 0) + v.montant; });
-    const totLiv = Object.values(livByType).reduce((s, v) => s + Math.max(0, v), 0);
-    const totInv = Object.values(invByPoche).reduce((s, v) => s + Math.max(0, v), 0);
-    const total = totLiv + totInv;
-    if (!total) return { patriPieInner: [], patriPieOuter: [], patriPieTotal: 0 };
-    const inner: { name: string; value: number; color: string }[] = [];
-    const outer: { name: string; group: string; value: number; color: string }[] = [];
-    if (totInv > 0) inner.push({ name: "Investissements", value: totInv, color: GLOBAL_GROUP_COLORS.investissements });
-    if (totLiv > 0) inner.push({ name: "Livrets",         value: totLiv, color: GLOBAL_GROUP_COLORS.livrets });
+
+    // Nets par groupe (pour l'anneau intérieur)
+    const netLiv = Object.values(livByType).reduce((s, v) => s + v, 0);
+    const netInv = Object.values(invByPoche).reduce((s, v) => s + v, 0);
+    const netTotal = netLiv + netInv;
+
+    // Positifs bruts pour les proportions de l'anneau intérieur
+    const totLivPos = Object.values(livByType).reduce((s, v) => s + Math.max(0, v), 0);
+    const totInvPos = Object.values(invByPoche).reduce((s, v) => s + Math.max(0, v), 0);
+    if (totLivPos + totInvPos === 0) return { patriPieInner: [], patriPieOuter: [], patriPieTotal: 0 };
+
+    // Anneau intérieur : net par groupe, retraits nets en opacité réduite
+    const inner: { name: string; value: number; color: string; opacity?: number; isNeg?: boolean }[] = [];
+    if (netInv !== 0) inner.push({ name: "Investissements", value: Math.abs(netInv), color: GLOBAL_GROUP_COLORS.investissements, ...(netInv < 0 ? { opacity: 0.35, isNeg: true } : {}) });
+    if (netLiv !== 0) inner.push({ name: "Livrets",         value: Math.abs(netLiv), color: GLOBAL_GROUP_COLORS.livrets,          ...(netLiv < 0 ? { opacity: 0.35, isNeg: true } : {}) });
+
+    // Facteurs de normalisation : l'anneau extérieur de chaque groupe doit sommer
+    // à la valeur abs du groupe dans l'anneau intérieur (net), pour respecter les proportions.
+    const totInvAbs = Object.values(invByPoche).reduce((s, v) => s + Math.abs(v), 0);
+    const totLivAbs = Object.values(livByType).reduce((s, v) => s + Math.abs(v), 0);
+    const scaleInv  = totInvAbs > 0 ? Math.abs(netInv) / totInvAbs : 0;
+    const scaleLiv  = totLivAbs > 0 ? Math.abs(netLiv) / totLivAbs : 0;
+
+    // Anneau extérieur : toutes les entités normalisées, retraits en opacité réduite.
+    // `value` = valeur d'arc (normalisée), `rawValue` = vraie valeur signée pour le tooltip.
+    const outer: { name: string; group: string; value: number; rawValue: number; color: string; opacity?: number; isNeg?: boolean }[] = [];
     poches.forEach(p => {
       const v = invByPoche[p.key] ?? 0;
-      if (v > 0) outer.push({ name: p.label, group: "Investissements", value: v, color: p.color || tickerColor(p.key) });
+      if (v === 0) return;
+      outer.push({ name: p.label, group: "Investissements",
+        value: Math.abs(v) * scaleInv, rawValue: v,
+        color: p.color || tickerColor(p.key), ...(v < 0 ? { opacity: 0.35, isNeg: true } : {}) });
     });
     Object.entries(livByType).forEach(([type, v]) => {
-      if (v > 0) outer.push({
+      if (v === 0) return;
+      outer.push({
         name: LIVRETS_DEF.find(l => l.key === type)?.label ?? type.toUpperCase(),
-        group: "Livrets", value: v,
+        group: "Livrets", value: Math.abs(v) * scaleLiv, rawValue: v,
         color: LIVRET_COLOR[type] ?? tickerColor(type),
+        ...(v < 0 ? { opacity: 0.35, isNeg: true } : {}),
       });
     });
-    return { patriPieInner: inner, patriPieOuter: outer, patriPieTotal: total };
+
+    return { patriPieInner: inner, patriPieOuter: outer, patriPieTotal: netTotal };
   }, [livrets, versements, mois, poches]);
 
   // ── Évolution mensuelle patrimoine (livrets + portefeuille marché) ─────────────
