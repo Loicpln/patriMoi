@@ -250,10 +250,10 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
     const netInv = Object.values(invByPoche).reduce((s, v) => s + v, 0);
     const netTotal = netLiv + netInv;
 
-    // Positifs bruts pour les proportions de l'anneau intérieur
-    const totLivPos = Object.values(livByType).reduce((s, v) => s + Math.max(0, v), 0);
-    const totInvPos = Object.values(invByPoche).reduce((s, v) => s + Math.max(0, v), 0);
-    if (totLivPos + totInvPos === 0) return { patriPieInner: [], patriPieOuter: [], patriPieTotal: 0 };
+    // Sortie anticipée uniquement si aucun mouvement du tout (positif ou négatif)
+    const totInvAbs = Object.values(invByPoche).reduce((s, v) => s + Math.abs(v), 0);
+    const totLivAbs = Object.values(livByType).reduce((s, v) => s + Math.abs(v), 0);
+    if (totInvAbs + totLivAbs === 0) return { patriPieInner: [], patriPieOuter: [], patriPieTotal: 0 };
 
     // Anneau intérieur : net par groupe, retraits nets en opacité réduite
     const inner: { name: string; value: number; color: string; opacity?: number; isNeg?: boolean }[] = [];
@@ -262,8 +262,6 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
 
     // Facteurs de normalisation : l'anneau extérieur de chaque groupe doit sommer
     // à la valeur abs du groupe dans l'anneau intérieur (net), pour respecter les proportions.
-    const totInvAbs = Object.values(invByPoche).reduce((s, v) => s + Math.abs(v), 0);
-    const totLivAbs = Object.values(livByType).reduce((s, v) => s + Math.abs(v), 0);
     const scaleInv  = totInvAbs > 0 ? Math.abs(netInv) / totInvAbs : 0;
     const scaleLiv  = totLivAbs > 0 ? Math.abs(netLiv) / totLivAbs : 0;
 

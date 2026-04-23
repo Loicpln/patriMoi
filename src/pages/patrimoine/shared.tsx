@@ -127,7 +127,7 @@ export function NestedPie({inner,outer,total,fmt,toggleLabel,onToggle,h=260}:{
     return(
       <div style={{...TOOLTIP_STYLE,padding:"8px 12px"}}>
         <div style={{color:"var(--text-0)",fontWeight:500,marginBottom:4}}>
-          {isNeg?`↓ ${p.name}`:p.name}
+          {isNeg?`↓ ${p.name}`:`↑ ${p.name}`}
         </div>
         {p.payload?.group&&p.payload.group!==p.name&&(
           <div style={{color:"var(--text-2)",fontSize:10,marginBottom:3}}>{p.payload.group}</div>
