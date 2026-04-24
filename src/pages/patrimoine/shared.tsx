@@ -87,10 +87,10 @@ export function ChartGrid({charts}:{charts:{key:string;title:string;node:(h:numb
 }
 
 // ── Nested Pie ─────────────────────────────────────────────────────────────────
-export function NestedPie({inner,outer,total,fmt,toggleLabel,onToggle,h=260}:{
+export function NestedPie({inner,outer,total,fmt,toggleLabel,onToggle,h=260,signedValues=false}:{
   inner:{name:string;value:number;color:string;opacity?:number;isNeg?:boolean}[];
   outer:{name:string;value:number;rawValue?:number;color:string;group?:string;opacity?:number;isNeg?:boolean}[];
-  total:number;fmt:(n:number)=>string;toggleLabel?:string;onToggle?:()=>void;h?:number;
+  total:number;fmt:(n:number)=>string;toggleLabel?:string;onToggle?:()=>void;h?:number;signedValues?:boolean;
 }) {
   const [selectedGroup,setSelectedGroup]=useState<string|null>(null);
   // Outer-ring filter: click an outer segment to highlight all segments sharing the same subcat name
@@ -121,19 +121,20 @@ export function NestedPie({inner,outer,total,fmt,toggleLabel,onToggle,h=260}:{
   const CT=({active,payload}:any)=>{
     if(!active||!payload?.length)return null;
     const p=payload[0];
-    const isNeg=p.payload?.isNeg===true;
+    const isNeg=signedValues&&p.payload?.isNeg===true;
     const posOuter=filteredOuter.filter(o=>!o.isNeg);
     const ref=(selectedGroup||selectedOuterName)?posOuter.reduce((s,o)=>s+o.value,0):total;
+    const dispVal=p.payload?.rawValue!==undefined?Math.abs(p.payload.rawValue):p.value;
     return(
       <div style={{...TOOLTIP_STYLE,padding:"8px 12px"}}>
         <div style={{color:"var(--text-0)",fontWeight:500,marginBottom:4}}>
-          {isNeg?`↓ ${p.name}`:`↑ ${p.name}`}
+          {signedValues?(isNeg?`↓ ${p.name}`:`↑ ${p.name}`):p.name}
         </div>
         {p.payload?.group&&p.payload.group!==p.name&&(
           <div style={{color:"var(--text-2)",fontSize:10,marginBottom:3}}>{p.payload.group}</div>
         )}
-        <div style={{color:isNeg?"var(--rose)":"var(--teal)"}}>
-          {isNeg?`− ${fmt(Math.abs(p.payload?.rawValue??p.value))}`:`+ ${fmt(p.payload?.rawValue??p.value)}`}
+        <div style={{color:isNeg?"var(--rose)":signedValues?"var(--teal)":"var(--gold)"}}>
+          {isNeg?`− ${fmt(dispVal)}`:signedValues?`+ ${fmt(dispVal)}`:fmt(p.value)}
         </div>
         {!isNeg&&ref>0&&<div style={{color:"var(--text-1)",fontSize:10,marginTop:2}}>{((p.value/ref)*100).toFixed(1)} %</div>}
       </div>

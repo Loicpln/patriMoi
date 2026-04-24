@@ -603,7 +603,7 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
             </div>
             {patriPieInner.length === 0
               ? <div className="empty">Aucun versement ni dépôt ce mois.</div>
-              : <NestedPie inner={patriPieInner} outer={patriPieOuter} total={patriPieTotal} fmt={fmt} h={hPatPie}/>
+              : <NestedPie inner={patriPieInner} outer={patriPieOuter} total={patriPieTotal} fmt={fmt} h={hPatPie} signedValues/>
             }
           </div>
         )}
