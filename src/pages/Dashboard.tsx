@@ -54,6 +54,7 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
   const [scpiVals, setScpiVals]       = useState<ScpiVal[]>([]);
   const [expChart, setExpChart]       = useState<"sal"|"pie"|"pat"|"patPie"|null>(null);
   const [brushDash, setBrushDash]     = useState<{start:number;end:number}|null>(null);
+  const [brushPat,  setBrushPat]      = useState<{start:number;end:number}|null>(null);
   const expSal    = expChart === "sal";
   const expPie    = expChart === "pie";
   const expPat    = expChart === "pat";
@@ -500,10 +501,14 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
           <div className="chart-card" style={{ marginBottom: 20, height: hPat + 52, gridColumn: expPat ? "1 / -1" : "" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
               <div className="chart-title" style={{ marginBottom: 0 }}>Évolution patrimoine financier</div>
-              <button className="btn btn-ghost btn-sm" style={{ fontSize: 10 }}
-                onClick={() => setExpChart(v => v === "pat" ? null : "pat")}>
-                {expPat ? "-" : "+"}
-              </button>
+              <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                <button className="btn btn-ghost btn-sm" style={{ fontSize: 10, opacity: brushPat ? 1 : 0.35, cursor: brushPat ? "pointer" : "default" }}
+                  onClick={() => brushPat && setBrushPat(null)} title="Réinitialiser le zoom">↺</button>
+                <button className="btn btn-ghost btn-sm" style={{ fontSize: 10 }}
+                  onClick={() => setExpChart(v => v === "pat" ? null : "pat")}>
+                  {expPat ? "-" : "+"}
+                </button>
+              </div>
             </div>
             {monthlyPatrimoine.length === 0
               ? <div className="empty">Aucune donnée.</div>
@@ -564,6 +569,16 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
                       }}/>
                       {hasLivrets   && <Area type="monotone" dataKey="livrets"   stackId="p" stroke={GLOBAL_GROUP_COLORS.livrets}         strokeWidth={1.5} fill="url(#gPatLiv)" dot={false} connectNulls={false}/>}
                       {hasPortfolio && <Area type="monotone" dataKey="portfolio" stackId="p" stroke={GLOBAL_GROUP_COLORS.investissements} strokeWidth={2}   fill="url(#gPatInv)" dot={false} connectNulls={false}/>}
+                      {expPat && <Brush dataKey="mois" height={22} travellerWidth={6}
+                        stroke="var(--border)" fill="var(--bg-2)"
+                        startIndex={brushPat?.start ?? 0}
+                        endIndex={brushPat?.end ?? monthlyPatrimoine.length - 1}
+                        onChange={(range: any) => {
+                          const { startIndex: s, endIndex: e } = range ?? {};
+                          if (s === undefined || e === undefined) return;
+                          setBrushPat(s === 0 && e === monthlyPatrimoine.length - 1 ? null : { start: s, end: e });
+                        }}
+                        tickFormatter={() => ""}/>}
                     </AreaChart>
                   </ResponsiveContainer>
                 );
