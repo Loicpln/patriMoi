@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <title>Patri'Moi</title>
+  <defs>
+
+    <!-- Or (courbe investissements) -->
+    <linearGradient id="goldLine" x1="122" y1="395" x2="398" y2="122" gradientUnits="userSpaceOnUse">
+      <stop offset="0%"   stop-color="#B86010"/>
+      <stop offset="50%"  stop-color="#F0A020"/>
+      <stop offset="100%" stop-color="#FFE84E"/>
+    </linearGradient>
+
+    <!-- Zone sous courbe or -->
+    <linearGradient id="areaMain" x1="256" y1="122" x2="256" y2="398" gradientUnits="userSpaceOnUse">
+      <stop offset="0%"   stop-color="#F09A18" stop-opacity="0.50"/>
+      <stop offset="100%" stop-color="#F09A18" stop-opacity="0.02"/>
+    </linearGradient>
+
+    <!-- Bleu (courbe livrets) -->
+    <linearGradient id="blueLine" x1="122" y1="400" x2="398" y2="295" gradientUnits="userSpaceOnUse">
+      <stop offset="0%"   stop-color="#1C3A7C"/>
+      <stop offset="100%" stop-color="#479FF8"/>
+    </linearGradient>
+
+    <!-- Zone sous courbe bleue -->
+    <linearGradient id="areaBlue" x1="256" y1="295" x2="256" y2="400" gradientUnits="userSpaceOnUse">
+      <stop offset="0%"   stop-color="#479FF8" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="#479FF8" stop-opacity="0.02"/>
+    </linearGradient>
+
+    <!-- Fond -->
+    <radialGradient id="bgGrad" cx="50%" cy="40%" r="66%">
+      <stop offset="0%"   stop-color="#1d2233"/>
+      <stop offset="100%" stop-color="#090c14"/>
+    </radialGradient>
+
+    <!-- Lueur point final or -->
+    <filter id="glowGold" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+
+    <!-- Lueur point final bleu -->
+    <filter id="glowBlue" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="5" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+
+  </defs>
+
+  <!-- Fond carré plein -->
+  <rect width="512" height="512" fill="url(#bgGrad)"/>
+
+  <!-- ── Zone graphique centrée (padding ~19% de chaque côté) ──── -->
+
+  <!-- Grille subtile -->
+  <g stroke="#192040" stroke-width="1" stroke-dasharray="5,8" opacity="0.85">
+    <line x1="122" y1="330" x2="398" y2="330"/>
+    <line x1="122" y1="262" x2="398" y2="262"/>
+    <line x1="122" y1="194" x2="398" y2="194"/>
+    <line x1="198" y1="122" x2="198" y2="398"/>
+    <line x1="298" y1="122" x2="298" y2="398"/>
+  </g>
+
+  <!-- Axes -->
+  <line x1="122" y1="118" x2="122" y2="398" stroke="#2a3660" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="122" y1="398" x2="402" y2="398" stroke="#2a3660" stroke-width="2.5" stroke-linecap="round"/>
+
+  <!-- Marques axe Y -->
+  <g stroke="#2a3660" stroke-width="2" stroke-linecap="round">
+    <line x1="114" y1="330" x2="130" y2="330"/>
+    <line x1="114" y1="262" x2="130" y2="262"/>
+    <line x1="114" y1="194" x2="130" y2="194"/>
+  </g>
+
+  <!-- Zone sous courbe bleue (livrets) -->
+  <path d="M 122,393 C 210,393 275,372 398,296 L 398,398 L 122,398 Z"
+        fill="url(#areaBlue)"/>
+
+  <!-- Courbe bleue (livrets — progression régulière) -->
+  <path d="M 122,393 C 210,393 275,372 398,296"
+        fill="none" stroke="url(#blueLine)"
+        stroke-width="5" stroke-linecap="round" opacity="0.88"/>
+
+  <!-- Zone sous courbe or (investissements) -->
+  <path d="M 122,386
+           C 188,386 228,338 268,272
+           C 310,204 355,158 398,132
+           L 398,398 L 122,398 Z"
+        fill="url(#areaMain)"/>
+
+  <!-- Courbe or (investissements — croissance forte) -->
+  <path d="M 122,386
+           C 188,386 228,338 268,272
+           C 310,204 355,158 398,132"
+        fill="none" stroke="url(#goldLine)"
+        stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Points de données — courbe or -->
+  <circle cx="122" cy="386" r="7"  fill="#B06010" stroke="#0d1020" stroke-width="2.5"/>
+  <circle cx="198" cy="356" r="8"  fill="#D08818" stroke="#0d1020" stroke-width="2.5"/>
+  <circle cx="268" cy="272" r="9"  fill="#F0A020" stroke="#0d1020" stroke-width="2.5"/>
+  <circle cx="345" cy="178" r="9"  fill="#F5C82A" stroke="#0d1020" stroke-width="2.5"/>
+  <!-- Point final lumineux -->
+  <circle cx="398" cy="132" r="12" fill="#FFE84E" stroke="#0d1020" stroke-width="2.5"
+          filter="url(#glowGold)"/>
+
+  <!-- Point final — courbe bleue -->
+  <circle cx="398" cy="296" r="9"  fill="#479FF8" stroke="#0d1020" stroke-width="2"
+          filter="url(#glowBlue)"/>
+
+  <!-- Flèche montante -->
+  <g stroke="#FFE84E" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <polyline points="378,112 398,95 418,112"/>
+    <line x1="398" y1="95" x2="398" y2="128"/>
+  </g>
+
+</svg>

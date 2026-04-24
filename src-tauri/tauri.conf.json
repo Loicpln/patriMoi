@@ -7,7 +7,7 @@
     "distDir": "../dist",
     "withGlobalTauri": false
   },
-  "package": { "productName": "Patrimo", "version": "0.1.0" },
+  "package": { "productName": "Patri'Moi", "version": "0.1.0" },
   "tauri": {
     "allowlist": {
       "all": false,
@@ -30,6 +30,6 @@
     },
     "security": { "csp": null },
     "updater": { "active": false },
-    "windows": [{ "fullscreen": false, "height": 820, "resizable": true, "title": "Patrimo", "width": 1300, "minWidth": 1000, "minHeight": 650 }]
+    "windows": [{ "fullscreen": true, "height": 820, "resizable": true, "title": "Patri'Moi", "width": 1300, "minWidth": 1000, "minHeight": 650 }]
   }
 }
