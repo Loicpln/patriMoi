@@ -28,8 +28,15 @@ pub struct Salaire {
 }
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Livret {
-    pub id: Option<i64>, pub poche: String, pub montant: f64, pub taux: f64,
+    pub id: Option<i64>, pub poche: String, pub nom: String, pub montant: f64, pub taux: f64,
     pub date: String, pub notes: Option<String>,
+}
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct LivretPoche {
+    pub id: Option<i64>,
+    pub type_livret: String,
+    pub nom: String,
+    pub couleur: String,
 }
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Position {
@@ -220,6 +227,23 @@ pub fn init_db(conn: &Connection) -> Result<()> {
             ALTER TABLE dividendes_v10 RENAME TO dividendes;
             PRAGMA user_version = 10;
         ")?;
+    }
+    if version < 11 {
+        let _ = conn.execute_batch("ALTER TABLE livrets ADD COLUMN nom TEXT NOT NULL DEFAULT '';");
+        conn.execute_batch("
+            CREATE TABLE IF NOT EXISTS livret_poches (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                type_livret TEXT NOT NULL,
+                nom TEXT NOT NULL,
+                taux REAL NOT NULL DEFAULT 0,
+                UNIQUE(type_livret, nom)
+            );
+            PRAGMA user_version = 11;
+        ")?;
+    }
+    if version < 12 {
+        let _ = conn.execute_batch("ALTER TABLE livret_poches ADD COLUMN couleur TEXT NOT NULL DEFAULT '';");
+        conn.execute_batch("PRAGMA user_version = 12;")?;
     }
     Ok(())
 }

@@ -6,6 +6,8 @@ import { useDevise } from "../context/DeviseContext";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Customized, Brush } from "recharts";
 import { TOOLTIP_STYLE, tickerColor, PRIME_TYPE_COLORS, monthsBetween, curMonthStr } from "../constants";
 import YearSelector from "../components/YearSelector";
+import DatePicker from "../components/DatePicker";
+import NumInput from "../components/NumInput";
 
 function xPixel(scale: any, value: string): number | null {
   if (!scale) return null;
@@ -34,7 +36,8 @@ interface Prime {
 
 interface PdfFile { name: string; path: string; }
 
-const MOIS_FR = ["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
+const MOIS_FR    = ["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
+const MOIS_SHORT = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
 
 // ── Streak calculator ──────────────────────────────────────────────────────
 function calcStreak(salaires: Salaire[]): number {
@@ -85,10 +88,10 @@ function PrimeModal({ onClose, onSave, defaultDate }: { onClose: ()=>void; onSav
             </select>
           </div>
           <div className="field"><label>Montant (€)</label>
-            <input type="number" step="0.01" value={montant} onChange={e => setMontant(parseFloat(e.target.value)||0)}/>
+            <NumInput value={montant} onChange={setMontant}/>
           </div>
           <div className="field"><label>Date</label>
-            <input type="date" value={date} onChange={e => setDate(e.target.value)}/>
+            <DatePicker value={date} onChange={setDate}/>
           </div>
           <div className="field span2"><label>Notes</label>
             <textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)}/>
@@ -141,19 +144,19 @@ function SalaireForm({
           </div>
           <div className="field">
             <label>Date</label>
-            <input type="date" value={form.date} onChange={e => set("date", e.target.value)} />
+            <DatePicker value={form.date} onChange={v => set("date", v)} />
           </div>
           <div className="field">
             <label>Salaire brut (€)</label>
-            <input type="number" step="0.01" value={form.salaire_brut} onChange={e => set("salaire_brut", parseFloat(e.target.value)||0)} />
+            <NumInput value={form.salaire_brut} onChange={v => set("salaire_brut", v)} />
           </div>
           <div className="field">
             <label>Salaire net (€)</label>
-            <input type="number" step="0.01" value={form.salaire_net} onChange={e => set("salaire_net", parseFloat(e.target.value)||0)} />
+            <NumInput value={form.salaire_net} onChange={v => set("salaire_net", v)} />
           </div>
           <div className="field">
             <label>Primes (€)</label>
-            <input type="number" step="0.01" value={form.primes ?? 0} onChange={e => set("primes", parseFloat(e.target.value)||0)} />
+            <NumInput value={form.primes ?? 0} onChange={v => set("primes", v)} />
           </div>
           {pdfs.length > 0 && (
             <div className="field span2">
@@ -304,9 +307,11 @@ export default function Fiches() {
     const dates = all.map(s => s.date.slice(0, 7)).filter(Boolean).sort();
     const months = monthsBetween(dates[0], curMonthStr());
     const netByM: Record<string, number> = {};
+    const salPrimesByM: Record<string, number> = {};
     fichesNormales.forEach(s => {
       const m = s.date.slice(0, 7);
       netByM[m] = (netByM[m] ?? 0) + s.salaire_net;
+      if (s.primes) salPrimesByM[m] = (salPrimesByM[m] ?? 0) + s.primes;
     });
     const primeByTypeM: Record<string, Record<string, number>> = {};
     primes.forEach(p => {
@@ -317,11 +322,11 @@ export default function Fiches() {
       primeByTypeM[t][m] = (primeByTypeM[t][m] ?? 0) + (p.primes ?? 0);
     });
     const raw = months.map(m => {
-      const entry: any = { mois: m, net: netByM[m] ?? null };
+      const entry: any = { mois: m, net: netByM[m] ?? null, salPrimes: salPrimesByM[m] ?? null };
       activePrimeTypes.forEach(type => { entry[type] = primeByTypeM[type]?.[m] ?? null; });
       return entry;
     });
-    return bellEffect(raw, ["net", ...activePrimeTypes]);
+    return bellEffect(raw, ["net", "salPrimes", ...activePrimeTypes]);
   }, [fichesNormales, primes, activePrimeTypes]);
 
   // Visible slice for compact view zoom preservation
@@ -372,8 +377,8 @@ export default function Fiches() {
           <span style={{ color: "var(--text-0)", fontSize: 11, fontWeight: 700 }}>{fmt(total)}</span>
         </div>
         {items.map((p: any, i: number) => {
-          const col = p.dataKey === "net" ? "var(--teal)" : (PRIME_TYPE_COLORS[p.dataKey] ?? p.stroke ?? tickerColor(p.dataKey));
-          const lbl = p.dataKey === "net" ? "Salaire net" : p.dataKey;
+          const col = p.dataKey === "net" ? "var(--teal)" : p.dataKey === "salPrimes" ? "var(--gold)" : (PRIME_TYPE_COLORS[p.dataKey] ?? p.stroke ?? tickerColor(p.dataKey));
+          const lbl = p.dataKey === "net" ? "Salaire net" : p.dataKey === "salPrimes" ? "Primes salaire" : p.dataKey;
           return (
             <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 2 }}>
               <span style={{ color: col, fontSize: 10 }}>{lbl}</span>
@@ -440,7 +445,7 @@ export default function Fiches() {
         return (
           <div className="chart-card" style={{ marginBottom: 20, height:h+52 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-              <div className="chart-title" style={{ marginBottom: 0 }}>Évolution du salaire net + primes</div>
+              <div className="chart-title">Évolution du salaire net + primes</div>
               <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
                 <button className="btn btn-ghost btn-sm" style={{ fontSize: 10, opacity: brushFiches ? 1 : 0.35, cursor: brushFiches ? "pointer" : "default" }}
                   onClick={() => brushFiches && setBrushFiches(null)} title="Réinitialiser le zoom">↺</button>
@@ -457,6 +462,10 @@ export default function Fiches() {
                     <stop offset="5%"  stopColor="#5fa89e" stopOpacity={.4}/>
                     <stop offset="95%" stopColor="#5fa89e" stopOpacity={0}/>
                   </linearGradient>
+                  <linearGradient id="gFSalPrimes" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%"  stopColor="var(--gold)" stopOpacity={.5}/>
+                    <stop offset="95%" stopColor="var(--gold)" stopOpacity={0}/>
+                  </linearGradient>
                   {activePrimeTypes.map(type => {
                     const c = PRIME_TYPE_COLORS[type] ?? tickerColor(type);
                     return (
@@ -469,7 +478,8 @@ export default function Fiches() {
                 </defs>
                 <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
                 <XAxis dataKey="mois" stroke="var(--text-2)" tick={{ fontSize: 9, fontFamily: "JetBrains Mono" }}
-                  interval={Math.max(0, Math.floor(chartData.length / 8) - 1)}/>
+                  interval={Math.max(0, Math.floor(chartData.length / 8) - 1)}
+                  tickFormatter={m => { const mo = parseInt(m.slice(5,7)); return MOIS_SHORT[mo-1]+" "+m.slice(2,4); }}/>
                 <YAxis stroke="var(--text-2)" tick={{ fontSize: 9, fontFamily: "JetBrains Mono" }}
                   tickFormatter={fmtAxis} width={32}/>
                 <Tooltip content={<EvoTooltip/>}/>
@@ -483,6 +493,9 @@ export default function Fiches() {
                 })}
                 <Area type="monotone" dataKey="net" stackId="s" name="net"
                   stroke="#5fa89e" strokeWidth={2} fill="url(#gFNet)"
+                  dot={false} connectNulls={false}/>
+                <Area type="monotone" dataKey="salPrimes" stackId="s" name="Primes salaire"
+                  stroke="var(--gold)" strokeWidth={1.5} fill="url(#gFSalPrimes)"
                   dot={false} connectNulls={false}/>
                 {yearRange && (
                   <Customized component={(p: any) => {

@@ -4,6 +4,8 @@ import { useDevise } from "../context/DeviseContext";
 import { AreaChart, Area, ComposedChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Brush, Customized } from "recharts";
 import { TOOLTIP_STYLE, PRIME_TYPE_COLORS, tickerColor } from "../constants";
 import { bellEffect } from "./patrimoine/shared";
+import DatePicker from "../components/DatePicker";
+import NumInput from "../components/NumInput";
 
 interface Salaire {
   id?: number;
@@ -43,19 +45,19 @@ function SalaireModal({ onClose, onSave }: { onClose: () => void; onSave: () => 
           </div>
           <div className="form-field">
             <label>Date</label>
-            <input type="date" value={form.date} onChange={(e) => set("date", e.target.value)} />
+            <DatePicker value={form.date} onChange={v => set("date", v)} />
           </div>
           <div className="form-field">
             <label>Salaire brut (€)</label>
-            <input type="number" value={form.salaire_brut} onChange={(e) => set("salaire_brut", parseFloat(e.target.value))} />
+            <NumInput value={form.salaire_brut} onChange={v => set("salaire_brut", v)} />
           </div>
           <div className="form-field">
             <label>Salaire net (€)</label>
-            <input type="number" value={form.salaire_net} onChange={(e) => set("salaire_net", parseFloat(e.target.value))} />
+            <NumInput value={form.salaire_net} onChange={v => set("salaire_net", v)} />
           </div>
           <div className="form-field">
             <label>Primes (€)</label>
-            <input type="number" value={form.primes ?? 0} onChange={(e) => set("primes", parseFloat(e.target.value))} />
+            <NumInput value={form.primes ?? 0} onChange={v => set("primes", v)} />
           </div>
           <div className="form-field full">
             <label>Notes</label>
@@ -217,7 +219,7 @@ export default function Salaires() {
             <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
             <XAxis dataKey="mois" tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
               interval={Math.max(0, Math.floor(d.length / 7) - 1)}
-              tickFormatter={m => { const mo = parseInt(m.slice(5, 7)); return MN_SHORT[mo - 1]; }}/>
+              tickFormatter={m => { const mo = parseInt(m.slice(5, 7)); return MN_SHORT[mo - 1]+" "+m.slice(2,4); }}/>
             <YAxis tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
               tickFormatter={fmtAxis} width={32}/>
             <Tooltip content={({ active, payload, label }: any) => {
@@ -278,7 +280,7 @@ export default function Salaires() {
           <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
           <XAxis dataKey="mois" tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
             interval={Math.max(0, Math.floor(primeChartData.length / 7) - 1)}
-            tickFormatter={m => { const mo = parseInt(m.slice(5, 7)); return MN_SHORT[mo - 1]; }}/>
+            tickFormatter={m => { const mo = parseInt(m.slice(5, 7)); return MN_SHORT[mo - 1]+" "+m.slice(2,4); }}/>
           <YAxis tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
             tickFormatter={fmtAxis} width={32}/>
           <Tooltip content={<PrimeTooltip/>}/>
@@ -333,7 +335,7 @@ export default function Salaires() {
             return (
               <div key={c.key} className="chart-card" style={{ margin: 0, height: h + 52 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                  <div className="chart-title" style={{ marginBottom: 0, fontSize: 12 }}>{c.title}</div>
+                  <div className="chart-title">{c.title}</div>
                   <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
                     {(() => {
                       const brushActive = c.key === "sal" ? !!brushSal : !!brushPrime;

@@ -1,10 +1,13 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
 import { LIVRETS_DEF, INVEST_SUBCATS, TRADEABLE_SUBCATS, defaultDateForMonth } from "../../constants";
+import type { LivretPoche } from "./types";
 import { curMonth, useDevise } from "../../context/DeviseContext";
 import { usePoches } from "../../context/PochesContext";
 import type { Livret, Position, Vente, Dividende, Versement, ScpiValuation } from "./types";
 import { fetchPriceMaps, isUsdTicker, fetchLiveQuote } from "../../hooks/useQuotes";
+import DatePicker from "../../components/DatePicker";
+import NumInput from "../../components/NumInput";
 
 // ── Layout helpers ─────────────────────────────────────────────────────────────
 const G2: React.CSSProperties = { display:"grid", gridTemplateColumns:"1fr 1fr", gap:"12px 16px", marginTop:16 };
@@ -15,9 +18,9 @@ const RO: React.CSSProperties = {
   background:"var(--bg-0)", fontSize:12, fontFamily:"var(--mono)",
 };
 
-// ── Livret Modal ───────────────────────────────────────────────────────────────
+// ── Livret Modal (legacy) ──────────────────────────────────────────────────────
 export function LivretModal({mois,onClose,onSave}:{mois:string;onClose:()=>void;onSave:()=>void}) {
-  const [form,setForm]=useState<Livret>({poche:LIVRETS_DEF[0].key,montant:0,taux:LIVRETS_DEF[0].taux,date:defaultDateForMonth(mois)});
+  const [form,setForm]=useState<Livret>({poche:LIVRETS_DEF[0].key,nom:"",montant:0,taux:LIVRETS_DEF[0].taux,date:defaultDateForMonth(mois)});
   const s=(k:keyof Livret,v:string|number)=>setForm(f=>({...f,[k]:v}));
   return(<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
     <div className="modal-title">Mise à jour livret</div>
@@ -27,11 +30,11 @@ export function LivretModal({mois,onClose,onSave}:{mois:string;onClose:()=>void;
           {LIVRETS_DEF.map(l=><option key={l.key} value={l.key}>{l.label}</option>)}
         </select></div>
       <div className="field" style={F}><label>Montant (€)</label>
-        <input type="number" step="0.01" value={form.montant} onChange={e=>s("montant",parseFloat(e.target.value)||0)}/></div>
+        <NumInput value={form.montant} onChange={v=>s("montant",v)}/></div>
       <div className="field" style={F}><label>Taux (%)</label>
-        <input type="number" step="0.01" value={form.taux} onChange={e=>s("taux",parseFloat(e.target.value)||0)}/></div>
+        <NumInput value={form.taux} onChange={v=>s("taux",v)}/></div>
       <div className="field" style={F}><label>Date</label>
-        <input type="date" value={form.date} onChange={e=>s("date",e.target.value)}/></div>
+        <DatePicker value={form.date} onChange={v=>s("date",v)}/></div>
       <div className="field" style={S2}><label>Notes</label>
         <textarea rows={2} value={form.notes??""} onChange={e=>s("notes",e.target.value)}/></div>
     </div>
@@ -42,7 +45,7 @@ export function LivretModal({mois,onClose,onSave}:{mois:string;onClose:()=>void;
   </div></div>);
 }
 
-// ── Intérêt Modal ──────────────────────────────────────────────────────────────
+// ── Intérêt Modal (legacy) ─────────────────────────────────────────────────────
 export function InteretModal({mois,onClose,onSave}:{mois:string;onClose:()=>void;onSave:()=>void}) {
   const anneeDefault=parseInt(mois.slice(0,4));
   const [poche,setPoche]=useState("livret_a");
@@ -57,7 +60,7 @@ export function InteretModal({mois,onClose,onSave}:{mois:string;onClose:()=>void
           {LIVRETS_DEF.map(l=><option key={l.key} value={l.key}>{l.label}</option>)}
         </select></div>
       <div className="field" style={F}><label>Montant (€)</label>
-        <input type="number" step="0.01" value={montant} onChange={e=>setMontant(parseFloat(e.target.value)||0)}/></div>
+        <NumInput value={montant} onChange={setMontant}/></div>
       <div className="field" style={F}><label>Année</label>
         <input type="number" value={annee} onChange={e=>setAnnee(parseInt(e.target.value)||anneeDefault)} min={2000} max={2100}/></div>
       <div className="field" style={S2}><label>Notes</label>
@@ -66,9 +69,174 @@ export function InteretModal({mois,onClose,onSave}:{mois:string;onClose:()=>void
     <div className="form-actions">
       <button className="btn btn-ghost" onClick={onClose}>Annuler</button>
       <button className="btn btn-primary" onClick={async()=>{
-        await invoke("add_livret",{livret:{poche,montant,taux:0,date:`${annee}-12-31`,notes:"[INTERET " + annee + "] " + notes}});
+        await invoke("add_livret",{livret:{poche,nom:"",montant,taux:0,date:`${annee}-12-31`,notes:"[INTERET " + annee + "] " + notes}});
         onSave();
       }}>Enregistrer</button>
+    </div>
+  </div></div>);
+}
+
+// ── Livret Poche Edit Modal (modifier nom + couleur) ──────────────────────────
+export function LivretPocheEditModal({poche,onSave,onClose}:{poche:LivretPoche;onSave:(nom:string,couleur:string)=>void;onClose:()=>void}) {
+  const typeDef = LIVRETS_DEF.find(l => l.key === poche.type_livret);
+  const defaultColor = typeDef?.color ?? "#F0BD40";
+  const [nom, setNom] = useState(poche.nom);
+  const [couleur, setCouleur] = useState(poche.couleur || defaultColor);
+  return (
+    <div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()} style={{maxWidth:420}}>
+      <div className="modal-title">Modifier le livret</div>
+      <div style={{display:"flex",flexDirection:"column",gap:12,marginTop:16}}>
+        <div className="field" style={{margin:0}}><label>Nom affiché</label>
+          <input value={nom} placeholder="ex: Livret A BNP"
+            style={{width:"100%",boxSizing:"border-box"}}
+            onChange={e=>setNom(e.target.value)}/></div>
+        <div className="field" style={{margin:0}}><label>Couleur</label>
+          <div style={{display:"flex",gap:6,alignItems:"center",minWidth:0}}>
+            <input type="color" value={couleur} onChange={e=>setCouleur(e.target.value)}
+              style={{width:36,height:32,flexShrink:0,padding:2,background:"none",border:"1px solid var(--border)",borderRadius:4,cursor:"pointer"}}/>
+            <input value={couleur} placeholder={defaultColor}
+              onChange={e=>setCouleur(e.target.value)}
+              style={{flex:1,minWidth:0,fontFamily:"var(--mono)",fontSize:11,boxSizing:"border-box"}}/>
+            <button className="btn btn-ghost btn-sm" style={{fontSize:10,flexShrink:0}}
+              onClick={()=>setCouleur(defaultColor)} title="Réinitialiser">↺</button>
+          </div>
+        </div>
+      </div>
+      <div className="form-actions">
+        <button className="btn btn-ghost" onClick={onClose}>Annuler</button>
+        <button className="btn btn-primary" disabled={!nom.trim()} onClick={()=>onSave(nom.trim(),couleur)}>Sauvegarder</button>
+      </div>
+    </div></div>
+  );
+}
+
+// ── Livret Poche Form Modal (create or edit taux) ─────────────────────────────
+export function LivretPocheFormModal({onSave,onClose}:{onSave:(p:LivretPoche)=>void;onClose:()=>void}) {
+  const [typeLivret,setTypeLivret]=useState<string>(LIVRETS_DEF[0].key);
+  const [nom,setNom]=useState<string>("");
+  const [couleur,setCouleur]=useState<string>("");
+  const typeDef=LIVRETS_DEF.find(l=>l.key===typeLivret)??LIVRETS_DEF[0];
+  const defaultColor=typeDef.color;
+  const displayColor=couleur||defaultColor;
+  return(<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()} style={{maxWidth:420}}>
+    <div className="modal-title">Nouveau livret</div>
+    <div style={{display:"flex",flexDirection:"column",gap:12,marginTop:16}}>
+      <div className="field" style={F}><label>Type de livret</label>
+        <select value={typeLivret} onChange={e=>{setTypeLivret(e.target.value);setCouleur("");}}>
+          {LIVRETS_DEF.map(l=><option key={l.key} value={l.key}>{l.label}</option>)}
+        </select></div>
+      <div className="field" style={F}><label>Nom personnalisé</label>
+        <input value={nom} placeholder={`ex: ${typeDef.label} BNP`}
+          style={{width:"100%",boxSizing:"border-box"}}
+          onChange={e=>setNom(e.target.value)}/></div>
+      <div className="field" style={F}><label>Couleur</label>
+        <div style={{display:"flex",gap:6,alignItems:"center",minWidth:0}}>
+          <input type="color" value={displayColor} onChange={e=>setCouleur(e.target.value)}
+            style={{width:36,height:32,flexShrink:0,padding:2,background:"none",border:"1px solid var(--border)",borderRadius:4,cursor:"pointer"}}/>
+          <input value={displayColor} placeholder={defaultColor}
+            onChange={e=>setCouleur(e.target.value)}
+            style={{flex:1,minWidth:0,fontFamily:"var(--mono)",fontSize:11,boxSizing:"border-box"}}/>
+          <button className="btn btn-ghost btn-sm" style={{fontSize:10,flexShrink:0}}
+            onClick={()=>setCouleur("")} title="Réinitialiser">↺</button>
+        </div>
+      </div>
+    </div>
+    <div className="form-actions">
+      <button className="btn btn-ghost" onClick={onClose}>Annuler</button>
+      <button className="btn btn-primary"
+        disabled={!nom.trim()}
+        onClick={()=>onSave({type_livret:typeLivret,nom:nom.trim(),couleur})}>
+        Créer
+      </button>
+    </div>
+  </div></div>);
+}
+
+// ── Opération Livret Modal (versement / retrait / intérêts) ────────────────────
+export function OpLivretModal({poche,mois,initialOp,onClose,onSave}:{
+  poche:LivretPoche;mois:string;initialOp:"versement"|"retrait"|"interet";onClose:()=>void;onSave:()=>void;
+}) {
+  const { fmt } = useDevise();
+  const anneeDefault=parseInt(mois.slice(0,4));
+  const [montant,setMontant]=useState<number>(0);
+  const [date,setDate]=useState<string>(defaultDateForMonth(mois));
+  const [annee,setAnnee]=useState<number>(anneeDefault);
+  const [notes,setNotes]=useState<string>("");
+
+  // ── Solde disponible à la date (retrait uniquement) ──────────────────────
+  const [livretOps,setLivretOps]=useState<Livret[]>([]);
+  useEffect(()=>{
+    invoke<Livret[]>("get_livrets").then(all=>
+      setLivretOps(all.filter(l=>l.poche===poche.type_livret&&l.nom===poche.nom))
+    );
+  },[poche]);
+
+  const balanceAtDate=useMemo(()=>{
+    if(initialOp!=="retrait") return null;
+    return livretOps
+      .filter(l=>!(l.notes??"").startsWith("[INTERET")&&l.date<=date)
+      .reduce((s,l)=>s+l.montant,0);
+  },[livretOps,date,initialOp]);
+
+  // Pré-remplir le montant avec le solde disponible (se met à jour avec la date)
+  useEffect(()=>{
+    if(initialOp==="retrait"&&balanceAtDate!==null)
+      setMontant(parseFloat(Math.max(0, balanceAtDate).toFixed(8)));
+  },[balanceAtDate,initialOp]);
+
+  const opLabel=initialOp==="versement"?"Versement":initialOp==="retrait"?"Retrait":"Intérêts";
+  const opColor=initialOp==="versement"?"var(--teal)":initialOp==="retrait"?"var(--rose)":"var(--gold)";
+
+  const handleSave=async()=>{
+    if(initialOp==="interet"){
+      await invoke("add_livret",{livret:{
+        poche:poche.type_livret,nom:poche.nom,
+        montant,taux:0,
+        date:`${annee}-12-31`,
+        notes:"[INTERET " + annee + "] " + notes,
+      }});
+    } else {
+      const signed=initialOp==="retrait"?-Math.abs(montant):Math.abs(montant);
+      await invoke("add_livret",{livret:{
+        poche:poche.type_livret,nom:poche.nom,
+        montant:signed,taux:0,
+        date,notes:notes||null,
+      }});
+    }
+    onSave();
+  };
+
+  const typeDef=LIVRETS_DEF.find(l=>l.key===poche.type_livret);
+  return(<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
+    <div className="modal-title">
+      <span style={{color:opColor}}>{opLabel}</span>
+      <span style={{fontSize:11,color:"var(--text-2)",marginLeft:8}}>{poche.nom} · {typeDef?.label}</span>
+    </div>
+    <div style={G2}>
+      <div className="field" style={F}>
+        <label style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <span>Montant (€)</span>
+          {balanceAtDate!==null&&(
+            <span style={{color:"var(--text-2)",fontSize:7}}>
+              solde : <span style={{color:balanceAtDate>0?"var(--teal)":"var(--rose)"}}>{fmt(balanceAtDate)}</span>
+            </span>
+          )}
+        </label>
+        <NumInput value={montant} onChange={setMontant}/>
+      </div>
+      {initialOp==="interet"?(
+        <div className="field" style={F}><label>Année</label>
+          <input type="number" value={annee} onChange={e=>setAnnee(parseInt(e.target.value)||anneeDefault)} min={2000} max={2100}/></div>
+      ):(
+        <div className="field" style={F}><label>Date</label>
+          <DatePicker value={date} onChange={setDate}/></div>
+      )}
+      <div className="field" style={S2}><label>Notes</label>
+        <textarea rows={2} value={notes} onChange={e=>setNotes(e.target.value)}/></div>
+    </div>
+    <div className="form-actions">
+      <button className="btn btn-ghost" onClick={onClose}>Annuler</button>
+      <button className="btn btn-primary" disabled={montant<=0} onClick={handleSave}>Enregistrer</button>
     </div>
   </div></div>);
 }
@@ -126,6 +294,7 @@ export function PositionModal({poche,existing,mois=curMonth,onClose,onSave}:{
   poche:string;existing:Position[];mois?:string;onClose:()=>void;onSave:()=>void;
 }) {
   const { poches } = usePoches();
+  const { fmt } = useDevise();
   const [form,setForm]=useState<Position>({
     poche,ticker:"",nom:"",sous_categorie:SUBS_NO_ESPECES[0].key,
     quantite:0,prix_achat:0,date_achat:defaultDateForMonth(mois),
@@ -134,6 +303,32 @@ export function PositionModal({poche,existing,mois=curMonth,onClose,onSave}:{
   const s=(k:keyof Position,v:string|number)=>setForm(f=>({...f,[k]:v}));
   const known=[...new Set(existing.map(p=>p.ticker))];
   const prixUnitaire=form.quantite>0?totalCmd/form.quantite:0;
+
+  // ── Espèces disponibles à la date d'achat ────────────────────────────────
+  const [versements,setVersements]=useState<Versement[]>([]);
+  const [ventes,setVentes]=useState<Vente[]>([]);
+  const [dividendes,setDividendes]=useState<Dividende[]>([]);
+  useEffect(()=>{
+    Promise.all([
+      invoke<Versement[]>("get_versements",{poche}),
+      invoke<Vente[]>("get_ventes",{poche}),
+      invoke<Dividende[]>("get_dividendes",{poche}),
+    ]).then(([v,ve,d])=>{setVersements(v);setVentes(ve);setDividendes(d);});
+  },[poche]);
+
+  const cashAtDate=useMemo(()=>{
+    const d=form.date_achat??"";
+    const totalV=versements.filter(v=>v.date<=d).reduce((s,v)=>s+v.montant,0);
+    const totalPos=existing.filter(p=>p.sous_categorie!=="especes"&&(p.date_achat??"")<=d).reduce((s,p)=>s+p.quantite*p.prix_achat,0);
+    const totalVentes=ventes.filter(v=>(v.date_vente??"")<=d).reduce((s,v)=>s+v.quantite*v.prix_vente,0);
+    const totalDiv=dividendes.filter(d2=>d2.date<=d).reduce((s,d2)=>s+d2.montant,0);
+    return totalV-totalPos+totalVentes+totalDiv;
+  },[versements,ventes,dividendes,existing,form.date_achat]);
+
+  // Pré-remplir le total commande avec les espèces disponibles (se met à jour avec la date)
+  useEffect(()=>{
+    setTotalCmd(parseFloat(Math.max(0,cashAtDate).toFixed(8)));
+  },[cashAtDate]);
 
   const handleTickerChange=(t:string)=>{
     const upper=t.toUpperCase();
@@ -154,14 +349,19 @@ export function PositionModal({poche,existing,mois=curMonth,onClose,onSave}:{
           {SUBS_NO_ESPECES.map(sc=><option key={sc.key} value={sc.key}>{sc.label}</option>)}
         </select></div>
       <div className="field" style={F}><label>Quantité</label>
-        <input type="number" step="0.0001" value={form.quantite} onChange={e=>s("quantite",parseFloat(e.target.value)||0)}/></div>
+        <NumInput value={form.quantite} onChange={v=>s("quantite",v)}/></div>
       <div className="field" style={F}>
-        <label>Total commande (€) <span style={{color:"var(--text-2)",fontSize:9}}>montant global</span></label>
-        <input type="number" step="0.01" value={totalCmd} onChange={e=>setTotalCmd(parseFloat(e.target.value)||0)}/>
+        <label style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <span>Total commande (€)</span>
+          <span style={{color:"var(--text-2)",fontSize:7}}>
+            espèces : <span style={{color:cashAtDate>0?"var(--teal)":"var(--rose)"}}>{fmt(cashAtDate,8)}</span>
+          </span>
+        </label>
+        <NumInput value={totalCmd} onChange={setTotalCmd}/>
         {prixUnitaire>0&&<div style={{fontSize:10,color:"var(--text-1)",marginTop:3}}>→ Prix unitaire : {prixUnitaire.toFixed(6)} €</div>}
       </div>
       <div className="field" style={F}><label>Date d'achat</label>
-        <input type="date" value={form.date_achat} onChange={e=>s("date_achat",e.target.value)}/></div>
+        <DatePicker value={form.date_achat??""} onChange={v=>s("date_achat",v)}/></div>
       <div className="field" style={S2}><label>Notes</label>
         <textarea rows={2} value={form.notes??""} onChange={e=>s("notes",e.target.value)}/></div>
     </div>
@@ -182,9 +382,9 @@ export function VersementModal({poche,mois=curMonth,onClose,onSave}:{poche:strin
     <div className="modal-title">Versement cash · {poches.find(p=>p.key===poche)?.label??poche}</div>
     <div style={G2}>
       <div className="field" style={F}><label>Montant (€)</label>
-        <input type="number" step="0.01" value={form.montant} onChange={e=>s("montant",parseFloat(e.target.value)||0)}/></div>
+        <NumInput value={form.montant} onChange={v=>s("montant",v)}/></div>
       <div className="field" style={F}><label>Date</label>
-        <input type="date" value={form.date} onChange={e=>s("date",e.target.value)}/></div>
+        <DatePicker value={form.date} onChange={v=>s("date",v)}/></div>
       <div className="field" style={S2}><label>Notes</label>
         <textarea rows={2} value={form.notes??""} onChange={e=>s("notes",e.target.value)}/></div>
     </div>
@@ -281,7 +481,7 @@ export function SellModal({poche,ticker,nom,tickerPositions,tickerVentes,getPric
     <div style={G2}>
       <div className="field" style={F}>
         <label>Date{minDate&&<span style={{color:"var(--text-2)",fontSize:9,marginLeft:4}}>min {minDate}</span>}</label>
-        <input type="date" value={date} min={minDate||undefined} onChange={e=>setDate(clamp(e.target.value))}/>
+        <DatePicker value={date} min={minDate||undefined} onChange={v=>setDate(clamp(v))}/>
       </div>
       <div className="field" style={F}>
         <label>Disponible à cette date</label>
@@ -293,13 +493,12 @@ export function SellModal({poche,ticker,nom,tickerPositions,tickerVentes,getPric
       </div>
       <div className="field" style={F}>
         <label>Quantité (max {availQty.toFixed(4)})</label>
-        <input type="number" step="0.0001" min="0.0001" max={availQty} value={qty} disabled={availQty<=0}
-          onChange={e=>{const q=Math.min(parseFloat(e.target.value)||0,availQty);setQty(q);setTotalVente(parseFloat((priceAtDate*q).toFixed(2)));}}/>
+        <NumInput value={qty} disabled={availQty<=0}
+          onChange={q=>{const clamped=Math.min(q,availQty);setQty(clamped);setTotalVente(parseFloat((priceAtDate*clamped).toFixed(2)));}}/>
       </div>
       <div className="field" style={F}>
-        <label>Total vente (€) <span style={{color:"var(--text-2)",fontSize:9}}>montant global</span></label>
-        <input type="number" step="0.01" value={totalVente} disabled={availQty<=0}
-          onChange={e=>setTotalVente(parseFloat(e.target.value)||0)}/>
+        <label>Total vente (€)</label>
+        <NumInput value={totalVente} disabled={availQty<=0} onChange={setTotalVente}/>
         {qty>0&&<div style={{fontSize:10,color:"var(--text-1)",marginTop:3}}>→ Prix unitaire : {prixUnitaire.toFixed(6)} €</div>}
       </div>
       <div className="field" style={F}>
@@ -455,7 +654,7 @@ export function DividendeModal({poche,positions,ventes,mois=curMonth,getPriceFor
 
       {/* ── Date (commune) ── */}
       <div className="field" style={F}><label>Date</label>
-        <input type="date" value={form.date} onChange={e=>s("date",e.target.value)}/></div>
+        <DatePicker value={form.date} onChange={v=>s("date",v)}/></div>
 
       {/* ── Bloc réinvesti : cours + quantité + valeur calculée ── */}
       {isReinvest && <div className="field" style={F}>
@@ -467,15 +666,14 @@ export function DividendeModal({poche,positions,ventes,mois=curMonth,getPriceFor
           style={{background:"var(--bg-2)",color:priceAtDate>0?"var(--text-2)":"var(--text-2)",cursor:"default"}}/>
       </div>}
       {isReinvest && <div className="field" style={F}><label>Quantité reçue (réinvesti)</label>
-        <input type="number" step="any" min="0" value={quantite||""} placeholder="0"
-          onChange={e=>setQuantite(parseFloat(e.target.value)||0)}/></div>}
+        <NumInput value={quantite} onChange={setQuantite}/></div>}
       {isReinvest && <div className="field" style={F}><label>Valeur calculée</label>
         <input value={quantite>0?`${montantCalcule.toFixed(8)} €`:"—"} readOnly tabIndex={-1}
           style={{background:"var(--bg-2)",color:"var(--teal)",cursor:"default",fontWeight:600}}/></div>}
 
       {/* ── Montant manuel pour dividendes classiques (non réinvestis) ── */}
       {!isReinvest && <div className="field" style={F}><label>Montant (€)</label>
-        <input type="number" step="0.01" value={form.montant} onChange={e=>s("montant",parseFloat(e.target.value)||0)}/></div>}
+        <NumInput value={form.montant} onChange={v=>s("montant",v)}/></div>}
 
       <div className="field" style={S2}><label>Notes</label>
         <textarea rows={2} value={form.notes??""} onChange={e=>s("notes",e.target.value)}/></div>
@@ -499,7 +697,7 @@ export function ScpiValuationModal({scpiTickers,mois=curMonth,valuations,onClose
 
   const history=valuations.filter(v=>v.ticker===ticker).sort((a,b)=>b.mois.localeCompare(a.mois));
 
-  return(<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()} style={{maxWidth:600}}>
+  return(<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
     <div className="modal-title">Valorisation SCPI</div>
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,marginTop:16}}>
       {/* ── Col gauche : saisie ── */}
@@ -511,7 +709,7 @@ export function ScpiValuationModal({scpiTickers,mois=curMonth,valuations,onClose
         <div className="field" style={F}><label>Mois (YYYY-MM)</label>
           <input type="month" value={month} onChange={e=>setMonth(e.target.value)}/></div>
         <div className="field" style={F}><label>Valeur unitaire (€)</label>
-          <input type="number" step="0.01" value={valeur} onChange={e=>setValeur(parseFloat(e.target.value)||0)}/></div>
+          <NumInput value={valeur} onChange={setValeur}/></div>
       </div>
       {/* ── Col droite : historique ── */}
       <div>
@@ -612,7 +810,7 @@ export function TradeModal({poche,ticker,nom,subcat:_subcat,tickerPositions,tick
     letterSpacing:".08em",fontWeight:600,marginBottom:2,
   };
 
-  return(<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()} style={{maxWidth:680}}>
+  return(<div className="overlay" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
     <div className="sell-header">
       <span className="sell-icon">🔄</span>
       <div>
@@ -627,7 +825,7 @@ export function TradeModal({poche,ticker,nom,subcat:_subcat,tickerPositions,tick
         <div style={LBL}>Source — {ticker}</div>
         <div className="field" style={F}>
           <label>Date{minDate&&<span style={{color:"var(--text-2)",fontSize:9,marginLeft:4}}>min {minDate}</span>}</label>
-          <input type="date" value={date} min={minDate||undefined} onChange={e=>setDate(clamp(e.target.value))}/>
+          <DatePicker value={date} min={minDate||undefined} onChange={v=>setDate(clamp(v))}/>
         </div>
         <div className="field" style={F}>
           <label>Disponible à cette date</label>
@@ -637,8 +835,8 @@ export function TradeModal({poche,ticker,nom,subcat:_subcat,tickerPositions,tick
         </div>
         <div className="field" style={F}>
           <label>Quantité à trader (max {availQty.toFixed(4)})</label>
-          <input type="number" step="0.0001" min="0.0001" max={availQty} value={qtyToTrade} disabled={availQty<=0}
-            onChange={e=>setQtyToTrade(Math.min(parseFloat(e.target.value)||0,availQty))}/>
+          <NumInput value={qtyToTrade} disabled={availQty<=0}
+            onChange={q=>setQtyToTrade(Math.min(q,availQty))}/>
         </div>
         <div className="field" style={F}>
           <label>Base de coût transférée</label>

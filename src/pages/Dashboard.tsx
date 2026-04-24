@@ -7,7 +7,7 @@ import {
 import { useDevise } from "../context/DeviseContext";
 const curMonth = new Date().toISOString().slice(0, 7);
 import MonthSelector from "../components/MonthSelector";
-import { TOOLTIP_STYLE, TOOLTIP_LABEL_STYLE, TOOLTIP_ITEM_STYLE, monthsBetween, DEPENSE_CATEGORIES, DEPENSE_CAT_KEYS, depenseSubColor, tickerColor, PRIME_TYPE_COLORS } from "../constants";
+import { TOOLTIP_STYLE, TOOLTIP_LABEL_STYLE, TOOLTIP_ITEM_STYLE, monthsBetween, DEPENSE_CATEGORIES, DEPENSE_CAT_KEYS, depenseSubColor, tickerColor, PRIME_TYPE_COLORS, LIVRETS_DEF, LIVRET_COLOR, GLOBAL_GROUP_COLORS } from "../constants";
 import { usePoches } from "../context/PochesContext";
 import { NestedPie, bellEffect } from "./patrimoine/shared";
 import { useQuotes } from "../hooks/useQuotes";
@@ -52,10 +52,12 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
   const [versements, setVersements]   = useState<Versement[]>([]);
   const [dividendes, setDividendes]   = useState<Dividende[]>([]);
   const [scpiVals, setScpiVals]       = useState<ScpiVal[]>([]);
-  const [expChart, setExpChart]       = useState<"sal"|"pie"|null>(null);
+  const [expChart, setExpChart]       = useState<"sal"|"pie"|"pat"|"patPie"|null>(null);
   const [brushDash, setBrushDash]     = useState<{start:number;end:number}|null>(null);
-  const expSal = expChart === "sal";
-  const expPie = expChart === "pie";
+  const expSal    = expChart === "sal";
+  const expPie    = expChart === "pie";
+  const expPat    = expChart === "pat";
+  const expPatPie = expChart === "patPie";
 
   const loadDepenses = useCallback((m: string) => {
     invoke<Depense[]>("get_depenses", { mois: m }).then(setDepenses).catch(() => setDepenses([]));
@@ -82,16 +84,29 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
     return dates[0];
   }, [salaires, livrets, positions]);
 
-  // Salaire du mois sélectionné (pour stats)
-  const salaireMois = salaires.find(s => s.employeur !== "_PRIME" && s.date.slice(0, 7) === mois) ?? null;
+  // Salaire du mois précédent (pour stats)
+  const moisPrec = useMemo(() => {
+    const [y, m] = mois.split("-").map(Number);
+    return m === 1
+      ? `${y - 1}-12`
+      : `${y}-${String(m - 1).padStart(2, "0")}`;
+  }, [mois]);
+  const salaireMois = salaires.find(s => s.employeur !== "_PRIME" && s.date.slice(0, 7) === moisPrec) ?? null;
+  // Primes liées au salaire = champ primes de la fiche du mois précédent
+  const salPrimesMoisPrec = salaireMois?.primes ?? 0;
+  // Primes & aides (_PRIME) = du mois sélectionné
+  const primesMoisCourant = salaires
+    .filter(s => s.employeur === "_PRIME" && s.date.slice(0, 7) === mois)
+    .reduce((s, p) => s + (p.primes ?? 0), 0);
+  const totalPrimes = salPrimesMoisPrec + primesMoisCourant;
+  const totalRevenus = (salaireMois?.salaire_net ?? 0) + totalPrimes;
   const totalDepenses = depenses.reduce((s, d) => s + d.montant, 0);
 
   // ── Livrets au mois sélectionné ───────────────────────────────────────────────
   const isInteret = (l: Livret) => (l.notes ?? "").startsWith("[INTERET");
-  const latestLivrets: Record<string, Livret> = {};
-  livrets.filter(l => !isInteret(l) && l.date.slice(0, 7) <= mois)
-    .forEach(l => { if (!latestLivrets[l.poche] || l.date > latestLivrets[l.poche].date) latestLivrets[l.poche] = l; });
-  const totalLivrets = Object.values(latestLivrets).reduce((s, l) => s + l.montant, 0);
+  const totalLivrets = livrets
+    .filter(l => !isInteret(l) && l.date.slice(0, 7) <= mois)
+    .reduce((s, l) => s + l.montant, 0);
 
   // ── Portfolio value au mois sélectionné (valeur de marché) ────────────────────
   const scpiPriceMap = useMemo(() => buildScpiMapD(scpiVals), [scpiVals]);
@@ -149,11 +164,11 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [positions, ventes, versements, dividendes, mois, getPriceD]);
 
-  const tauxEpargne = salaireMois && salaireMois.salaire_net > 0
-    ? Math.max(0, ((salaireMois.salaire_net - totalDepenses) / salaireMois.salaire_net) * 100)
+  const tauxEpargne = totalRevenus > 0
+    ? Math.max(0, ((totalRevenus - totalDepenses) / totalRevenus) * 100)
     : null;
 
-  // Évolution salaire — net + prime types empilées
+  // Évolution salaire — net + prime types empilées + primes fiche de paie
   const activePrimeTypesDash = useMemo(() => {
     const types = new Set<string>();
     salaires.filter(s => s.employeur === "_PRIME").forEach(p => {
@@ -170,9 +185,11 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
     const fm = sorted[0].date.slice(0, 7);
     const allMonths = monthsBetween(fm, curMonth);
     const netByMonth: Record<string, number> = {};
+    const salPrimesByMonth: Record<string, number> = {};
     salaires.filter(s => s.employeur !== "_PRIME").forEach(s => {
       const m = s.date.slice(0, 7);
       netByMonth[m] = (netByMonth[m] ?? 0) + s.salaire_net;
+      if (s.primes) salPrimesByMonth[m] = (salPrimesByMonth[m] ?? 0) + s.primes;
     });
     const primeByTypeM: Record<string, Record<string, number>> = {};
     salaires.filter(s => s.employeur === "_PRIME").forEach(p => {
@@ -183,11 +200,11 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
       primeByTypeM[t][m] = (primeByTypeM[t][m] ?? 0) + (p.primes ?? 0);
     });
     const raw = allMonths.map(m => {
-      const entry: any = { mois: m, net: netByMonth[m] ?? null };
+      const entry: any = { mois: m, net: netByMonth[m] ?? null, salPrimes: salPrimesByMonth[m] ?? null };
       activePrimeTypesDash.forEach(type => { entry[type] = primeByTypeM[type]?.[m] ?? null; });
       return entry;
     });
-    return bellEffect(raw, ["net", ...activePrimeTypesDash]);
+    return bellEffect(raw, ["net", "salPrimes", ...activePrimeTypesDash]);
   }, [salaires, activePrimeTypesDash]);
 
   // Visible slice for compact zoom preservation
@@ -217,9 +234,108 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
     });
     return { depPieInner: inner, depPieOuter: outer };
   }, [depenses]);
-  
-  const hSal = expSal ? 520 : 260;
-  const hPie = expPie ? 520 : 260;
+
+  // ── Delta patrimoine du mois — pie (versements invest + delta livrets) ────────
+  const { patriPieInner, patriPieOuter, patriPieTotal } = useMemo(() => {
+    // Deltas signés par entité (retrait = négatif)
+    const livByType: Record<string, number> = {};
+    livrets.filter(l => !isInteret(l) && l.date.slice(0, 7) === mois)
+      .forEach(l => { livByType[l.poche] = (livByType[l.poche] ?? 0) + l.montant; });
+    const invByPoche: Record<string, number> = {};
+    versements.filter(v => v.date.slice(0, 7) === mois)
+      .forEach(v => { invByPoche[v.poche] = (invByPoche[v.poche] ?? 0) + v.montant; });
+
+    // Nets par groupe (pour l'anneau intérieur)
+    const netLiv = Object.values(livByType).reduce((s, v) => s + v, 0);
+    const netInv = Object.values(invByPoche).reduce((s, v) => s + v, 0);
+    const netTotal = netLiv + netInv;
+
+    // Sortie anticipée uniquement si aucun mouvement du tout (positif ou négatif)
+    const totInvAbs = Object.values(invByPoche).reduce((s, v) => s + Math.abs(v), 0);
+    const totLivAbs = Object.values(livByType).reduce((s, v) => s + Math.abs(v), 0);
+    if (totInvAbs + totLivAbs === 0) return { patriPieInner: [], patriPieOuter: [], patriPieTotal: 0 };
+
+    // Anneau intérieur : net par groupe, retraits nets en opacité réduite
+    const inner: { name: string; value: number; color: string; opacity?: number; isNeg?: boolean }[] = [];
+    if (netInv !== 0) inner.push({ name: "Investissements", value: Math.abs(netInv), color: GLOBAL_GROUP_COLORS.investissements, ...(netInv < 0 ? { opacity: 0.35, isNeg: true } : {}) });
+    if (netLiv !== 0) inner.push({ name: "Livrets",         value: Math.abs(netLiv), color: GLOBAL_GROUP_COLORS.livrets,          ...(netLiv < 0 ? { opacity: 0.35, isNeg: true } : {}) });
+
+    // Facteurs de normalisation : l'anneau extérieur de chaque groupe doit sommer
+    // à la valeur abs du groupe dans l'anneau intérieur (net), pour respecter les proportions.
+    const scaleInv  = totInvAbs > 0 ? Math.abs(netInv) / totInvAbs : 0;
+    const scaleLiv  = totLivAbs > 0 ? Math.abs(netLiv) / totLivAbs : 0;
+
+    // Anneau extérieur : toutes les entités normalisées, retraits en opacité réduite.
+    // `value` = valeur d'arc (normalisée), `rawValue` = vraie valeur signée pour le tooltip.
+    const outer: { name: string; group: string; value: number; rawValue: number; color: string; opacity?: number; isNeg?: boolean }[] = [];
+    poches.forEach(p => {
+      const v = invByPoche[p.key] ?? 0;
+      if (v === 0) return;
+      outer.push({ name: p.label, group: "Investissements",
+        value: Math.abs(v) * scaleInv, rawValue: v,
+        color: p.color || tickerColor(p.key), ...(v < 0 ? { opacity: 0.35, isNeg: true } : {}) });
+    });
+    Object.entries(livByType).forEach(([type, v]) => {
+      if (v === 0) return;
+      outer.push({
+        name: LIVRETS_DEF.find(l => l.key === type)?.label ?? type.toUpperCase(),
+        group: "Livrets", value: Math.abs(v) * scaleLiv, rawValue: v,
+        color: LIVRET_COLOR[type] ?? tickerColor(type),
+        ...(v < 0 ? { opacity: 0.35, isNeg: true } : {}),
+      });
+    });
+
+    return { patriPieInner: inner, patriPieOuter: outer, patriPieTotal: netTotal };
+  }, [livrets, versements, mois, poches]);
+
+  // ── Évolution mensuelle patrimoine (livrets + portefeuille marché) ─────────────
+  const monthlyPatrimoine = useMemo(() => {
+    if (!firstMonth) return [];
+    const months = monthsBetween(firstMonth, curMonth);
+    const raw = months.map(m => {
+      const liv = livrets.filter(l => !isInteret(l) && l.date.slice(0, 7) <= m)
+        .reduce((s, l) => s + l.montant, 0);
+      let inv = 0;
+      poches.forEach(p => {
+        const evs: { date: string; type: "buy"|"sell"; ticker: string; qty: number; price: number }[] = [
+          ...positions.filter(pos => pos.poche === p.key && (pos.date_achat ?? "").slice(0, 7) <= m)
+            .map(pos => ({ date: pos.date_achat ?? "", type: "buy" as const, ticker: pos.ticker, qty: pos.quantite, price: pos.prix_achat })),
+          ...ventes.filter(v => v.poche === p.key && v.date_vente.slice(0, 7) <= m)
+            .map(v => ({ date: v.date_vente, type: "sell" as const, ticker: v.ticker, qty: v.quantite, price: 0 })),
+        ].sort((a, b) => a.date.localeCompare(b.date));
+        const byT: Record<string, { q: number; inv: number }> = {};
+        evs.forEach(ev => {
+          if (ev.type === "buy") {
+            if (!byT[ev.ticker]) byT[ev.ticker] = { q: 0, inv: 0 };
+            byT[ev.ticker].q += ev.qty; byT[ev.ticker].inv += ev.qty * ev.price;
+          } else if (byT[ev.ticker]) {
+            const pru = byT[ev.ticker].q > 0 ? byT[ev.ticker].inv / byT[ev.ticker].q : 0;
+            byT[ev.ticker].q = Math.max(0, byT[ev.ticker].q - ev.qty);
+            byT[ev.ticker].inv = Math.max(0, byT[ev.ticker].inv - ev.qty * pru);
+            if (byT[ev.ticker].q <= 1e-9) delete byT[ev.ticker];
+          }
+        });
+        const mv = Object.entries(byT).reduce((s, [t, d]) => {
+          if (d.q <= 1e-9) return s;
+          return s + d.q * getPriceD(t, m, d.q > 0 ? d.inv / d.q : 0);
+        }, 0);
+        const cost    = Object.values(byT).reduce((s, d) => s + d.inv, 0);
+        const vers_m  = versements.filter(v => v.poche === p.key && v.date.slice(0, 7) <= m).reduce((s, v) => s + v.montant, 0);
+        const pnl_m   = ventes.filter(v => v.poche === p.key && v.date_vente.slice(0, 7) <= m).reduce((s, v) => s + v.pnl, 0);
+        const div_m   = dividendes.filter(d => d.poche === p.key && d.date.slice(0, 7) <= m).reduce((s, d) => s + d.montant, 0);
+        const esp     = Math.max(0, vers_m + pnl_m + div_m - cost);
+        inv += mv + esp;
+      });
+      return { mois: m, livrets: liv > 0 ? liv : null, portfolio: inv > 0 ? inv : null };
+    });
+    return bellEffect(raw, ["livrets", "portfolio"]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [firstMonth, livrets, positions, ventes, versements, dividendes, poches, getPriceD]);
+
+  const hSal    = expSal    ? 520 : 260;
+  const hPie    = expPie    ? 520 : 260;
+  const hPat    = expPat    ? 520 : 260;
+  const hPatPie = expPatPie ? 520 : 260;
   
   return (
     <div>
@@ -230,11 +346,25 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
       <MonthSelector value={mois} onChange={setMois} firstMonth={firstMonth}/>
 
       <div className="stat-row">
-        {salaireMois && (
+        {totalRevenus > 0 && (
           <div className="stat-card sc-teal" style={{ cursor: "pointer" }} onClick={() => onNavigate("fiches")}>
-            <div className="sc-label">Salaire net · {mois}</div>
-            <div className="sc-value">{fmt(salaireMois.salaire_net)}</div>
-            <div className="sc-sub">{salaireMois.employeur}</div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="sc-label">Revenus · {mois}</div>
+                <div className="sc-value">{fmt(totalRevenus)}</div>
+                {salaireMois && <div className="sc-sub">{salaireMois.employeur}</div>}
+              </div>
+              <div style={{ textAlign: "right", flexShrink: 0, paddingTop: 2 }}>
+                {salaireMois && <>
+                  <div style={{ fontSize: 10, color: "var(--text-2)", marginBottom: 2 }}>Salaire · {moisPrec}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-1)", fontFamily: "var(--font-mono)" }}>{fmt(salaireMois.salaire_net + salPrimesMoisPrec)}</div>
+                </>}
+                {primesMoisCourant > 0 && <>
+                  <div style={{ fontSize: 10, color: "var(--text-2)", marginTop: salaireMois ? 5 : 0, marginBottom: 2 }}>Primes · {mois}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "var(--gold)", fontFamily: "var(--font-mono)" }}>{fmt(primesMoisCourant)}</div>
+                </>}
+              </div>
+            </div>
           </div>
         )}
         <div className="stat-card sc-rose" style={{ cursor: "pointer" }} onClick={() => onNavigate("depenses")}>
@@ -257,9 +387,9 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
 
       <div className="two-col">
         {/* Évolution salaire net + prime types empilées */}
-        {expChart !== "pie" && <div className="chart-card" style={{marginBottom: 20, height:hSal+52, gridColumn: expSal?"1 / -1":"" }}>
+        {(expChart === null || expSal) && <div className="chart-card" style={{marginBottom: 20, height:hSal+52, gridColumn: expSal?"1 / -1":"" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <div className="chart-title" style={{ marginBottom: 0 }}>Évolution du salaire net + primes</div>
+            <div className="chart-title">Évolution du salaire net + primes</div>
             <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
               <button className="btn btn-ghost btn-sm" style={{ fontSize: 10, opacity: brushDash ? 1 : 0.35, cursor: brushDash ? "pointer" : "default" }}
                 onClick={() => brushDash && setBrushDash(null)} title="Réinitialiser le zoom">↺</button>
@@ -279,6 +409,10 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
                     <stop offset="5%"  stopColor="#5fa89e" stopOpacity={.4}/>
                     <stop offset="95%" stopColor="#5fa89e" stopOpacity={0}/>
                   </linearGradient>
+                  <linearGradient id="gSalPrimes" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%"  stopColor="var(--gold)" stopOpacity={.5}/>
+                    <stop offset="95%" stopColor="var(--gold)" stopOpacity={0}/>
+                  </linearGradient>
                   {activePrimeTypesDash.map(type => {
                     const c = PRIME_TYPE_COLORS[type] ?? tickerColor(type);
                     return (
@@ -291,9 +425,10 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
                 </defs>
                 <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
                 <XAxis dataKey="mois" stroke="var(--text-2)" tick={{ fontSize: 9, fontFamily: "JetBrains Mono" }}
-                  interval={Math.max(0, Math.floor(salChartData.length / 8) - 1)}/>
+                  interval={Math.max(0, Math.floor(salChartData.length / 8) - 1)}
+                  tickFormatter={(m: string) => { const mo = parseInt(m.slice(5,7)); return ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"][mo-1]+" "+m.slice(2,4); }}/>
                 <YAxis stroke="var(--text-2)" tick={{ fontSize: 9, fontFamily: "JetBrains Mono" }}
-                  tickFormatter={fmtAxis}/>
+                  tickFormatter={fmtAxis} width={34}/>
                 <Tooltip content={({ active, payload, label }: any) => {
                   if (!active || !payload?.length) return null;
                   const items = payload.filter((p: any) => p.value != null && p.value > 0);
@@ -307,8 +442,8 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
                         <span style={{ color: "var(--text-0)", fontSize: 11, fontWeight: 700 }}>{fmt(total)}</span>
                       </div>
                       {items.map((p: any, i: number) => {
-                        const col = p.dataKey === "net" ? "var(--teal)" : (PRIME_TYPE_COLORS[p.dataKey] ?? p.stroke ?? tickerColor(p.dataKey));
-                        const lbl = p.dataKey === "net" ? "Salaire net" : p.dataKey;
+                        const col = p.dataKey === "net" ? "var(--teal)" : p.dataKey === "salPrimes" ? "var(--gold)" : (PRIME_TYPE_COLORS[p.dataKey] ?? p.stroke ?? tickerColor(p.dataKey));
+                        const lbl = p.dataKey === "net" ? "Salaire net" : p.dataKey === "salPrimes" ? "Primes salaire" : p.dataKey;
                         return (
                           <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 2 }}>
                             <span style={{ color: col, fontSize: 10 }}>{lbl}</span>
@@ -341,6 +476,9 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
                 })}
                 <Area type="monotone" dataKey="net" stackId="s" stroke="#5fa89e" strokeWidth={2} fill="url(#gSal)"
                   dot={false} connectNulls={false}/>
+                <Area type="monotone" dataKey="salPrimes" stackId="s" name="Primes salaire"
+                  stroke="var(--gold)" strokeWidth={1.5} fill="url(#gSalPrimes)"
+                  dot={false} connectNulls={false}/>
                 {expSal && <Brush dataKey="mois" height={22} travellerWidth={6}
                   stroke="var(--border)" fill="var(--bg-2)"
                   startIndex={brushDash?.start??0}
@@ -357,10 +495,90 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
           })()}
         </div>}
 
+{/* Évolution mensuelle livrets + portefeuille */}
+        {(expChart === null || expPat) && (
+          <div className="chart-card" style={{ marginBottom: 20, height: hPat + 52, gridColumn: expPat ? "1 / -1" : "" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <div className="chart-title" style={{ marginBottom: 0 }}>Évolution patrimoine financier</div>
+              <button className="btn btn-ghost btn-sm" style={{ fontSize: 10 }}
+                onClick={() => setExpChart(v => v === "pat" ? null : "pat")}>
+                {expPat ? "-" : "+"}
+              </button>
+            </div>
+            {monthlyPatrimoine.length === 0
+              ? <div className="empty">Aucune donnée.</div>
+              : (() => {
+                const hasLivrets   = monthlyPatrimoine.some(d => d.livrets   != null);
+                const hasPortfolio = monthlyPatrimoine.some(d => d.portfolio != null);
+                return (
+                  <ResponsiveContainer width="100%" height={hPat}>
+                    <AreaChart data={monthlyPatrimoine} margin={{ left: 0, right: 5, top: 5, bottom: expPat ? 28 : 0 }}>
+                      <defs>
+                        <linearGradient id="gPatLiv" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%"  stopColor={GLOBAL_GROUP_COLORS.livrets} stopOpacity={.45}/>
+                          <stop offset="95%" stopColor={GLOBAL_GROUP_COLORS.livrets} stopOpacity={0}/>
+                        </linearGradient>
+                        <linearGradient id="gPatInv" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%"  stopColor={GLOBAL_GROUP_COLORS.investissements} stopOpacity={.45}/>
+                          <stop offset="95%" stopColor={GLOBAL_GROUP_COLORS.investissements} stopOpacity={0}/>
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
+                      <XAxis dataKey="mois" stroke="var(--text-2)" tick={{ fontSize: 9, fontFamily: "JetBrains Mono" }}
+                        interval={Math.max(0, Math.floor(monthlyPatrimoine.length / 8) - 1)}
+                        tickFormatter={(m: string) => { const mo = parseInt(m.slice(5,7)); return ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"][mo-1]+" "+m.slice(2,4); }}/>
+                      <YAxis stroke="var(--text-2)" tick={{ fontSize: 9, fontFamily: "JetBrains Mono" }} tickFormatter={fmtAxis} width={34}/>
+                      <Tooltip content={({ active, payload, label }: any) => {
+                        if (!active || !payload?.length) return null;
+                        const items = payload.filter((p: any) => p.value != null && p.value > 0);
+                        if (!items.length) return null;
+                        const total = items.reduce((s: number, p: any) => s + Number(p.value), 0);
+                        return (
+                          <div style={{ ...TOOLTIP_STYLE, padding: "10px 14px", minWidth: 180 }}>
+                            {label && <div style={{ color: "var(--text-2)", fontSize: 9, marginBottom: 6 }}>{label}</div>}
+                            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 8, paddingBottom: 6, borderBottom: "1px solid var(--border)" }}>
+                              <span style={{ color: "var(--text-1)", fontSize: 10 }}>Total</span>
+                              <span style={{ color: "var(--text-0)", fontSize: 11, fontWeight: 700 }}>{fmt(total)}</span>
+                            </div>
+                            {items.map((p: any, i: number) => (
+                              <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 2 }}>
+                                <span style={{ color: p.dataKey === "livrets" ? GLOBAL_GROUP_COLORS.livrets : GLOBAL_GROUP_COLORS.investissements, fontSize: 10 }}>
+                                  {p.dataKey === "livrets" ? "Livrets" : "Investissements"}
+                                </span>
+                                <span style={{ color: "var(--text-0)", fontSize: 10 }}>{fmt(Number(p.value))}</span>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      }}/>
+                      <Customized component={(p: any) => {
+                        const N = monthlyPatrimoine.length;
+                        if (N === 0) return null;
+                        const idx = monthlyPatrimoine.findIndex((d: any) => d.mois === mois);
+                        if (idx < 0) return null;
+                        const step = N > 1 ? p.offset.width / (N - 1) : p.offset.width;
+                        const x = p.offset.left + idx * step;
+                        return <g><rect x={x - step / 2} y={p.offset.top} width={Math.max(4, step)}
+                          height={p.offset.height} fill="var(--gold)" fillOpacity={0.15}
+                          stroke="var(--gold)" strokeOpacity={0.5} strokeDasharray="4 2" strokeWidth={1} pointerEvents="none"/></g>;
+                      }}/>
+                      {hasLivrets   && <Area type="monotone" dataKey="livrets"   stackId="p" stroke={GLOBAL_GROUP_COLORS.livrets}         strokeWidth={1.5} fill="url(#gPatLiv)" dot={false} connectNulls={false}/>}
+                      {hasPortfolio && <Area type="monotone" dataKey="portfolio" stackId="p" stroke={GLOBAL_GROUP_COLORS.investissements} strokeWidth={2}   fill="url(#gPatInv)" dot={false} connectNulls={false}/>}
+                    </AreaChart>
+                  </ResponsiveContainer>
+                );
+              })()
+            }
+          </div>
+        )}
+      </div>
+
+      {/* ── Deuxième rangée : delta patrimoine + évolution globale ── */}
+      <div className="two-col">
         {/* Dépenses du mois — camembert 2 anneaux dynamique */}
-        {expChart !== "sal" && <div className="chart-card" style={{marginBottom: 20, height:hPie+52, gridColumn: expPie?"1 / -1":""}}>
+        {(expChart === null || expPie) && <div className="chart-card" style={{marginBottom: 20, height:hPie+52, gridColumn: expPie?"1 / -1":""}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-            <div className="chart-title" style={{marginBottom:0}}>Dépenses par catégorie · {mois}</div>
+            <div className="chart-title">Dépenses par catégorie · {mois}</div>
             <button className="btn btn-ghost btn-sm" style={{fontSize:10}}
               onClick={() => setExpChart(v => v === "pie" ? null : "pie")}>
               {expPie ? "-" : "+"}
@@ -370,26 +588,25 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
             ? <div className="empty">Aucune dépense ce mois.</div>
             : <NestedPie inner={depPieInner} outer={depPieOuter} total={totalDepenses} fmt={fmt} h={hPie}/>
           }
-        </div>}
-      </div>
+        </div>
+        }
 
-      <div className="section-sep">
-        <span className="section-sep-label">Accès rapide</span>
-        <div className="section-sep-line"/>
-      </div>
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-        {[
-          { label: "Ajouter une dépense",       page: "depenses",   color: "var(--rose)"     },
-          { label: "Ajouter une fiche de paie", page: "fiches",     color: "var(--teal)"     },
-          { label: "Mettre à jour mes livrets",  page: "patrimoine", color: "var(--gold)"     },
-          { label: "Ajouter une position",       page: "patrimoine", color: "var(--lavender)" },
-        ].map(item => (
-          <button key={item.label} className="btn btn-ghost"
-            style={{ borderColor: item.color, color: item.color }}
-            onClick={() => onNavigate(item.page as Page)}>
-            {item.label}
-          </button>
-        ))}
+        {/* Camembert delta patrimoine du mois */}
+        {(expChart === null || expPatPie) && (
+          <div className="chart-card" style={{ marginBottom: 20, height: hPatPie + 52, gridColumn: expPatPie ? "1 / -1" : "" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <div className="chart-title" style={{ marginBottom: 0 }}>Flux patrimoine · {mois}</div>
+              <button className="btn btn-ghost btn-sm" style={{ fontSize: 10 }}
+                onClick={() => setExpChart(v => v === "patPie" ? null : "patPie")}>
+                {expPatPie ? "-" : "+"}
+              </button>
+            </div>
+            {patriPieInner.length === 0
+              ? <div className="empty">Aucun versement ni dépôt ce mois.</div>
+              : <NestedPie inner={patriPieInner} outer={patriPieOuter} total={patriPieTotal} fmt={fmt} h={hPatPie}/>
+            }
+          </div>
+        )}
       </div>
     </div>
   );

@@ -124,10 +124,17 @@ function csvToSalaires(rows: string[][]): any[] {
   });
 }
 function csvToLivrets(rows: string[][]): any[] {
-  return rows.slice(1).map(r => ({
-    id: null, poche: r[1]?.trim(), date: r[2]?.trim(),
-    montant: num(r[3]), taux: num(r[4]), notes: str(r[5] ?? ""),
-  }));
+  const header = rows[0] ?? [];
+  // New format: id,poche,nom,date,montant,taux,notes
+  // Old format: id,poche,date,montant,taux,notes
+  const hasNom = header.length >= 7 || header[2]?.trim() === "nom";
+  return rows.slice(1).map(r => {
+    if (hasNom) {
+      return { id: null, poche: r[1]?.trim(), nom: r[2]?.trim() ?? "", date: r[3]?.trim(), montant: num(r[4]), taux: num(r[5]), notes: str(r[6] ?? "") };
+    } else {
+      return { id: null, poche: r[1]?.trim(), nom: "", date: r[2]?.trim(), montant: num(r[3]), taux: num(r[4]), notes: str(r[5] ?? "") };
+    }
+  });
 }
 
 // ── Export / Import functions ──────────────────────────────────────────────
@@ -192,8 +199,8 @@ export async function exportSalaires(): Promise<void> {
 export async function exportLivrets(): Promise<void> {
   const rows = await invoke<any[]>("get_livrets");
   downloadCsv(withDate("livrets.csv"), toCsv(
-    ["id", "poche", "date", "montant", "taux", "notes"],
-    rows.map(r => [r.id, r.poche, r.date, r.montant, r.taux, r.notes])
+    ["id", "poche", "nom", "date", "montant", "taux", "notes"],
+    rows.map(r => [r.id, r.poche, r.nom ?? "", r.date, r.montant, r.taux, r.notes])
   ));
 }
 export async function importDepenses(rows: string[][], replace: boolean): Promise<number> {
@@ -209,8 +216,46 @@ export async function importDepenses(rows: string[][], replace: boolean): Promis
 export async function importSalaires(rows: string[][], replace: boolean): Promise<number> {
   return invoke<number>("import_salaires", { rows: csvToSalaires(rows), replace });
 }
+// ── Per-livret poche export / import ──────────────────────────────────────────
+export async function exportLivretPoche(type_livret: string, nom: string): Promise<void> {
+  const all = await invoke<any[]>("get_livrets");
+  const rows = all.filter((r: any) => r.poche === type_livret && r.nom === nom);
+  const isInteret = (r: any) => (r.notes ?? "").startsWith("[INTERET");
+  const isRetrait = (r: any) => !isInteret(r) && r.montant < 0;
+  downloadCsv(withDate(`${nom.replace(/[^a-z0-9]/gi, "_")}.csv`), toCsv(
+    ["id", "date", "type", "montant", "notes"],
+    rows.map(r => [
+      r.id, r.date,
+      isInteret(r) ? "interet" : isRetrait(r) ? "retrait" : "versement",
+      Math.abs(r.montant), r.notes ?? "",
+    ])
+  ));
+}
+function csvToLivretOps(rows: string[][]): any[] {
+  return rows.slice(1).map(r => {
+    const type = r[2]?.trim().toLowerCase();
+    const montantAbs = parseFloat(r[3]) || 0;
+    const montant = type === "retrait" ? -montantAbs : montantAbs;
+    const notes = r[4]?.trim() || null;
+    return { poche: "", nom: "", montant, taux: 0, date: r[1]?.trim(), notes };
+  });
+}
+export function importLivretOps(type_livret: string, nom: string) {
+  return async (rows: string[][], replace: boolean): Promise<number> => {
+    const ops = csvToLivretOps(rows);
+    return invoke<number>("import_livret_ops", { typeLivret: type_livret, nom, rows: ops, replace });
+  };
+}
+
 export async function importLivrets(rows: string[][], replace: boolean): Promise<number> {
   return invoke<number>("import_livrets", { rows: csvToLivrets(rows), replace });
+}
+
+export async function exportInvestPoches(pocheKeys: string[]): Promise<void> {
+  await invoke("export_invest_csv", { poches: pocheKeys });
+}
+export async function exportLivretsBatch(livretPoches: { type_livret: string; nom: string }[]): Promise<void> {
+  await invoke("export_livrets_batch", { livretPoches });
 }
 
 // ── Types ──────────────────────────────────────────────────────────────────

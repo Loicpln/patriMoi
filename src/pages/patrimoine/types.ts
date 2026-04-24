@@ -1,5 +1,6 @@
 // ── Shared types for Patrimoine module ────────────────────────────────────────
-export interface Livret    { id?: number; poche: string; montant: number; taux: number; date: string; notes?: string; }
+export interface Livret    { id?: number; poche: string; nom: string; montant: number; taux: number; date: string; notes?: string; }
+export interface LivretPoche { id?: number; type_livret: string; nom: string; couleur: string; }
 export interface Position  { id?: number; poche: string; ticker: string; nom: string; sous_categorie?: string; quantite: number; prix_achat: number; date_achat: string; notes?: string; }
 export interface Vente     { id?: number; poche: string; ticker: string; nom: string; quantite: number; prix_achat: number; prix_vente: number; date_vente: string; pnl: number; notes?: string; }
 export interface Dividende { id?: number; ticker: string; poche: string; montant: number; date: string; notes?: string; }

@@ -23,9 +23,9 @@ import { Boundary, ChartGrid, NestedPie, bellEffect } from "./patrimoine/shared"
 import { LivretsSection } from "./patrimoine/LivretsSection";
 import { PocheSection } from "./patrimoine/PocheSection";
 import { exportPoche, exportScpiValuations, importPoche, importScpi, parseCsvContent,
-  ImportModal, PocheFormModal, ConfirmDeleteModal,
+  ImportModal, PocheFormModal, ConfirmDeleteModal, exportInvestPoches,
   type ImportPending } from "./patrimoine/InvestSettings";
-import type { Livret, Position, Vente, Dividende, Versement, ScpiValuation } from "./patrimoine/types";
+import type { Livret, LivretPoche, Position, Vente, Dividende, Versement, ScpiValuation } from "./patrimoine/types";
 
 // Index-based pixel: avoids Recharts scale domain truncation (ticks-only domain bug)
 function idxPx(data: any[], x1: string, x2: string, offset: any, bStart = 0, bEnd?: number, key = "date") {
@@ -146,13 +146,13 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
             Object.entries(byT).forEach(([,d])=>{
               const prop=d.inv/totalInv;
               const outKey=`${p.key}||${d.subcat}`;
-              const subcatColor=(INVEST_SUBCAT_COLOR[d.subcat]??p.color)+"cc";
+              const subcatColor=(INVEST_SUBCAT_COLOR[d.subcat]??p.color);
               if(!outerMap[outKey])outerMap[outKey]={value:0,color:subcatColor};
               outerMap[outKey].value+=versP*prop;
             });
           } else {
             const cashKey=`${p.key}||especes`;
-            if(!outerMap[cashKey])outerMap[cashKey]={value:0,color:(INVEST_SUBCAT_COLOR["especes"]??"#78909c")+"cc"};
+            if(!outerMap[cashKey])outerMap[cashKey]={value:0,color:(INVEST_SUBCAT_COLOR["especes"]??"#78909c")};
             outerMap[cashKey].value+=versP;
           }
         }
@@ -167,7 +167,7 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
           pocheMap[p.key].value+=val;
           pocheCost+=d.inv;
           const outKey=`${p.key}||${d.subcat}`;
-          const subcatColor=(INVEST_SUBCAT_COLOR[d.subcat]??p.color)+"cc";
+          const subcatColor=(INVEST_SUBCAT_COLOR[d.subcat]??p.color);
           if(!outerMap[outKey])outerMap[outKey]={value:0,color:subcatColor};
           outerMap[outKey].value+=val;
         });
@@ -180,7 +180,7 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
           if(!pocheMap[p.key])pocheMap[p.key]={value:0,color:p.color};
           pocheMap[p.key].value+=esp;
           const cashKey=`${p.key}||especes`;
-          if(!outerMap[cashKey])outerMap[cashKey]={value:0,color:(INVEST_SUBCAT_COLOR["especes"]??"#78909c")+"cc"};
+          if(!outerMap[cashKey])outerMap[cashKey]={value:0,color:(INVEST_SUBCAT_COLOR["especes"]??"#78909c")};
           outerMap[cashKey].value+=esp;
         }
       }
@@ -410,7 +410,7 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
           </defs>
           <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
           <XAxis dataKey="date" ticks={xTicks} tick={{fontSize:8,fontFamily:"JetBrains Mono"}}
-            tickFormatter={dd=>{const mo=parseInt(dd.slice(5,7));return MN_SHORT[mo-1];}}/>
+            tickFormatter={dd=>{const mo=parseInt(dd.slice(5,7));return MN_SHORT[mo-1]+" "+dd.slice(2,4);}}/>
           <YAxis tick={{fontSize:8,fontFamily:"JetBrains Mono"}} tickFormatter={fmtAxis} width={32} domain={[0,"auto"]}/>
           <Tooltip content={<RecapTooltip/>}/>
           {poches.map(p=><Area key={p.key} type="monotone" dataKey={p.label} stackId="r" name={p.label} stroke={p.color} strokeWidth={1.5} fill={`url(#gr_${p.key})`} dot={false}/>)}
@@ -451,7 +451,7 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
       <div className="section-sep-line"/>
       <button
         className="btn btn-ghost btn-sm"
-        style={{marginLeft:12,whiteSpace:"nowrap",fontSize:10,
+        style={{whiteSpace:"nowrap",fontSize:10,
           borderColor:exportAllState==="done"?"var(--teal)":exportAllState==="error"?"var(--rose)":undefined,
           color:exportAllState==="done"?"var(--teal)":exportAllState==="error"?"var(--rose)":undefined,
           opacity:exportAllState==="loading"?0.6:1}}
@@ -459,9 +459,7 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
         onClick={async()=>{
           setExportAllState("loading");
           try{
-            const subfolder=await invoke<string>("choose_export_folder");
-            if(!subfolder){setExportAllState("idle");return;}
-            await invoke<string[]>("export_all_csv",{subfolder});
+            await exportInvestPoches(poches.map(p=>p.key));
             setExportAllState("done");
             setTimeout(()=>setExportAllState("idle"),3000);
           }catch{
@@ -469,25 +467,24 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
             setTimeout(()=>setExportAllState("idle"),3000);
           }
         }}>
-        {exportAllState==="loading"?"…":exportAllState==="done"?"✓ Exporté":exportAllState==="error"?"⚠ Erreur":"↓ Tout exporter"}
+        {exportAllState==="loading"?"…":exportAllState==="done"?"✓ Exporté":exportAllState==="error"?"⚠ Erreur":"↓ Export"}
       </button>
-      {onAddPoche&&<button className="btn btn-primary btn-sm" style={{marginLeft:6,whiteSpace:"nowrap"}} onClick={onAddPoche}>+ Poche</button>}
+      {onAddPoche&&<button className="btn btn-primary btn-sm" style={{whiteSpace:"nowrap"}} onClick={onAddPoche}>+ Poche</button>}
       <button
         className={`btn btn-sm ${viewMode==="poches"?"btn-primary":"btn-ghost"}`}
-        style={{marginLeft:6,whiteSpace:"nowrap",fontSize:10}}
+        style={{whiteSpace:"nowrap"}}
         title={viewMode==="graphiques"?"Afficher les poches":"Afficher les graphiques"}
         onClick={onToggleView}>
-        {viewMode==="graphiques"?"Poches":"Graphiques"}
+        {viewMode==="graphiques"?"Investissements":"Graphiques"}
       </button>
     </div>
-    {viewMode==="graphiques"&&<>
-    {/* ── Stat cards ── */}
+    {/* ── Stat cards — toujours visibles ── */}
     <div className="stat-row">
       <div className="stat-card sc-neutral">
         <div className="sc-label">Versements</div>
         <div className="sc-value">{fmt(statCards.vers)}</div>
       </div>
-      <div className="stat-card sc-neutral">
+      <div className="stat-card sc-teal">
         <div className="sc-label">Investi</div>
         <div className="sc-value">{fmt(statCards.investi)}</div>
       </div>
@@ -495,7 +492,7 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
         const gain=statCards.valeur-statCards.vers;
         const gainColor=gain>=0?"var(--teal)":"var(--rose)";
         return(
-          <div className="stat-card" style={{borderTop:`3px solid ${gainColor}`}}>
+          <div className="stat-card sc-lav">
             <div className="sc-label">Valorisation · {mois}</div>
             <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
               <div className="sc-value">{fmt(statCards.valeur)}</div>
@@ -509,17 +506,17 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
         );
       })()}
     </div>
-    <ChartGrid charts={[
+    {/* ── Graphiques view ── */}
+    {viewMode==="graphiques"&&<ChartGrid charts={[
       {key:"recap_pie",   title:`Poche / Sous-catégorie · ${mois}`, node:pieNode},
       {key:"recap_stack", title:"Valeur par poche / jour",           node:stackNode,
         onResetZoom:()=>setBrushIdxR(null), brushActive:!!brushIdxR},
-    ]}/>
-    </>}
+    ]}/>}
   </div>);
 }
 
 // ── Global Recap ───────────────────────────────────────────────────────────────
-function GlobalRecap({livrets,positions,ventes,dividendes,versements,mois,scpiValuations}:{livrets:Livret[];positions:Position[];ventes:Vente[];dividendes:Dividende[];versements:Versement[];mois:string;scpiValuations:ScpiValuation[]}) {
+function GlobalRecap({livrets,livretPoches,positions,ventes,dividendes,versements,mois,scpiValuations}:{livrets:Livret[];livretPoches:LivretPoche[];positions:Position[];ventes:Vente[];dividendes:Dividende[];versements:Versement[];mois:string;scpiValuations:ScpiValuation[]}) {
   const {fmt,fmtAxis}=useDevise();
   const {poches}=usePoches();
   const [pieToggle,setPieToggle]=useState<"versements"|"valeur">("valeur");
@@ -529,10 +526,18 @@ function GlobalRecap({livrets,positions,ventes,dividendes,versements,mois,scpiVa
   const scpiPriceMap=useMemo(()=>buildScpiMap(scpiValuations),[scpiValuations]);
 
   const isInteret=(l:Livret)=>(l.notes??"").startsWith("[INTERET");
+  // Legacy livrets (nom=''): use latest snapshot per type
   const latestLiv:Record<string,Livret>={};
-  livrets.filter(l=>!isInteret(l)&&(l.date??"").slice(0,7)<=mois)
+  livrets.filter(l=>l.nom===''&&!isInteret(l)&&(l.date??"").slice(0,7)<=mois)
     .forEach(l=>{if(!latestLiv[l.poche]||l.date>latestLiv[l.poche].date)latestLiv[l.poche]=l;});
-  const totalLivrets=Object.values(latestLiv).reduce((s,l)=>s+l.montant,0);
+  // New livrets (nom!=''): cumulative sum per type key
+  const newLivBalByType:Record<string,number>={};
+  livretPoches.forEach(p=>{
+    const bal=livrets.filter(l=>l.nom===p.nom&&l.poche===p.type_livret&&!isInteret(l)&&(l.date??"")<=mois.slice(0,7)+"-31")
+      .reduce((s,l)=>s+l.montant,0);
+    newLivBalByType[p.type_livret]=(newLivBalByType[p.type_livret]??0)+bal;
+  });
+  const totalLivrets=Object.values(latestLiv).reduce((s,l)=>s+l.montant,0)+Object.values(newLivBalByType).reduce((s,v)=>s+v,0);
 
   const allDates=[
     ...livrets.filter(l=>!isInteret(l)).map(l=>(l.date??"").slice(0,7)),
@@ -627,7 +632,18 @@ function GlobalRecap({livrets,positions,ventes,dividendes,versements,mois,scpiVa
     {name:"Investissements",value:investVal,color:GLOBAL_GROUP_COLORS.investissements},
   ].filter(p=>p.value>0);
   const outer=[
+    // Legacy livrets (nom=''): one entry per type
     ...LIVRETS_DEF.map(l=>({name:l.label,group:"Livrets",value:latestLiv[l.key]?.montant??0,color:l.color})),
+    // New livrets (nom!=''): one entry per poche nom, sorted by LIVRETS_DEF order
+    ...[...livretPoches].sort((a,b)=>{
+      const ia=LIVRETS_DEF.findIndex(l=>l.key===a.type_livret);
+      const ib=LIVRETS_DEF.findIndex(l=>l.key===b.type_livret);
+      return (ia<0?999:ia)-(ib<0?999:ib)||a.nom.localeCompare(b.nom);
+    }).map(p=>{
+      const typeDef=LIVRETS_DEF.find(l=>l.key===p.type_livret);
+      const val=livrets.filter(lv=>lv.nom===p.nom&&lv.poche===p.type_livret&&!isInteret(lv)&&(lv.date??"").slice(0,7)<=mois).reduce((s,lv)=>s+lv.montant,0);
+      return{name:p.nom,group:"Livrets",value:val,color:p.couleur||typeDef?.color||"#F0BD40"};
+    }),
     ...poches.map(p=>({name:p.label,group:"Investissements",value:pieToggle==="versements"?(versParPoche[p.key]??0):(portfolioParPoche[p.key]??0),color:p.color})),
   ].filter(p=>p.value>0);
   const grandTotal=totalLivrets+investVal;
@@ -664,15 +680,28 @@ function GlobalRecap({livrets,positions,ventes,dividendes,versements,mois,scpiVa
       pVI[p.key]=0;pPI[p.key]=0;pDI[p.key]=0;pCV[p.key]=0;pCP[p.key]=0;pCD[p.key]=0;
     });
 
-    // Per-livret step-function tracking
+    // Per-livret step-function tracking (legacy nom='') + cumulative for new livrets (nom!='')
     const livByKey:Record<string,{date:string;montant:number}[]>={};
     const livIdx:Record<string,number>={};
     const livVal:Record<string,number>={};
     const livActive:Record<string,boolean>={};
     LIVRETS_DEF.forEach(l=>{
-      livByKey[l.key]=livrets.filter(lv=>!isInteret(lv)&&lv.poche===l.key).sort((a,b)=>(a.date??"").localeCompare(b.date??""));
+      // Legacy: latest snapshot (nom='')
+      livByKey[l.key]=livrets.filter(lv=>lv.nom===''&&!isInteret(lv)&&lv.poche===l.key).sort((a,b)=>(a.date??"").localeCompare(b.date??""));
       livIdx[l.key]=0;livVal[l.key]=0;livActive[l.key]=false;
     });
+    // New livrets: cumulative per (type, nom) → accumulate by type key
+    const newLivByType:Record<string,{date:string;montant:number}[]>={};
+    const newLivIdx:Record<string,number>={};
+    const newLivCum:Record<string,number>={};
+    const newLivActive:Record<string,boolean>={};
+    LIVRETS_DEF.forEach(l=>{newLivByType[l.key]=[];newLivIdx[l.key]=0;newLivCum[l.key]=0;newLivActive[l.key]=false;});
+    livretPoches.forEach(p=>{
+      const ops=livrets.filter(lv=>lv.nom===p.nom&&lv.poche===p.type_livret&&!isInteret(lv))
+        .sort((a,b)=>(a.date??"").localeCompare(b.date??""));
+      ops.forEach(op=>newLivByType[p.type_livret]?.push({date:op.date,montant:op.montant}));
+    });
+    LIVRETS_DEF.forEach(l=>{newLivByType[l.key].sort((a,b)=>a.date.localeCompare(b.date));});
 
     // Per-poche position tracker + activity flag
     const byPocheG:Record<string,Record<string,{q:number;inv:number;subcat:string}>>={};
@@ -705,17 +734,27 @@ function GlobalRecap({livrets,positions,ventes,dividendes,versements,mois,scpiVa
         while(pPI[p.key]<ventPerP[p.key].length&&(ventPerP[p.key][pPI[p.key]].date_vente??"")<= dateStr)pCP[p.key]+=ventPerP[p.key][pPI[p.key]++].pnl;
         while(pDI[p.key]<divsPerP[p.key].length&&(divsPerP[p.key][pDI[p.key]].date??"")<= dateStr)pCD[p.key]+=divsPerP[p.key][pDI[p.key]++].montant;
       });
-      // Advance livret step-function per key
+      // Advance livret step-function per key (legacy, nom='')
       LIVRETS_DEF.forEach(l=>{
         while(livIdx[l.key]<livByKey[l.key].length&&(livByKey[l.key][livIdx[l.key]].date??"")<= dateStr){
           livVal[l.key]=livByKey[l.key][livIdx[l.key]++].montant;
           livActive[l.key]=true;
         }
+        // Advance new livret cumulative per type
+        while(newLivIdx[l.key]<newLivByType[l.key].length&&newLivByType[l.key][newLivIdx[l.key]].date<=dateStr){
+          newLivCum[l.key]+=newLivByType[l.key][newLivIdx[l.key]++].montant;
+          newLivActive[l.key]=true;
+        }
       });
 
       const row:any={date:dateStr,month:dateStr.slice(0,7)};
-      // Livrets (bottom of stack) — null before first entry for clean start
-      LIVRETS_DEF.forEach(l=>{row[l.label]=livActive[l.key]?livVal[l.key]:null;});
+      // Livrets (bottom of stack) — combine legacy + new cumulative
+      LIVRETS_DEF.forEach(l=>{
+        const legVal=livActive[l.key]?livVal[l.key]:0;
+        const newVal=newLivActive[l.key]?newLivCum[l.key]:0;
+        const active=livActive[l.key]||newLivActive[l.key];
+        row[l.label]=active?(legVal+newVal)||null:null;
+      });
       // Poches (top of stack) — null before first activity
       const monthStr=dateStr.slice(0,7);
       poches.forEach(p=>{
@@ -735,7 +774,7 @@ function GlobalRecap({livrets,positions,ventes,dividendes,versements,mois,scpiVa
     const evoKeys=[...LIVRETS_DEF.map(l=>l.label),...poches.map(p=>p.label)];
     return bellEffect(rawEvo, evoKeys);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[livrets,positions,ventes,dividendes,versements,getPriceForDateGlobal]);
+  },[livrets,livretPoches,positions,ventes,dividendes,versements,getPriceForDateGlobal]);
 
   const pieNode=(h:number,_isExp?:boolean)=>inner.length===0?<div className="empty">Aucune donnée</div>:(
     <NestedPie inner={inner} outer={outer} total={grandTotal} fmt={fmt} h={h}
@@ -823,7 +862,7 @@ function GlobalRecap({livrets,positions,ventes,dividendes,versements,mois,scpiVa
           </defs>
           <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
           <XAxis dataKey="date" ticks={xTicksG} tick={{fontSize:8,fontFamily:"JetBrains Mono"}}
-            tickFormatter={dd=>{const mo=parseInt(dd.slice(5,7));return MN_SHORT_G[mo-1];}}/>
+            tickFormatter={dd=>{const mo=parseInt(dd.slice(5,7));return MN_SHORT_G[mo-1]+" "+dd.slice(2,4);}}/>
           <YAxis tick={{fontSize:8,fontFamily:"JetBrains Mono"}} tickFormatter={fmtAxis} width={32}/>
           <Tooltip content={<GlobalTooltip/>}/>
           {/* Livrets — stacked at bottom, one area per livret */}
@@ -880,6 +919,7 @@ function PatrimoineInner() {
   const {poches,setPoches}=usePoches();
   useEffect(()=>{ setCtxMois(mois); },[mois,setCtxMois]);
   const [livrets,setLivrets]=useState<Livret[]>([]);
+  const [livretPoches,setLivretPoches]=useState<LivretPoche[]>([]);
   const [positions,setPositions]=useState<Position[]>([]);
   const [ventes,setVentes]=useState<Vente[]>([]);
   const [dividendes,setDividendes]=useState<Dividende[]>([]);
@@ -895,6 +935,7 @@ function PatrimoineInner() {
   const [confirmDeleteKey, setConfirmDeleteKey] = useState<string|null>(null);
   const [importPending, setImportPending] = useState<ImportPending|null>(null);
   const [investViewMode,setInvestViewMode]=useState<"graphiques"|"poches">("graphiques");
+  const [livretViewMode,setLivretViewMode]=useState<"graphiques"|"livrets">("graphiques");
 
   const openAddPoche = () => { setEditingPoche(emptyPoche); setEditingKey(null); setPocheFormOpen(true); };
   const openEditPoche = (p: Poche) => { setEditingPoche({...p}); setEditingKey(p.key); setPocheFormOpen(true); };
@@ -927,15 +968,16 @@ function PatrimoineInner() {
 
   const load=useCallback(async()=>{
     try{
-      const [l,p,v,d,vs,sv]=await Promise.all([
+      const [l,lp,p,v,d,vs,sv]=await Promise.all([
         invoke<Livret[]>("get_livrets"),
+        invoke<LivretPoche[]>("get_livret_poches"),
         invoke<Position[]>("get_positions",{}),
         invoke<Vente[]>("get_ventes",{}),
         invoke<Dividende[]>("get_dividendes",{}),
         invoke<Versement[]>("get_versements",{}),
         invoke<ScpiValuation[]>("get_scpi_valuations",{}),
       ]);
-      setLivrets(l);setPositions(p);setVentes(v);setDividendes(d);setVersements(vs);setScpiValuations(sv);setErr(null);
+      setLivrets(l);setLivretPoches(lp);setPositions(p);setVentes(v);setDividendes(d);setVersements(vs);setScpiValuations(sv);setErr(null);
     }catch(e:any){setErr(String(e));}
   },[]);
   useEffect(()=>{load();},[load]);
@@ -947,7 +989,7 @@ function PatrimoineInner() {
       ...positions.map(p=>(p.date_achat??"").slice(0,7)),
     ].filter(Boolean).sort();
     return dates[0];
-  },[livrets,positions]);
+  },[livrets,livretPoches,positions]);
 
   return(<div>
     {/* ── Modales de gestion des poches ── */}
@@ -969,8 +1011,8 @@ function PatrimoineInner() {
         <button key={k} className={`tab-btn ${tab===k?"active":""}`} onClick={()=>setTab(k as any)}>{l}</button>
       ))}
     </div>
-    {tab==="global"&&<GlobalRecap livrets={livrets} positions={positions} ventes={ventes} dividendes={dividendes} versements={versements} mois={mois} scpiValuations={scpiValuations}/>}
-    {tab==="livrets"&&<LivretsSection livrets={livrets} mois={mois} onRefresh={load}/>}
+    {tab==="global"&&<GlobalRecap livrets={livrets} livretPoches={livretPoches} positions={positions} ventes={ventes} dividendes={dividendes} versements={versements} mois={mois} scpiValuations={scpiValuations}/>}
+    {tab==="livrets"&&<LivretsSection livrets={livrets} livretPoches={livretPoches} mois={mois} onRefresh={load} viewMode={livretViewMode} onToggleView={()=>setLivretViewMode(v=>v==="graphiques"?"livrets":"graphiques")}/>}
     {tab==="investissements"&&<RecapInvestissement positions={positions} ventes={ventes} dividendes={dividendes}
       versements={versements} mois={mois} scpiValuations={scpiValuations} onAddPoche={openAddPoche}
       viewMode={investViewMode} onToggleView={()=>setInvestViewMode(v=>v==="graphiques"?"poches":"graphiques")}/>}

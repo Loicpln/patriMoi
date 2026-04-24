@@ -8,6 +8,8 @@ import {
 } from "recharts";
 import { useDevise, curMonth } from "../context/DeviseContext";
 import { DEPENSE_CATEGORIES, TOOLTIP_STYLE, depenseSubColor, defaultDateForMonth } from "../constants";
+import DatePicker from "../components/DatePicker";
+import NumInput from "../components/NumInput";
 import MonthSelector from "../components/MonthSelector";
 import { NestedPie, bellEffect } from "./patrimoine/shared";
 
@@ -49,7 +51,7 @@ function ChartGrid({charts}:{charts:{key:string;title:string;node:(h:number,isEx
         return(
           <div key={c.key} className="chart-card" style={{margin:0,height:h+52}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-              <div className="chart-title" style={{marginBottom:0,fontSize:12}}>{c.title}</div>
+              <div className="chart-title">{c.title}</div>
               <div style={{display:"flex",gap:4,alignItems:"center"}}>
                 {c.onResetZoom&&(
                   <button className="btn btn-ghost btn-sm" style={{fontSize:10,opacity:c.brushActive?1:0.35,cursor:c.brushActive?"pointer":"default"}}
@@ -107,12 +109,11 @@ function Modal({ initial, libelles, onClose, onSave, title }: {
           </div>
           <div className="field">
             <label>Montant (€)</label>
-            <input type="number" step="0.01" value={form.montant}
-              onChange={e => set("montant", parseFloat(e.target.value) || 0)} />
+            <NumInput value={form.montant} onChange={v => set("montant", v)} />
           </div>
           <div className="field">
             <label>Date</label>
-            <input type="date" value={form.date} onChange={e => set("date", e.target.value)} />
+            <DatePicker value={form.date} onChange={v => set("date", v)} />
           </div>
           <div className="field span2">
             <label>Notes</label>
@@ -172,8 +173,7 @@ function RecurrenteModal({ initial, title, onClose, onSave }: {
           </div>
           <div className="field" style={{ margin: 0 }}>
             <label>Montant (€)</label>
-            <input type="number" step="0.01" value={form.montant}
-              onChange={e => s("montant", parseFloat(e.target.value) || 0)} />
+            <NumInput value={form.montant} onChange={v => s("montant", v)} />
           </div>
           <div className="field" style={{ margin: 0 }}>
             <label>Périodicité</label>
@@ -185,11 +185,11 @@ function RecurrenteModal({ initial, title, onClose, onSave }: {
           </div>
           <div className="field" style={{ margin: 0 }}>
             <label>Date de début</label>
-            <input type="date" value={form.date_debut} onChange={e => s("date_debut", e.target.value)} />
+            <DatePicker value={form.date_debut} onChange={v => s("date_debut", v)} />
           </div>
           <div className="field" style={{ margin: 0 }}>
             <label>Date de fin (optionnelle)</label>
-            <input type="date" value={form.date_fin ?? ""} onChange={e => setForm(f => ({ ...f, date_fin: e.target.value || undefined }))} />
+            <DatePicker value={form.date_fin ?? ""} onChange={v => setForm(f => ({ ...f, date_fin: v || undefined }))} />
           </div>
           <div className="field" style={{ margin: 0 }} />
           <div className="field" style={{ margin: 0, gridColumn: "1/-1" }}>
@@ -267,6 +267,7 @@ export default function Depenses() {
   const [loading, setLoading]           = useState(false);
   const [firstMonth, setFirstMonth]     = useState<string | undefined>(undefined);
   const [brushIdxD, setBrushIdxD]       = useState<{start:number;end:number}|null>(null);
+  const [viewMode, setViewMode]         = useState<"graphiques"|"depenses">("graphiques");
   const [importPending, setImportPending] = useState<ImportPending | null>(null);
   const [recurrentes, setRecurrentes]   = useState<DepenseRecurrente[]>([]);
   const [recModal, setRecModal]         = useState(false);
@@ -451,7 +452,7 @@ export default function Depenses() {
             </defs>
             <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
             <XAxis dataKey="mois" tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
-              tickFormatter={mo => { const n = parseInt(mo.slice(5,7)); return MN_SHORT_D[n-1]; }}
+              tickFormatter={mo => { const n = parseInt(mo.slice(5,7)); return MN_SHORT_D[n-1]+" "+mo.slice(2,4); }}
               interval={Math.max(0, Math.ceil(d.length / 8) - 1)}/>
             <YAxis tick={{ fontSize: 8, fontFamily: "JetBrains Mono" }}
               tickFormatter={fmtAxis} width={32}/>
@@ -615,16 +616,23 @@ export default function Depenses() {
         <ImportBtn label="Dépenses" onParsed={(rows, rowCount) => setImportPending({ label: "Dépenses", rowCount, onConfirm: async (replace) => { await importDepenses(rows, replace); load(mois); loadAll(); }})}/>
         <button className="btn btn-ghost btn-sm" onClick={() => { setEditingRec(null); setRecModal(true); }}>+ Récurrente</button>
         <button className="btn btn-primary btn-sm" onClick={() => setModal(true)}>+ Dépense</button>
+        <button
+          className={`btn btn-sm ${viewMode === "depenses" ? "btn-primary" : "btn-ghost"}`}
+          style={{ whiteSpace: "nowrap" }}
+          title={viewMode === "graphiques" ? "Afficher les dépenses" : "Afficher les graphiques"}
+          onClick={() => setViewMode(v => v === "graphiques" ? "depenses" : "graphiques")}>
+          {viewMode === "graphiques" ? "Dépenses" : "Graphiques"}
+        </button>
       </div>
 
-      {/* Stats */}
+      {/* Stats — toujours visibles */}
       <div className="stat-row">
         <div className="stat-card sc-rose">
           <div className="sc-label">Total du mois</div>
           <div className="sc-value">{fmt(total)}</div>
         </div>
-        {pieInner.slice(0,3).map((p,i) => (
-          <div key={p.name} className={`stat-card ${["sc-gold","sc-teal","sc-lav"][i]}`}>
+        {pieInner.map(p => (
+          <div key={p.name} className="stat-card" style={{"--sc-accent": p.color} as React.CSSProperties}>
             <div className="sc-label">{p.name}</div>
             <div className="sc-value">{fmt(p.value)}</div>
             <div className="sc-sub">{total>0?`${((p.value/total)*100).toFixed(1)} %`:"—"}</div>
@@ -632,35 +640,38 @@ export default function Depenses() {
         ))}
       </div>
 
-      {/* Charts */}
-      <ChartGrid charts={[
-        { key:"pie",     title:"Répartition par catégorie / sous-catégorie",  node: pieNode },
-        { key:"monthly", title:"Évolution des dépenses / mois",               node: monthlyNode,
-          onResetZoom: () => setBrushIdxD(null), brushActive: !!brushIdxD },
-      ]}/>
-
-      {/* Recurring templates section — only those with an occurrence this month */}
-      {recurrentesDuMois.length > 0 && (
-        <RecurrenteSection recurrentes={recurrentesDuMois} fmt={fmt}
-          onEdit={r => { setEditingRec(r); setRecModal(true); }}
-          onDelete={r => setConfirmDeleteRec({ id: r.id!, label: r.libelle })}
-        />
+      {/* Vue graphiques */}
+      {viewMode === "graphiques" && (
+        <ChartGrid charts={[
+          { key:"pie",     title:"Répartition par catégorie / sous-catégorie",  node: pieNode },
+          { key:"monthly", title:"Évolution des dépenses / mois",               node: monthlyNode,
+            onResetZoom: () => setBrushIdxD(null), brushActive: !!brushIdxD },
+        ]}/>
       )}
 
-      {/* Detail by category — accordion */}
-      {orderedCats.map(cat => {
-        const subs = grouped[cat];
-        const catTotal = Object.values(subs).flat().reduce((s,d) => s+d.montant, 0);
-        return (
-          <CatAccordion key={cat} cat={cat} subs={subs} catTotal={catTotal} fmt={fmt}
-            onEdit={d => setEditing(d)}
-            onDelete={async (d) => { await invoke("delete_depense",{id:d.id}); load(mois); loadAll(); }}/>
-        );
-      })}
+      {/* Vue dépenses — récurrentes + accordéons */}
+      {viewMode === "depenses" && (<>
+        {recurrentesDuMois.length > 0 && (
+          <RecurrenteSection recurrentes={recurrentesDuMois} fmt={fmt}
+            onEdit={r => { setEditingRec(r); setRecModal(true); }}
+            onDelete={r => setConfirmDeleteRec({ id: r.id!, label: r.libelle })}
+          />
+        )}
 
-      {depenses.length === 0 && !loading && (
-        <div className="empty">Aucune dépense enregistrée pour ce mois.</div>
-      )}
+        {orderedCats.map(cat => {
+          const subs = grouped[cat];
+          const catTotal = Object.values(subs).flat().reduce((s,d) => s+d.montant, 0);
+          return (
+            <CatAccordion key={cat} cat={cat} subs={subs} catTotal={catTotal} fmt={fmt}
+              onEdit={d => setEditing(d)}
+              onDelete={async (d) => { await invoke("delete_depense",{id:d.id}); load(mois); loadAll(); }}/>
+          );
+        })}
+
+        {depenses.length === 0 && !loading && (
+          <div className="empty">Aucune dépense enregistrée pour ce mois.</div>
+        )}
+      </>)}
 
       {modal && (
         <Modal initial={emptyDep} libelles={libelles} title="Ajouter une dépense"

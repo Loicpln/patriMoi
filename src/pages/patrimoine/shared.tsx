@@ -63,9 +63,9 @@ export function ChartGrid({charts}:{charts:{key:string;title:string;node:(h:numb
         if(exp&&!isExp)return null;
         const h=isExp?520:260;
         return(
-          <div key={c.key} className="chart-card" style={{margin:0,height:h+52}}>
+          <div key={c.key} className="chart-card" style={{margin:0,height:h+52,overflow:"hidden"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-              <div className="chart-title" style={{marginBottom:0,fontSize:12}}>{c.title}</div>
+              <div className="chart-title">{c.title}</div>
               <div style={{display:"flex",gap:4,alignItems:"center"}}>
                 {c.onResetZoom&&(
                   <button className="btn btn-ghost btn-sm" style={{fontSize:10,opacity:c.brushActive?1:0.35,cursor:c.brushActive?"pointer":"default"}}
@@ -78,7 +78,7 @@ export function ChartGrid({charts}:{charts:{key:string;title:string;node:(h:numb
                 </button>
               </div>
             </div>
-            <div style={{height:h}}>{c.node(h,isExp)}</div>
+            <div style={{height:h,overflow:"hidden"}}>{c.node(h,isExp)}</div>
           </div>
         );
       })}
@@ -88,8 +88,8 @@ export function ChartGrid({charts}:{charts:{key:string;title:string;node:(h:numb
 
 // ── Nested Pie ─────────────────────────────────────────────────────────────────
 export function NestedPie({inner,outer,total,fmt,toggleLabel,onToggle,h=260}:{
-  inner:{name:string;value:number;color:string}[];
-  outer:{name:string;value:number;color:string;group?:string}[];
+  inner:{name:string;value:number;color:string;opacity?:number;isNeg?:boolean}[];
+  outer:{name:string;value:number;rawValue?:number;color:string;group?:string;opacity?:number;isNeg?:boolean}[];
   total:number;fmt:(n:number)=>string;toggleLabel?:string;onToggle?:()=>void;h?:number;
 }) {
   const [selectedGroup,setSelectedGroup]=useState<string|null>(null);
@@ -121,15 +121,21 @@ export function NestedPie({inner,outer,total,fmt,toggleLabel,onToggle,h=260}:{
   const CT=({active,payload}:any)=>{
     if(!active||!payload?.length)return null;
     const p=payload[0];
-    const ref=(selectedGroup||selectedOuterName)?filteredOuter.reduce((s,o)=>s+o.value,0):total;
+    const isNeg=p.payload?.isNeg===true;
+    const posOuter=filteredOuter.filter(o=>!o.isNeg);
+    const ref=(selectedGroup||selectedOuterName)?posOuter.reduce((s,o)=>s+o.value,0):total;
     return(
       <div style={{...TOOLTIP_STYLE,padding:"8px 12px"}}>
-        <div style={{color:"var(--text-0)",fontWeight:500,marginBottom:4}}>{p.name}</div>
+        <div style={{color:"var(--text-0)",fontWeight:500,marginBottom:4}}>
+          {isNeg?`↓ ${p.name}`:`↑ ${p.name}`}
+        </div>
         {p.payload?.group&&p.payload.group!==p.name&&(
           <div style={{color:"var(--text-2)",fontSize:10,marginBottom:3}}>{p.payload.group}</div>
         )}
-        <div style={{color:"var(--gold)"}}>{fmt(p.value)}</div>
-        {ref>0&&<div style={{color:"var(--text-1)",fontSize:10,marginTop:2}}>{((p.value/ref)*100).toFixed(1)} %</div>}
+        <div style={{color:isNeg?"var(--rose)":"var(--teal)"}}>
+          {isNeg?`− ${fmt(Math.abs(p.payload?.rawValue??p.value))}`:`+ ${fmt(p.payload?.rawValue??p.value)}`}
+        </div>
+        {!isNeg&&ref>0&&<div style={{color:"var(--text-1)",fontSize:10,marginTop:2}}>{((p.value/ref)*100).toFixed(1)} %</div>}
       </div>
     );
   };
@@ -154,7 +160,7 @@ export function NestedPie({inner,outer,total,fmt,toggleLabel,onToggle,h=260}:{
             {displayInner.map((e,i)=>(
               <Cell key={i} fill={e.color} stroke="var(--bg-1)"
                 strokeWidth={selectedGroup===e.name?3:2}
-                opacity={(selectedGroup&&selectedGroup!==e.name)?0.25:1}/>
+                opacity={(selectedGroup&&selectedGroup!==e.name)?0.15:(e.opacity??1)}/>
             ))}
           </Pie>
           {/* ── Outer ring: click to filter by subcat name across all groups ── */}
@@ -169,7 +175,7 @@ export function NestedPie({inner,outer,total,fmt,toggleLabel,onToggle,h=260}:{
             {filteredOuter.map((e,i)=>(
               <Cell key={i} fill={e.color} stroke="var(--bg-1)"
                 strokeWidth={selectedOuterName===e.name?2.5:1}
-                opacity={1}/>
+                opacity={e.opacity??1}/>
             ))}
           </Pie>
           <Tooltip content={<CT/>}/>
@@ -186,6 +192,13 @@ export function NestedPie({inner,outer,total,fmt,toggleLabel,onToggle,h=260}:{
     </div>
   );
 }
+
+// ── Active dot that hides zero/null values (bell-effect) ──────────────────────
+export const activeDotNoZero = (props: any) => {
+  if (!props.value) return <g/>;
+  const { cx, cy, fill, stroke } = props;
+  return <circle cx={cx} cy={cy} r={4} fill={fill ?? stroke} stroke="white" strokeWidth={1.5}/>;
+};
 
 // ── Accordion section ──────────────────────────────────────────────────────────
 export function AccordionSection({label,count,color,children}:{label:string;count:number;color?:string;children:ReactNode}) {
