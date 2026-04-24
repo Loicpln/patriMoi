@@ -533,7 +533,7 @@ function GlobalRecap({livrets,livretPoches,positions,ventes,dividendes,versement
   // New livrets (nom!=''): cumulative sum per type key
   const newLivBalByType:Record<string,number>={};
   livretPoches.forEach(p=>{
-    const bal=livrets.filter(l=>l.nom===p.nom&&l.poche===p.type_livret&&!isInteret(l)&&(l.date??"")<=mois.slice(0,7)+"-31")
+    const bal=livrets.filter(l=>l.nom===p.nom&&l.poche===p.type_livret&&(l.date??"")<=mois.slice(0,7)+"-31")
       .reduce((s,l)=>s+l.montant,0);
     newLivBalByType[p.type_livret]=(newLivBalByType[p.type_livret]??0)+bal;
   });
@@ -641,7 +641,7 @@ function GlobalRecap({livrets,livretPoches,positions,ventes,dividendes,versement
       return (ia<0?999:ia)-(ib<0?999:ib)||a.nom.localeCompare(b.nom);
     }).map(p=>{
       const typeDef=LIVRETS_DEF.find(l=>l.key===p.type_livret);
-      const val=livrets.filter(lv=>lv.nom===p.nom&&lv.poche===p.type_livret&&!isInteret(lv)&&(lv.date??"").slice(0,7)<=mois).reduce((s,lv)=>s+lv.montant,0);
+      const val=livrets.filter(lv=>lv.nom===p.nom&&lv.poche===p.type_livret&&(lv.date??"").slice(0,7)<=mois).reduce((s,lv)=>s+lv.montant,0);
       return{name:p.nom,group:"Livrets",value:val,color:p.couleur||typeDef?.color||"#F0BD40"};
     }),
     ...poches.map(p=>({name:p.label,group:"Investissements",value:pieToggle==="versements"?(versParPoche[p.key]??0):(portfolioParPoche[p.key]??0),color:p.color})),
@@ -697,7 +697,7 @@ function GlobalRecap({livrets,livretPoches,positions,ventes,dividendes,versement
     const newLivActive:Record<string,boolean>={};
     LIVRETS_DEF.forEach(l=>{newLivByType[l.key]=[];newLivIdx[l.key]=0;newLivCum[l.key]=0;newLivActive[l.key]=false;});
     livretPoches.forEach(p=>{
-      const ops=livrets.filter(lv=>lv.nom===p.nom&&lv.poche===p.type_livret&&!isInteret(lv))
+      const ops=livrets.filter(lv=>lv.nom===p.nom&&lv.poche===p.type_livret)
         .sort((a,b)=>(a.date??"").localeCompare(b.date??""));
       ops.forEach(op=>newLivByType[p.type_livret]?.push({date:op.date,montant:op.montant}));
     });

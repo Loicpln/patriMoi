@@ -101,6 +101,8 @@ export default function DatePicker({
     if (viewM === 12) { setViewM(1); setViewY(y => y + 1); }
     else               setViewM(m => m + 1);
   };
+  const prevYear = () => setViewY(y => y - 1);
+  const nextYear = () => setViewY(y => y + 1);
 
   const selectDay = (d: number) => {
     onChange(toStr(viewY, viewM, d));
@@ -125,11 +127,13 @@ export default function DatePicker({
     <div ref={popupRef} className="dp-popup" style={popupStyle}>
       {/* Month / year navigation */}
       <div className="dp-nav">
-        <button className="dp-nav-btn" onClick={prevMonth}>‹</button>
+        <button className="dp-nav-btn" onClick={prevYear}  title="Année précédente">«</button>
+        <button className="dp-nav-btn" onClick={prevMonth} title="Mois précédent">‹</button>
         <span className="dp-nav-title">
           {FR_MONTHS[viewM - 1]} {viewY}
         </span>
-        <button className="dp-nav-btn" onClick={nextMonth}>›</button>
+        <button className="dp-nav-btn" onClick={nextMonth} title="Mois suivant">›</button>
+        <button className="dp-nav-btn" onClick={nextYear}  title="Année suivante">»</button>
       </div>
 
       {/* Weekday headers */}

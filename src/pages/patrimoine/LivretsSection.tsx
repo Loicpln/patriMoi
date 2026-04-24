@@ -58,11 +58,11 @@ const extractYear = (l: Livret): number => {
   return m ? parseInt(m[1]) : parseInt(l.date.slice(0, 4));
 };
 const computeBalance = (ops: Livret[]) =>
-  ops.filter(o => !isInteret(o)).reduce((s, o) => s + o.montant, 0);
+  ops.reduce((s, o) => s + o.montant, 0);
 
 // ── Daily cumulative data for one livret ──────────────────────────────────────
 function buildDailyData(ops: Livret[], key: string): any[] {
-  const sorted = ops.filter(o => !isInteret(o)).sort((a, b) => a.date.localeCompare(b.date));
+  const sorted = ops.sort((a, b) => a.date.localeCompare(b.date));
   if (!sorted.length) return [];
   const dates: string[] = [];
   const cur = new Date(sorted[0].date);
@@ -81,7 +81,7 @@ function buildGlobalDailyData(livrets: Livret[], livretPoches: LivretPoche[]): a
   if (!livretPoches.length) return [];
   let firstDate = "";
   livretPoches.forEach(p =>
-    livrets.filter(l => l.poche === p.type_livret && l.nom === p.nom && !isInteret(l))
+    livrets.filter(l => l.poche === p.type_livret && l.nom === p.nom)
       .forEach(o => { if (!firstDate || o.date < firstDate) firstDate = o.date; })
   );
   if (!firstDate) return [];
@@ -96,7 +96,7 @@ function buildGlobalDailyData(livrets: Livret[], livretPoches: LivretPoche[]): a
   const active: Record<string, boolean>  = {};
   livretPoches.forEach(p => {
     const k = keyId(p.type_livret, p.nom);
-    ops[k]    = livrets.filter(l => l.poche === p.type_livret && l.nom === p.nom && !isInteret(l))
+    ops[k]    = livrets.filter(l => l.poche === p.type_livret && l.nom === p.nom)
                   .sort((a, b) => a.date.localeCompare(b.date));
     idx[k] = 0; val[k] = 0; active[k] = false;
   });
@@ -140,7 +140,7 @@ function LivretPocheSection({
 
   const balance          = useMemo(() => computeBalance(ops), [ops]);
   const balanceAtMois    = useMemo(() =>
-    ops.filter(o => !isInteret(o) && o.date.slice(0, 7) <= mois)
+    ops.filter(o => o.date.slice(0, 7) <= mois)
        .reduce((s, o) => s + o.montant, 0),
   [ops, mois]);
   const interestsMap     = useMemo(() => {
@@ -408,7 +408,7 @@ export function LivretsSection({
   livrets: Livret[]; livretPoches: LivretPoche[]; mois: string; onRefresh: () => void;
   viewMode: "graphiques"|"livrets"; onToggleView: () => void;
 }) {
-  const { fmt } = useDevise();
+  const { fmt, fmtAxis } = useDevise();
 
   // Modals
   const [pocheFormOpen,   setPocheFormOpen]   = useState(false);
@@ -433,7 +433,7 @@ export function LivretsSection({
     const m: Record<string, number> = {};
     livretPoches.forEach(p => {
       m[keyId(p.type_livret, p.nom)] = newOps
-        .filter(o => o.poche === p.type_livret && o.nom === p.nom && !isInteret(o) && o.date.slice(0, 7) <= mois)
+        .filter(o => o.poche === p.type_livret && o.nom === p.nom && o.date.slice(0, 7) <= mois)
         .reduce((s, o) => s + o.montant, 0);
     });
     return m;
@@ -540,7 +540,7 @@ export function LivretsSection({
           <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
           <XAxis dataKey="date" ticks={globalXTicks} tick={{ fontSize:8, fontFamily:"JetBrains Mono" }}
             tickFormatter={d => MN_SHORT[parseInt(d.slice(5,7))-1]+" "+d.slice(2,4)}/>
-          <YAxis tick={{ fontSize:8, fontFamily:"JetBrains Mono" }} width={32}/>
+          <YAxis tick={{ fontSize:8, fontFamily:"JetBrains Mono" }} tickFormatter={fmtAxis} width={32}/>
           <Tooltip content={<GlobalTooltip/>}/>
           {sortedPoches.map(p => {
             const k = keyId(p.type_livret, p.nom);

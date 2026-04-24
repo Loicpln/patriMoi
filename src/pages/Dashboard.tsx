@@ -105,7 +105,7 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
   // ── Livrets au mois sélectionné ───────────────────────────────────────────────
   const isInteret = (l: Livret) => (l.notes ?? "").startsWith("[INTERET");
   const totalLivrets = livrets
-    .filter(l => !isInteret(l) && l.date.slice(0, 7) <= mois)
+    .filter(l => l.date.slice(0, 7) <= mois)
     .reduce((s, l) => s + l.montant, 0);
 
   // ── Portfolio value au mois sélectionné (valeur de marché) ────────────────────
@@ -239,7 +239,7 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
   const { patriPieInner, patriPieOuter, patriPieTotal } = useMemo(() => {
     // Deltas signés par entité (retrait = négatif)
     const livByType: Record<string, number> = {};
-    livrets.filter(l => !isInteret(l) && l.date.slice(0, 7) === mois)
+    livrets.filter(l => l.date.slice(0, 7) === mois)
       .forEach(l => { livByType[l.poche] = (livByType[l.poche] ?? 0) + l.montant; });
     const invByPoche: Record<string, number> = {};
     versements.filter(v => v.date.slice(0, 7) === mois)
@@ -293,7 +293,7 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
     if (!firstMonth) return [];
     const months = monthsBetween(firstMonth, curMonth);
     const raw = months.map(m => {
-      const liv = livrets.filter(l => !isInteret(l) && l.date.slice(0, 7) <= m)
+      const liv = livrets.filter(l => l.date.slice(0, 7) <= m)
         .reduce((s, l) => s + l.montant, 0);
       let inv = 0;
       poches.forEach(p => {
