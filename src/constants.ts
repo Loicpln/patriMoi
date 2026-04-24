@@ -64,7 +64,7 @@ export const DEPENSE_CAT_KEYS = Object.keys(DEPENSE_CATEGORIES);
 
 // ── Tooltip style partagé pour Recharts ───────────────────────
 export const TOOLTIP_STYLE = {
-  background: "#13161d",
+  background: "rgba(19,22,29,0.5)",
   border: "1px solid #2a2f3f",
   borderRadius: 8,
   fontFamily: "JetBrains Mono",
