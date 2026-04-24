@@ -30,6 +30,6 @@
     },
     "security": { "csp": null },
     "updater": { "active": false },
-    "windows": [{ "fullscreen": true, "height": 820, "resizable": true, "title": "Patri'Moi", "width": 1300, "minWidth": 1000, "minHeight": 650 }]
+    "windows": [{ "fullscreen": false, "height": 820, "resizable": true, "title": "Patri'Moi", "width": 1300, "minWidth": 1000, "minHeight": 650 }]
   }
 }
