@@ -6,7 +6,7 @@ import {
 } from "recharts";
 import { useDevise } from "../../context/DeviseContext";
 import { LIVRETS_DEF, TOOLTIP_ITEM_STYLE, TOOLTIP_LABEL_STYLE, TOOLTIP_STYLE } from "../../constants";
-import { ChartGrid, NestedPie, AccordionSection, bellEffect, activeDotNoZero } from "./shared";
+import { ChartGrid, NestedPie, AccordionSection, bellEffect, activeDotNoZero, useDaySelector, DayColumns } from "./shared";
 import { LivretPocheFormModal, LivretPocheEditModal, OpLivretModal } from "./modals";
 import { ExportBtn, ImportBtn, ImportModal, exportLivretPoche,
   importLivretOps, exportLivretsBatch, type ImportPending } from "./InvestSettings";
@@ -417,6 +417,7 @@ export function LivretsSection({
   const [importPending,   setImportPending]    = useState<ImportPending|null>(null);
 
   const annee  = parseInt(mois.slice(0, 4));
+  const { selectedDay: selDayL, setSelectedDay: setSelDayL, displayDate: displayDateL } = useDaySelector(mois);
   const newOps = useMemo(() => livrets.filter(l => l.nom !== ""), [livrets]);
 
   // Sort livretPoches by LIVRETS_DEF order (bottom → top: LDDS, Livret A, LEP, Livret Jeune)
@@ -428,16 +429,16 @@ export function LivretsSection({
     [...livretPoches].sort((a, b) => defIdx(a.type_livret) - defIdx(b.type_livret) || a.nom.localeCompare(b.nom)),
   [livretPoches]);
 
-  // Balance per poche at selected month
+  // Balance per poche at selected day
   const balanceMap = useMemo(() => {
     const m: Record<string, number> = {};
     livretPoches.forEach(p => {
       m[keyId(p.type_livret, p.nom)] = newOps
-        .filter(o => o.poche === p.type_livret && o.nom === p.nom && o.date.slice(0, 7) <= mois)
+        .filter(o => o.poche === p.type_livret && o.nom === p.nom && o.date <= displayDateL)
         .reduce((s, o) => s + o.montant, 0);
     });
     return m;
-  }, [newOps, livretPoches, mois]);
+  }, [newOps, livretPoches, displayDateL]);
 
   const totalBalance   = Object.values(balanceMap).reduce((s, v) => s + v, 0);
   const totalInterests = useMemo(() =>
@@ -516,9 +517,13 @@ export function LivretsSection({
     );
   };
 
-  const pieNode = (h: number) => !pieInner.length
-    ? <div className="empty">Aucun livret</div>
-    : <NestedPie inner={pieInner} outer={pieOuter} total={totalBalance} fmt={fmt} h={h}/>;
+  const pieNode = (h: number, isExp?: boolean) => {
+    const content = !pieInner.length
+      ? <div className="empty" style={{height:'100%',display:'flex',alignItems:'center',justifyContent:'center'}}>Aucun livret</div>
+      : <NestedPie inner={pieInner} outer={pieOuter} total={totalBalance} fmt={fmt} h={h}/>;
+    if (!isExp) return !pieInner.length ? <div className="empty">Aucun livret</div> : content;
+    return <DayColumns mois={mois} selectedDay={selDayL} setSelectedDay={setSelDayL} h={h}>{content}</DayColumns>;
+  };
 
   const stackNode = (h: number, isExp: boolean) => !globalData.length
     ? <div className="empty">Aucune donnée</div>

@@ -11,7 +11,7 @@ import { DEPENSE_CATEGORIES, TOOLTIP_STYLE, depenseSubColor, defaultDateForMonth
 import DatePicker from "../components/DatePicker";
 import NumInput from "../components/NumInput";
 import MonthSelector from "../components/MonthSelector";
-import { NestedPie, bellEffect } from "./patrimoine/shared";
+import { NestedPie, bellEffect, useDaySelector, DayColumns } from "./patrimoine/shared";
 
 interface Depense {
   id?: number; date: string; categorie: string;
@@ -262,6 +262,7 @@ export default function Depenses() {
   const [allDepenses, setAllDepenses]   = useState<Depense[]>([]);
   const [mois, setMois]                 = useState(curMonth);
   useEffect(()=>{ setCtxMois(mois); },[mois,setCtxMois]);
+  const { selectedDay: selDayDep, setSelectedDay: setSelDayDep, displayDate: displayDateDep } = useDaySelector(mois);
   const [modal, setModal]               = useState(false);
   const [editing, setEditing]           = useState<Depense | null>(null);
   const [loading, setLoading]           = useState(false);
@@ -328,16 +329,16 @@ export default function Depenses() {
     );
   }, [recurrentes, mois]);
 
-  // Double-ring pie data — ordered by category key order
+  // Double-ring pie data — ordered by category key order, filtered to selected day
   const catMap = useMemo(() => {
     const m: Record<string, {total:number;subs:Record<string,number>}> = {};
-    depenses.forEach(d => {
+    depenses.filter(d => d.date <= displayDateDep).forEach(d => {
       if (!m[d.categorie]) m[d.categorie] = { total:0, subs:{} };
       m[d.categorie].total += d.montant;
       m[d.categorie].subs[d.sous_categorie] = (m[d.categorie].subs[d.sous_categorie]??0) + d.montant;
     });
     return m;
-  }, [depenses]);
+  }, [depenses, displayDateDep]);
 
   const pieInner = useMemo(() =>
     CAT_KEYS.flatMap(cat => {
@@ -516,9 +517,14 @@ export default function Depenses() {
     categorie: CAT_KEYS[0], sous_categorie: CATEGORIES[CAT_KEYS[0]]?.[0] ?? "Autre", libelle: "", montant: 0,
   };
 
-  const pieNode = (h: number, _isExp?: boolean) => pieInner.length === 0
-    ? <div className="empty">Aucune dépense ce mois.</div>
-    : <NestedPie inner={pieInner} outer={pieOuter} total={total} fmt={fmt} h={h}/>;
+  const pieNode = (h: number, isExp?: boolean) => {
+    const pieTotal = pieInner.reduce((s, p) => s + p.value, 0);
+    const content = pieInner.length === 0
+      ? <div className="empty" style={{height:'100%',display:'flex',alignItems:'center',justifyContent:'center'}}>Aucune dépense ce mois.</div>
+      : <NestedPie inner={pieInner} outer={pieOuter} total={pieTotal} fmt={fmt} h={h}/>;
+    if (!isExp) return pieInner.length === 0 ? <div className="empty">Aucune dépense ce mois.</div> : content;
+    return <DayColumns mois={mois} selectedDay={selDayDep} setSelectedDay={setSelDayDep} h={h}>{content}</DayColumns>;
+  };
 
   const barNode = (h: number, _isExp?: boolean) => (
     <ResponsiveContainer width="100%" height={h}>

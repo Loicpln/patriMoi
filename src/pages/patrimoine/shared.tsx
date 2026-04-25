@@ -1,9 +1,114 @@
 // ── Shared UI components for Patrimoine ───────────────────────────────────────
-import { useState, Component, ReactNode } from "react";
+import { useState, useEffect, useMemo, Component, ReactNode } from "react";
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
 } from "recharts";
 import { TOOLTIP_STYLE } from "../../constants";
+
+// ── Day Selector hook ─────────────────────────────────────────────────────────
+/** Auto-initialises to last day of month (or today if current month).
+ *  Auto-resets via useEffect whenever mois changes. */
+export function useDaySelector(mois: string) {
+  const [selectedDay, setSelectedDay] = useState<number | null>(null);
+  useEffect(() => {
+    const todayFull = new Date().toISOString().slice(0, 10);
+    const curMois = todayFull.slice(0, 7);
+    if (mois === curMois) {
+      setSelectedDay(parseInt(todayFull.slice(8, 10)));
+    } else {
+      const [y, m] = mois.split('-').map(Number);
+      setSelectedDay(new Date(y, m, 0).getDate());
+    }
+  }, [mois]);
+  const displayDate = useMemo(() =>
+    selectedDay ? `${mois}-${String(selectedDay).padStart(2, '0')}` : `${mois}-31`,
+  [mois, selectedDay]);
+  return { selectedDay, setSelectedDay, displayDate };
+}
+
+// ── Day picker columns (expanded-pie calendar sidebar) ─────────────────────────
+// Each side shows half the month as a 2-column grid of square day buttons
+// that fill the full available height h.
+export function DayColumns({ mois, selectedDay, setSelectedDay, children, h }: {
+  mois: string; selectedDay: number | null;
+  setSelectedDay: (d: number | null) => void;
+  children: ReactNode; h: number;
+}) {
+  const year = parseInt(mois.slice(0, 4));
+  const month = parseInt(mois.slice(5, 7));
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const todayFull = new Date().toISOString().slice(0, 10);
+  const maxDay = mois === todayFull.slice(0, 7) ? parseInt(todayFull.slice(8, 10)) : daysInMonth;
+  const mid = Math.ceil(daysInMonth / 2);
+  const leftDays  = Array.from({ length: mid },               (_, i) => i + 1);
+  const rightDays = Array.from({ length: daysInMonth - mid }, (_, i) => mid + i + 1);
+
+  // 2 columns per side → number of rows = ceil(halfDays / 2)
+  const gap = 2;
+  const numRowsL = Math.ceil(mid / 2);
+  const numRowsR = Math.ceil((daysInMonth - mid) / 2);
+  // Square button size: fill height h with numRows rows + gaps between them
+  const btnSzL = Math.floor((h - 2 * gap * (numRowsL - 1)) / numRowsL);
+  const btnSzR = Math.floor((h - 2 * gap * (numRowsR - 1)) / numRowsR);
+  const fszL = Math.max(9, Math.min(18, Math.floor(btnSzL * 0.38)));
+  const fszR = Math.max(9, Math.min(18, Math.floor(btnSzR * 0.38)));
+
+  const dayBtn = (d: number, sz: number, fsz: number) => {
+    const disabled = d > maxDay;
+    const active = selectedDay === d;
+    return (
+      <button key={d} disabled={disabled}
+        onClick={() => !disabled && setSelectedDay(selectedDay === d ? null : d)}
+        style={{
+          width: sz, height: sz, padding: 0, flexShrink: 0,
+          border: active ? '2px solid var(--gold)' : '1px solid var(--border)',
+          background: active ? 'var(--gold)' : 'var(--bg-2)',
+          color: disabled ? 'var(--text-3)' : active ? 'var(--bg-0)' : 'var(--text-1)',
+          cursor: disabled ? 'not-allowed' : 'pointer',
+          fontFamily: 'var(--mono)', fontSize: fsz, borderRadius: 3,
+          opacity: disabled ? 0.3 : 1,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>{d}</button>
+    );
+  };
+
+  return (
+    <div style={{ display: 'flex', height: h, alignItems: 'center', gap: 6 }}>
+      {/* Left side: days 1–mid in a 2-col square grid */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: `repeat(2, ${btnSzL}px)`,
+        gap,
+        flexShrink: 0,
+        paddingRight: 4,
+      }}>
+        {leftDays.map(d => dayBtn(d, btnSzL, fszL))}
+      </div>
+      {/* Center: date label + pie */}
+      <div style={{ flex: 1, minWidth: 0, height: '100%', position: 'relative' }}>
+        {selectedDay && (
+          <div style={{ position: 'absolute', top: 6, left: '50%', transform: 'translateX(-50%)',
+            fontSize: 9, color: 'var(--gold)', fontFamily: 'var(--mono)',
+            zIndex: 1, whiteSpace: 'nowrap', letterSpacing: '.04em',
+            background: 'var(--bg-2)', padding: '1px 6px', borderRadius: 4 }}>
+            {mois}-{String(selectedDay).padStart(2, '0')}
+          </div>
+        )}
+        {children}
+      </div>
+      {/* Right side: days mid+1–end in a 2-col square grid */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: `repeat(2, ${btnSzR}px)`,
+        gap,
+        flexShrink: 0,
+        paddingLeft: 4,
+      }}>
+        {rightDays.map(d => dayBtn(d, btnSzR, fszR))}
+      </div>
+    </div>
+  );
+}
 
 // ── Error Boundary ─────────────────────────────────────────────────────────────
 export class Boundary extends Component<{label:string;children:ReactNode},{err:string|null}> {

@@ -19,7 +19,7 @@ import {
   GLOBAL_GROUP_COLORS, TOOLTIP_STYLE, monthsBetween,
 } from "../constants";
 import MonthSelector from "../components/MonthSelector";
-import { Boundary, ChartGrid, NestedPie, bellEffect } from "./patrimoine/shared";
+import { Boundary, ChartGrid, NestedPie, bellEffect, useDaySelector, DayColumns } from "./patrimoine/shared";
 import { LivretsSection } from "./patrimoine/LivretsSection";
 import { PocheSection } from "./patrimoine/PocheSection";
 import { exportPoche, exportScpiValuations, importPoche, importScpi, parseCsvContent,
@@ -67,6 +67,7 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
   const MN_SHORT=["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
   const [pieToggle,setPieToggle]=useState<"versements"|"investi"|"valeur">("valeur");
   const [brushIdxR,setBrushIdxR]=useState<{start:number;end:number}|null>(null);
+  const {selectedDay:selDayR,setSelectedDay:setSelDayR,displayDate:displayDateR}=useDaySelector(mois);
 
   // SCPI price map
   const scpiPriceMap=useMemo(()=>buildScpiMap(scpiValuations),[scpiValuations]);
@@ -114,10 +115,10 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
       type Ev={date:string;type:"buy"|"sell";ticker:string;subcat:string;qty:number;price:number};
       const evs:Ev[]=[
         ...positions
-          .filter(pos=>pos.poche===p.key&&(pos.date_achat??"").slice(0,7)<=mois)
+          .filter(pos=>pos.poche===p.key&&(pos.date_achat??"")<=displayDateR)
           .map(pos=>({date:pos.date_achat??"",type:"buy" as const,ticker:pos.ticker,subcat:pos.sous_categorie??"actions",qty:pos.quantite,price:pos.prix_achat})),
         ...ventes
-          .filter(v=>v.poche===p.key&&(v.date_vente??"").slice(0,7)<=mois)
+          .filter(v=>v.poche===p.key&&(v.date_vente??"")<=displayDateR)
           .map(v=>({date:v.date_vente??"",type:"sell" as const,ticker:v.ticker,subcat:"",qty:v.quantite,price:0})),
       ].sort((a,b)=>a.date.localeCompare(b.date));
 
@@ -137,7 +138,7 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
 
       if(pieToggle==="versements"){
         // Inner = versements per poche; outer = versements distributed proportionally by subcat invested
-        const versP=versements.filter(v=>v.poche===p.key&&(v.date??"").slice(0,7)<=mois).reduce((s,v)=>s+v.montant,0);
+        const versP=versements.filter(v=>v.poche===p.key&&(v.date??"")<=displayDateR).reduce((s,v)=>s+v.montant,0);
         if(versP>0){
           if(!pocheMap[p.key])pocheMap[p.key]={value:0,color:p.color};
           pocheMap[p.key].value+=versP;
@@ -172,9 +173,9 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
           outerMap[outKey].value+=val;
         });
         // Espèces (uninvested cash in the poche)
-        const versTotal=versements.filter(v=>v.poche===p.key&&(v.date??"").slice(0,7)<=mois).reduce((s,v)=>s+v.montant,0);
-        const pnlReal=ventes.filter(v=>v.poche===p.key&&(v.date_vente??"").slice(0,7)<=mois).reduce((s,v)=>s+v.pnl,0);
-        const divTotal=dividendes.filter(d=>d.poche===p.key&&(d.date??"").slice(0,7)<=mois).reduce((s,d)=>s+d.montant,0);
+        const versTotal=versements.filter(v=>v.poche===p.key&&(v.date??"")<=displayDateR).reduce((s,v)=>s+v.montant,0);
+        const pnlReal=ventes.filter(v=>v.poche===p.key&&(v.date_vente??"")<=displayDateR).reduce((s,v)=>s+v.pnl,0);
+        const divTotal=dividendes.filter(d=>d.poche===p.key&&(d.date??"")<=displayDateR).reduce((s,d)=>s+d.montant,0);
         const esp=Math.max(0,versTotal+pnlReal+divTotal-pocheCost);
         if(esp>0){
           if(!pocheMap[p.key])pocheMap[p.key]={value:0,color:p.color};
@@ -198,7 +199,7 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
     const grandTotal=Object.values(pocheMap).reduce((s,v)=>s+v.value,0);
     return{inner,outer,grandTotal};
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[positions,ventes,dividendes,versements,mois,pieToggle,getPrice]);
+  },[positions,ventes,dividendes,versements,mois,displayDateR,pieToggle,getPrice]);
 
   // ── Stat cards: versements / investi / valorisation pour le mois sélectionné ──
   const statCards=useMemo(()=>{
@@ -391,11 +392,15 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
     );
   };
 
-  const pieNode=(h:number,_isExp?:boolean)=>inner.length===0?<div className="empty">Aucune donnée</div>:(
-    <NestedPie inner={inner} outer={outer} total={grandTotal} fmt={fmt} h={h}
-      toggleLabel={pieToggle==="versements"?"↔ Versements":pieToggle==="investi"?"↔ Investi":"↔ Valorisation"}
-      onToggle={()=>setPieToggle(v=>v==="versements"?"investi":v==="investi"?"valeur":"versements")}/>
-  );
+  const pieNode=(h:number,isExp?:boolean)=>{
+    const content=inner.length===0
+      ?<div className="empty" style={{height:'100%',display:'flex',alignItems:'center',justifyContent:'center'}}>Aucune donnée</div>
+      :<NestedPie inner={inner} outer={outer} total={grandTotal} fmt={fmt} h={h}
+        toggleLabel={pieToggle==="versements"?"↔ Versements":pieToggle==="investi"?"↔ Investi":"↔ Valorisation"}
+        onToggle={()=>setPieToggle(v=>v==="versements"?"investi":v==="investi"?"valeur":"versements")}/>;
+    if(!isExp)return content;
+    return <DayColumns mois={mois} selectedDay={selDayR} setSelectedDay={setSelDayR} h={h}>{content}</DayColumns>;
+  };
   const stackNode=(h:number,isExp?:boolean)=>stackedData.length===0?<div className="empty">Aucune donnée</div>:(()=>{
     const d=isExp?stackedData:visibleStackedData;
     return(
@@ -521,6 +526,7 @@ function GlobalRecap({livrets,livretPoches,positions,ventes,dividendes,versement
   const {poches}=usePoches();
   const [pieToggle,setPieToggle]=useState<"versements"|"valeur">("valeur");
   const [brushIdxG,setBrushIdxG]=useState<{start:number;end:number}|null>(null);
+  const {selectedDay,setSelectedDay,displayDate}=useDaySelector(mois);
 
   // SCPI price map
   const scpiPriceMap=useMemo(()=>buildScpiMap(scpiValuations),[scpiValuations]);
@@ -533,7 +539,7 @@ function GlobalRecap({livrets,livretPoches,positions,ventes,dividendes,versement
   // New livrets (nom!=''): cumulative sum per type key
   const newLivBalByType:Record<string,number>={};
   livretPoches.forEach(p=>{
-    const bal=livrets.filter(l=>l.nom===p.nom&&l.poche===p.type_livret&&(l.date??"")<=mois.slice(0,7)+"-31")
+    const bal=livrets.filter(l=>l.nom===p.nom&&l.poche===p.type_livret&&(l.date??"")<=displayDate)
       .reduce((s,l)=>s+l.montant,0);
     newLivBalByType[p.type_livret]=(newLivBalByType[p.type_livret]??0)+bal;
   });
@@ -581,9 +587,9 @@ function GlobalRecap({livrets,livretPoches,positions,ventes,dividendes,versement
     poches.forEach(p=>{
       type Ev={date:string;type:"buy"|"sell";ticker:string;subcat:string;qty:number;price:number};
       const evs:Ev[]=[
-        ...positions.filter(pos=>pos.poche===p.key&&(pos.date_achat??"").slice(0,7)<=mois)
+        ...positions.filter(pos=>pos.poche===p.key&&(pos.date_achat??"")<=displayDate)
           .map(pos=>({date:pos.date_achat??"",type:"buy" as const,ticker:pos.ticker,subcat:pos.sous_categorie??"actions",qty:pos.quantite,price:pos.prix_achat})),
-        ...ventes.filter(v=>v.poche===p.key&&(v.date_vente??"").slice(0,7)<=mois)
+        ...ventes.filter(v=>v.poche===p.key&&(v.date_vente??"")<=displayDate)
           .map(v=>({date:v.date_vente??"",type:"sell" as const,ticker:v.ticker,subcat:"",qty:v.quantite,price:0})),
       ].sort((a,b)=>a.date.localeCompare(b.date));
       const byT:Record<string,{q:number;inv:number;subcat:string}>={};
@@ -606,22 +612,22 @@ function GlobalRecap({livrets,livretPoches,positions,ventes,dividendes,versement
       },0);
       // Espèces = versements + PnL réalisé + dividendes − montant investi dans les positions ouvertes
       const pocheCost=Object.values(byT).reduce((s,d)=>s+d.inv,0);
-      const versTotal=versements.filter(v=>v.poche===p.key&&(v.date??"").slice(0,7)<=mois).reduce((s,v)=>s+v.montant,0);
-      const pnlReal=ventes.filter(v=>v.poche===p.key&&(v.date_vente??"").slice(0,7)<=mois).reduce((s,v)=>s+v.pnl,0);
-      const divTotal=dividendes.filter(d=>d.poche===p.key&&(d.date??"").slice(0,7)<=mois).reduce((s,d)=>s+d.montant,0);
+      const versTotal=versements.filter(v=>v.poche===p.key&&(v.date??"")<=displayDate).reduce((s,v)=>s+v.montant,0);
+      const pnlReal=ventes.filter(v=>v.poche===p.key&&(v.date_vente??"")<=displayDate).reduce((s,v)=>s+v.pnl,0);
+      const divTotal=dividendes.filter(d=>d.poche===p.key&&(d.date??"")<=displayDate).reduce((s,d)=>s+d.montant,0);
       const esp=Math.max(0,versTotal+pnlReal+divTotal-pocheCost);
       result[p.key]=marketVal+esp;
     });
     return result;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[positions,ventes,dividendes,versements,mois,getPriceGlobal]);
+  },[positions,ventes,dividendes,versements,displayDate,getPriceGlobal]);
 
-  // Versements per poche up to mois
+  // Versements per poche up to displayDate
   const versParPoche=useMemo(()=>{
     const m:Record<string,number>={};
-    versements.filter(v=>(v.date??"").slice(0,7)<=mois).forEach(v=>{m[v.poche]=(m[v.poche]??0)+v.montant;});
+    versements.filter(v=>(v.date??"")<=displayDate).forEach(v=>{m[v.poche]=(m[v.poche]??0)+v.montant;});
     return m;
-  },[versements,mois]);
+  },[versements,displayDate]);
 
   const totalPortfolioValue=Object.values(portfolioParPoche).reduce((s,v)=>s+v,0);
   const totalVersInvest=Object.values(versParPoche).reduce((s,v)=>s+v,0);
@@ -641,7 +647,7 @@ function GlobalRecap({livrets,livretPoches,positions,ventes,dividendes,versement
       return (ia<0?999:ia)-(ib<0?999:ib)||a.nom.localeCompare(b.nom);
     }).map(p=>{
       const typeDef=LIVRETS_DEF.find(l=>l.key===p.type_livret);
-      const val=livrets.filter(lv=>lv.nom===p.nom&&lv.poche===p.type_livret&&(lv.date??"").slice(0,7)<=mois).reduce((s,lv)=>s+lv.montant,0);
+      const val=livrets.filter(lv=>lv.nom===p.nom&&lv.poche===p.type_livret&&(lv.date??"")<=displayDate).reduce((s,lv)=>s+lv.montant,0);
       return{name:p.nom,group:"Livrets",value:val,color:p.couleur||typeDef?.color||"#F0BD40"};
     }),
     ...poches.map(p=>({name:p.label,group:"Investissements",value:pieToggle==="versements"?(versParPoche[p.key]??0):(portfolioParPoche[p.key]??0),color:p.color})),
@@ -766,11 +772,15 @@ function GlobalRecap({livrets,livretPoches,positions,ventes,dividendes,versement
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[livrets,livretPoches,positions,ventes,dividendes,versements,getPriceGlobal]);
 
-  const pieNode=(h:number,_isExp?:boolean)=>inner.length===0?<div className="empty">Aucune donnée</div>:(
-    <NestedPie inner={inner} outer={outer} total={grandTotal} fmt={fmt} h={h}
-      toggleLabel={pieToggle==="versements"?"↔ Versements":"↔ Valorisation"}
-      onToggle={()=>setPieToggle(v=>v==="versements"?"valeur":"versements")}/>
-  );
+  const pieNode=(h:number,isExp?:boolean)=>{
+    const content=inner.length===0
+      ?<div className="empty" style={{height:'100%',display:'flex',alignItems:'center',justifyContent:'center'}}>Aucune donnée</div>
+      :<NestedPie inner={inner} outer={outer} total={grandTotal} fmt={fmt} h={h}
+        toggleLabel={pieToggle==="versements"?"↔ Versements":"↔ Valorisation"}
+        onToggle={()=>setPieToggle(v=>v==="versements"?"valeur":"versements")}/>;
+    if(!isExp)return content;
+    return <DayColumns mois={mois} selectedDay={selectedDay} setSelectedDay={setSelectedDay} h={h}>{content}</DayColumns>;
+  };
 
   // Custom tooltip for GlobalRecap — total › investissements › livrets › detail
   const _livLabels=new Set(LIVRETS_DEF.map(l=>l.label));
@@ -892,7 +902,7 @@ function GlobalRecap({livrets,livretPoches,positions,ventes,dividendes,versement
       <div className="stat-card sc-lav"><div className="sc-label">Total patrimoine financier</div><div className="sc-value pos">{fmt(totalLivrets+totalPortfolioValue)}</div></div>
     </div>
     <ChartGrid charts={[
-      {key:"global_pie",   title:`Répartition globale · ${mois}`,  node:pieNode},
+      {key:"global_pie",   title:`Répartition globale · ${selectedDay?`${mois}-${String(selectedDay).padStart(2,'0')}`:mois}`,  node:pieNode},
       {key:"global_stack", title:"Évolution globale / mois",          node:stackNode,
         onResetZoom:()=>setBrushIdxG(null), brushActive:!!brushIdxG},
     ]}/>

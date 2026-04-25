@@ -9,7 +9,7 @@ const curMonth = new Date().toISOString().slice(0, 7);
 import MonthSelector from "../components/MonthSelector";
 import { TOOLTIP_STYLE, TOOLTIP_LABEL_STYLE, TOOLTIP_ITEM_STYLE, monthsBetween, DEPENSE_CATEGORIES, DEPENSE_CAT_KEYS, depenseSubColor, tickerColor, PRIME_TYPE_COLORS, LIVRETS_DEF, LIVRET_COLOR, GLOBAL_GROUP_COLORS } from "../constants";
 import { usePoches } from "../context/PochesContext";
-import { NestedPie, bellEffect } from "./patrimoine/shared";
+import { NestedPie, bellEffect, useDaySelector, DayColumns } from "./patrimoine/shared";
 import { useQuotes } from "../hooks/useQuotes";
 
 interface Salaire { id?: number; date: string; salaire_brut: number; salaire_net: number; primes?: number; employeur: string; notes?: string; }
@@ -59,6 +59,8 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
   const expPie    = expChart === "pie";
   const expPat    = expChart === "pat";
   const expPatPie = expChart === "patPie";
+  const { selectedDay: selDayDep,    setSelectedDay: setSelDayDep,    displayDate: displayDateDep    } = useDaySelector(mois);
+  const { selectedDay: selDayPatPie, setSelectedDay: setSelDayPatPie, displayDate: displayDatePatPie } = useDaySelector(mois);
 
   const loadDepenses = useCallback((m: string) => {
     invoke<Depense[]>("get_depenses", { mois: m }).then(setDepenses).catch(() => setDepenses([]));
@@ -216,7 +218,7 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
 // Pie dépenses du mois sélectionné — 2 anneaux
   const { depPieInner, depPieOuter } = useMemo(() => {
     const catMap: Record<string, { total: number; subs: Record<string, number> }> = {};
-    depenses.forEach(d => {
+    depenses.filter(d => d.date <= displayDateDep).forEach(d => {
       if (!catMap[d.categorie]) catMap[d.categorie] = { total: 0, subs: {} };
       catMap[d.categorie].total += d.montant;
       catMap[d.categorie].subs[d.sous_categorie] = (catMap[d.categorie].subs[d.sous_categorie] ?? 0) + d.montant;
@@ -234,16 +236,16 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
         .map(sub => ({ name: sub, group: cat, value: v.subs[sub], color: depenseSubColor(cat, sub) }));
     });
     return { depPieInner: inner, depPieOuter: outer };
-  }, [depenses]);
+  }, [depenses, displayDateDep]);
 
   // ── Delta patrimoine du mois — pie (versements invest + delta livrets) ────────
   const { patriPieInner, patriPieOuter, patriPieTotal } = useMemo(() => {
-    // Deltas signés par entité (retrait = négatif)
+    // Deltas signés par entité (retrait = négatif) — filtrés jusqu'au jour sélectionné
     const livByType: Record<string, number> = {};
-    livrets.filter(l => l.date.slice(0, 7) === mois)
+    livrets.filter(l => l.date.slice(0, 7) === mois && l.date <= displayDatePatPie)
       .forEach(l => { livByType[l.poche] = (livByType[l.poche] ?? 0) + l.montant; });
     const invByPoche: Record<string, number> = {};
-    versements.filter(v => v.date.slice(0, 7) === mois)
+    versements.filter(v => v.date.slice(0, 7) === mois && v.date <= displayDatePatPie)
       .forEach(v => { invByPoche[v.poche] = (invByPoche[v.poche] ?? 0) + v.montant; });
 
     // Nets par groupe (pour l'anneau intérieur)
@@ -287,7 +289,7 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
     });
 
     return { patriPieInner: inner, patriPieOuter: outer, patriPieTotal: netTotal };
-  }, [livrets, versements, mois, poches]);
+  }, [livrets, versements, mois, poches, displayDatePatPie]);
 
   // ── Évolution mensuelle patrimoine (livrets + portefeuille marché) ─────────────
   const monthlyPatrimoine = useMemo(() => {
@@ -601,7 +603,11 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
           </div>
           {depPieInner.length === 0
             ? <div className="empty">Aucune dépense ce mois.</div>
-            : <NestedPie inner={depPieInner} outer={depPieOuter} total={totalDepenses} fmt={fmt} h={hPie}/>
+            : expPie
+              ? <DayColumns mois={mois} selectedDay={selDayDep} setSelectedDay={setSelDayDep} h={hPie}>
+                  <NestedPie inner={depPieInner} outer={depPieOuter} total={depPieInner.reduce((s,p)=>s+p.value,0)} fmt={fmt} h={hPie}/>
+                </DayColumns>
+              : <NestedPie inner={depPieInner} outer={depPieOuter} total={depPieInner.reduce((s,p)=>s+p.value,0)} fmt={fmt} h={hPie}/>
           }
         </div>
         }
@@ -618,7 +624,11 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
             </div>
             {patriPieInner.length === 0
               ? <div className="empty">Aucun versement ni dépôt ce mois.</div>
-              : <NestedPie inner={patriPieInner} outer={patriPieOuter} total={patriPieTotal} fmt={fmt} h={hPatPie} signedValues/>
+              : expPatPie
+                ? <DayColumns mois={mois} selectedDay={selDayPatPie} setSelectedDay={setSelDayPatPie} h={hPatPie}>
+                    <NestedPie inner={patriPieInner} outer={patriPieOuter} total={patriPieTotal} fmt={fmt} h={hPatPie} signedValues/>
+                  </DayColumns>
+                : <NestedPie inner={patriPieInner} outer={patriPieOuter} total={patriPieTotal} fmt={fmt} h={hPatPie} signedValues/>
             }
           </div>
         )}

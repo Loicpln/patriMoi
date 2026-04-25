@@ -8,7 +8,7 @@ import { useDevise, curMonth } from "../../context/DeviseContext";
 import { INVEST_SUBCATS, INVEST_SUBCAT_COLOR, TRADEABLE_SUBCATS, monthsBetween, tickerColor, tickerColorDim, TOOLTIP_STYLE } from "../../constants";
 import type { Poche } from "../../context/PochesContext";
 import { useQuotes } from "../../hooks/useQuotes";
-import { ChartGrid, NestedPie, AccordionSection, bellEffect } from "./shared";
+import { ChartGrid, NestedPie, AccordionSection, bellEffect, useDaySelector, DayColumns } from "./shared";
 import { PositionModal, VersementModal, SellModal, TradeModal, DividendeModal, DeletePositionModal, ScpiValuationModal } from "./modals";
 import { ExportBtn, ImportBtn } from "./InvestSettings";
 import type { Position, Vente, Dividende, Versement, ScpiValuation } from "./types";
@@ -72,10 +72,12 @@ function applySell(map: PortfolioMap, ticker: string, qty: number) {
 
 // Aggregate positions for a given month — events processed chronologically so
 // buy→sell→rebuy yields the correct PRU for each leg independently.
+// If displayDate (YYYY-MM-DD) is provided, full-date comparison is used instead of month-slice.
 function aggregateByTicker(
   positions: Position[],
   ventes: Vente[],
-  mois: string
+  mois: string,
+  displayDate?: string
 ): { ticker: string; nom: string; subcat: string; quantite: number; investTotal: number; pru: number }[] {
   type Ev =
     | { date: string; type: "buy"; ticker: string; nom: string; subcat: string; qty: number; price: number }
@@ -83,10 +85,14 @@ function aggregateByTicker(
 
   const events: Ev[] = [
     ...positions
-      .filter(p => (p.date_achat ?? "").slice(0, 7) <= mois)
+      .filter(p => displayDate
+        ? (p.date_achat ?? "") <= displayDate
+        : (p.date_achat ?? "").slice(0, 7) <= mois)
       .map(p => ({ date: p.date_achat ?? "", type: "buy" as const, ticker: p.ticker, nom: p.nom, subcat: p.sous_categorie ?? "actions", qty: p.quantite, price: p.prix_achat })),
     ...ventes
-      .filter(v => (v.date_vente ?? "").slice(0, 7) <= mois)
+      .filter(v => displayDate
+        ? (v.date_vente ?? "") <= displayDate
+        : (v.date_vente ?? "").slice(0, 7) <= mois)
       .map(v => ({ date: v.date_vente ?? "", type: "sell" as const, ticker: v.ticker, qty: v.quantite })),
   ].sort((a, b) => a.date.localeCompare(b.date));
 
@@ -412,6 +418,8 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
       .then(setScpiValuations).catch(() => {});
   }, []);
 
+  const { selectedDay: selDayP, setSelectedDay: setSelDayP, displayDate: displayDateP } = useDaySelector(mois);
+
   const byTicker = useMemo(() => aggregateByTicker(positions, ventes, mois), [positions, ventes, mois]);
 
   const enriched = useMemo(() => byTicker.map(t => {
@@ -431,6 +439,21 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
   const totalDivs    = dividendes.filter(d => (d.date ?? "").slice(0, 7) <= mois).reduce((s, d) => s + d.montant, 0);
   const totalVers    = versements.filter(v => (v.date ?? "").slice(0, 7) <= mois).reduce((s, v) => s + v.montant, 0);
   const especes      = Math.max(0, totalVers + totalPnlReal + totalDivs - totalInvest);
+
+  // ── Pie-specific data filtered to selectedDay (displayDateP) ──────────────────
+  const byTickerForPie = useMemo(() => aggregateByTicker(positions, ventes, mois, displayDateP), [positions, ventes, mois, displayDateP]);
+  const enrichedForPie = useMemo(() => byTickerForPie.map(t => {
+    const currentPrice = getPrice(t.ticker, mois, t.pru);
+    const currentValue = t.quantite * currentPrice;
+    return { ...t, currentPrice, currentValue };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [byTickerForPie, getPrice, mois]);
+  const totalInvestForPie  = enrichedForPie.reduce((s, p) => s + p.investTotal, 0);
+  const totalValueForPie   = enrichedForPie.reduce((s, p) => s + p.currentValue, 0);
+  const totalPnlRealForPie = ventes.filter(v => (v.date_vente ?? "") <= displayDateP).reduce((s, v) => s + v.pnl, 0);
+  const totalDivsForPie    = dividendes.filter(d => (d.date ?? "") <= displayDateP).reduce((s, d) => s + d.montant, 0);
+  const totalVersForPie    = versements.filter(v => (v.date ?? "") <= displayDateP).reduce((s, v) => s + v.montant, 0);
+  const espeacesForPie     = Math.max(0, totalVersForPie + totalPnlRealForPie + totalDivsForPie - totalInvestForPie);
 
   // Dynamic quantity precision: max significant decimals across all quantities (≤ 8)
   const qtyPrec  = useMemo(() => qtyPrecision(enriched.map(p => p.quantite)), [enriched]);
@@ -554,23 +577,23 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
     setPnlBrushIdx(isFullRange ? null : { start: s, end: e });
   };
 
-  // ── Pie data ──────────────────────────────────────────────────────────────────
+  // ── Pie data — based on displayDateP (day selector) ─────────────────────────
   const pieInner = useMemo(() => {
     const map: Record<string, { v: number; c: string }> = {};
-    enriched.forEach(p => {
+    enrichedForPie.forEach(p => {
       const val = pieToggle === "investi" ? p.investTotal : p.currentValue;
       if (!map[p.subcat]) map[p.subcat] = { v: 0, c: INVEST_SUBCAT_COLOR[p.subcat] ?? poche.color };
       map[p.subcat].v += val;
     });
-    if (especes > 0) map["especes"] = { v: especes, c: INVEST_SUBCAT_COLOR["especes"] ?? "#78909c" };
+    if (espeacesForPie > 0) map["especes"] = { v: espeacesForPie, c: INVEST_SUBCAT_COLOR["especes"] ?? "#78909c" };
     return [...Object.entries(map)]
       .sort(([a], [b]) => subcatIdx(a) - subcatIdx(b))
       .map(([k, v]) => ({ name: INVEST_SUBCATS.find(s => s.key === k)?.label ?? k, value: v.v, color: v.c }))
       .filter(p => p.value > 0);
-  }, [enriched, pieToggle, especes, poche.color]);
+  }, [enrichedForPie, pieToggle, espeacesForPie, poche.color]);
 
   const pieOuter = useMemo(() => [
-    ...enriched
+    ...enrichedForPie
       .sort((a, b) => subcatIdx(a.subcat) - subcatIdx(b.subcat))
       .map(p => ({
         name:  p.nom,
@@ -578,10 +601,10 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
         value: pieToggle === "investi" ? p.investTotal : p.currentValue,
         color: tickerColorDim(p.ticker),
       })),
-    ...(especes > 0 ? [{ name: "Espèces", group: "Espèces", value: especes, color: (INVEST_SUBCAT_COLOR["especes"] ?? "#78909c") + "99" }] : []),
-  ].filter(p => p.value > 0), [enriched, pieToggle, especes]);
+    ...(espeacesForPie > 0 ? [{ name: "Espèces", group: "Espèces", value: espeacesForPie, color: (INVEST_SUBCAT_COLOR["especes"] ?? "#78909c") + "99" }] : []),
+  ].filter(p => p.value > 0), [enrichedForPie, pieToggle, espeacesForPie]);
 
-  const pieTotal = (pieToggle === "investi" ? totalInvest : totalValue) + especes;
+  const pieTotal = (pieToggle === "investi" ? totalInvestForPie : totalValueForPie) + espeacesForPie;
 
   const summary = [
     { label: "Versements",     value: fmt(totalVers),    color: "var(--text-1)" },
@@ -594,11 +617,15 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
   ];
 
   // ── Chart nodes ───────────────────────────────────────────────────────────────
-  const pieNode = (h: number) => pieInner.length === 0
-    ? <div className="empty">Aucune position pour ce mois</div>
-    : <NestedPie inner={pieInner} outer={pieOuter} total={pieTotal} fmt={fmt} h={h}
-        toggleLabel={pieToggle === "investi" ? "↔ Investi" : "↔ Valorisation"}
-        onToggle={() => setPieToggle(v => v === "investi" ? "valeur" : "investi")}/>;
+  const pieNode = (h: number, isExp?: boolean) => {
+    const content = pieInner.length === 0
+      ? <div className="empty" style={{height:'100%',display:'flex',alignItems:'center',justifyContent:'center'}}>Aucune position pour ce mois</div>
+      : <NestedPie inner={pieInner} outer={pieOuter} total={pieTotal} fmt={fmt} h={h}
+          toggleLabel={pieToggle === "investi" ? "↔ Investi" : "↔ Valorisation"}
+          onToggle={() => setPieToggle(v => v === "investi" ? "valeur" : "investi")}/>;
+    if (!isExp) return pieInner.length === 0 ? <div className="empty">Aucune position pour ce mois</div> : content;
+    return <DayColumns mois={mois} selectedDay={selDayP} setSelectedDay={setSelDayP} h={h}>{content}</DayColumns>;
+  };
 
   // Stacked area: value per ticker per day (actual daily close prices)
   // + red line/fill for cumulative versements (shows loss zone when portfolio < versements)
