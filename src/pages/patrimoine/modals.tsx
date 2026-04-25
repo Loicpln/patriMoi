@@ -174,7 +174,7 @@ export function OpLivretModal({poche,mois,initialOp,onClose,onSave}:{
   const balanceAtDate=useMemo(()=>{
     if(initialOp!=="retrait") return null;
     return livretOps
-      .filter(l=>!(l.notes??"").startsWith("[INTERET")&&l.date<=date)
+      .filter(l=>l.date<=date)
       .reduce((s,l)=>s+l.montant,0);
   },[livretOps,date,initialOp]);
 
