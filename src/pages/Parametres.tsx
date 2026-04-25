@@ -158,7 +158,7 @@ export default function Parametres() {
         <div style={{ padding: "24px" }}>
           <div style={{ display:"grid", gap:10 }}>
             {[
-              ["Application", "Patrimo"],
+              ["Application", "Patri'Me"],
               ["Version", "0.2.0"],
               ["Stack", "Tauri + React + TypeScript + SQLite"],
               ["Cours boursiers", "Yahoo Finance (temps réel, sans clé API)"],

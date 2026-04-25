@@ -1,4 +1,4 @@
-name: Build Patrimo
+name: Build Patri'Me
 
 on:
   push:
@@ -55,7 +55,7 @@ jobs:
         with:
           args: --target ${{ matrix.target }}
           tagName: ${{ github.ref_name }}
-          releaseName: "Patrimo ${{ github.ref_name }}"
+          releaseName: "Patri'Me ${{ github.ref_name }}"
           releaseBody: "Release automatique"
           releaseDraft: true
           prerelease: false

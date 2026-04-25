@@ -27,7 +27,7 @@ function Shell() {
       <aside className={`sidebar${sidebarOpen ? "" : " collapsed"}`}>
         <div className="brand">
           <span className="brand-hex">⬡</span>
-          <span className="brand-name">Patrimo</span>
+          <span className="brand-name">Patri'Me</span>
           <button className="sidebar-close-btn" onClick={() => setSidebarOpen(false)} title="Masquer la barre">‹</button>
         </div>
 
@@ -61,7 +61,7 @@ function Shell() {
           </div>
         </div>
 
-        <div className="sidebar-bottom">v0.3.0 · Patrimo</div>
+        <div className="sidebar-bottom">v0.3.0 · Patri'Me</div>
       </aside>
 
       {!sidebarOpen && (
