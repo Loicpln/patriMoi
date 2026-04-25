@@ -16,7 +16,7 @@ import { usePoches, type Poche } from "../context/PochesContext";
 import { useQuotes } from "../hooks/useQuotes";
 import {
   LIVRETS_DEF, INVEST_SUBCATS, INVEST_SUBCAT_COLOR,
-  GLOBAL_GROUP_COLORS, TOOLTIP_STYLE,
+  GLOBAL_GROUP_COLORS, TOOLTIP_STYLE, monthsBetween,
 } from "../constants";
 import MonthSelector from "../components/MonthSelector";
 import { Boundary, ChartGrid, NestedPie, bellEffect } from "./patrimoine/shared";
@@ -648,23 +648,20 @@ function GlobalRecap({livrets,livretPoches,positions,ventes,dividendes,versement
   ].filter(p=>p.value>0);
   const grandTotal=totalLivrets+investVal;
 
-  // ── Daily evo data — one series per livret + one per poche ───────────────────
+  // ── Monthly evo data — one series per livret + one per poche ─────────────────
   const evoData=useMemo(()=>{
     const allRaw=[
       ...livrets.filter(l=>!isInteret(l)).map(l=>(l.date??"").slice(0,7)),
       ...positions.map(p=>(p.date_achat??"").slice(0,7)),
     ].filter(Boolean).sort();
     if(!allRaw.length)return[];
-    const firstDay=allRaw[0]+"-01";
-    const dayDates:string[]=[];
-    const cur=new Date(firstDay);const now=new Date();now.setHours(23,59,59,999);
-    while(cur<=now){dayDates.push(cur.toISOString().slice(0,10));cur.setDate(cur.getDate()+1);}
+    const monthDates=monthsBetween(allRaw[0], curMonth);
 
-    // Pre-sort events with poche info
+    // Pre-sort events with poche info (month-level)
     type Ev2={date:string;type:"buy"|"sell";poche:string;ticker:string;subcat:string;qty:number;price:number};
     const allEvs:Ev2[]=[
-      ...positions.map(p=>({date:p.date_achat??"",type:"buy" as const,poche:p.poche,ticker:p.ticker,subcat:p.sous_categorie??"actions",qty:p.quantite,price:p.prix_achat})),
-      ...ventes.map(v=>({date:v.date_vente??"",type:"sell" as const,poche:v.poche,ticker:v.ticker,subcat:"",qty:v.quantite,price:0})),
+      ...positions.map(p=>({date:(p.date_achat??"").slice(0,7),type:"buy" as const,poche:p.poche,ticker:p.ticker,subcat:p.sous_categorie??"actions",qty:p.quantite,price:p.prix_achat})),
+      ...ventes.map(v=>({date:(v.date_vente??"").slice(0,7),type:"sell" as const,poche:v.poche,ticker:v.ticker,subcat:"",qty:v.quantite,price:0})),
     ].sort((a,b)=>a.date.localeCompare(b.date));
 
     // Per-poche espèces tracking
@@ -686,11 +683,9 @@ function GlobalRecap({livrets,livretPoches,positions,ventes,dividendes,versement
     const livVal:Record<string,number>={};
     const livActive:Record<string,boolean>={};
     LIVRETS_DEF.forEach(l=>{
-      // Legacy: latest snapshot (nom='')
       livByKey[l.key]=livrets.filter(lv=>lv.nom===''&&!isInteret(lv)&&lv.poche===l.key).sort((a,b)=>(a.date??"").localeCompare(b.date??""));
       livIdx[l.key]=0;livVal[l.key]=0;livActive[l.key]=false;
     });
-    // New livrets: cumulative per (type, nom) → accumulate by type key
     const newLivByType:Record<string,{date:string;montant:number}[]>={};
     const newLivIdx:Record<string,number>={};
     const newLivCum:Record<string,number>={};
@@ -699,19 +694,18 @@ function GlobalRecap({livrets,livretPoches,positions,ventes,dividendes,versement
     livretPoches.forEach(p=>{
       const ops=livrets.filter(lv=>lv.nom===p.nom&&lv.poche===p.type_livret)
         .sort((a,b)=>(a.date??"").localeCompare(b.date??""));
-      ops.forEach(op=>newLivByType[p.type_livret]?.push({date:op.date,montant:op.montant}));
+      ops.forEach(op=>newLivByType[p.type_livret]?.push({date:(op.date??"").slice(0,7),montant:op.montant}));
     });
     LIVRETS_DEF.forEach(l=>{newLivByType[l.key].sort((a,b)=>a.date.localeCompare(b.date));});
 
-    // Per-poche position tracker + activity flag
     const byPocheG:Record<string,Record<string,{q:number;inv:number;subcat:string}>>={};
     const pocheActiveG:Record<string,boolean>={};
     poches.forEach(p=>{byPocheG[p.key]={};pocheActiveG[p.key]=false;});
 
     let evIdx=0;
-    const rawEvo=dayDates.map(dateStr=>{
-      // Advance portfolio events
-      while(evIdx<allEvs.length&&allEvs[evIdx].date<=dateStr){
+    return monthDates.map(monthStr=>{
+      // Advance portfolio events up to this month
+      while(evIdx<allEvs.length&&allEvs[evIdx].date<=monthStr){
         const ev=allEvs[evIdx++];
         const map=byPocheG[ev.poche];if(!map)continue;
         pocheActiveG[ev.poche]=true;
@@ -729,52 +723,48 @@ function GlobalRecap({livrets,livretPoches,positions,ventes,dividendes,versement
       // Advance per-poche espèces counters
       poches.forEach(p=>{
         const prevV=pCV[p.key];
-        while(pVI[p.key]<versPerP[p.key].length&&(versPerP[p.key][pVI[p.key]].date??"")<= dateStr)pCV[p.key]+=versPerP[p.key][pVI[p.key]++].montant;
+        while(pVI[p.key]<versPerP[p.key].length&&(versPerP[p.key][pVI[p.key]].date??"").slice(0,7)<=monthStr)pCV[p.key]+=versPerP[p.key][pVI[p.key]++].montant;
         if(pCV[p.key]!==prevV)pocheActiveG[p.key]=true;
-        while(pPI[p.key]<ventPerP[p.key].length&&(ventPerP[p.key][pPI[p.key]].date_vente??"")<= dateStr)pCP[p.key]+=ventPerP[p.key][pPI[p.key]++].pnl;
-        while(pDI[p.key]<divsPerP[p.key].length&&(divsPerP[p.key][pDI[p.key]].date??"")<= dateStr)pCD[p.key]+=divsPerP[p.key][pDI[p.key]++].montant;
+        while(pPI[p.key]<ventPerP[p.key].length&&(ventPerP[p.key][pPI[p.key]].date_vente??"").slice(0,7)<=monthStr)pCP[p.key]+=ventPerP[p.key][pPI[p.key]++].pnl;
+        while(pDI[p.key]<divsPerP[p.key].length&&(divsPerP[p.key][pDI[p.key]].date??"").slice(0,7)<=monthStr)pCD[p.key]+=divsPerP[p.key][pDI[p.key]++].montant;
       });
-      // Advance livret step-function per key (legacy, nom='')
+      // Advance livrets (legacy snapshot)
       LIVRETS_DEF.forEach(l=>{
-        while(livIdx[l.key]<livByKey[l.key].length&&(livByKey[l.key][livIdx[l.key]].date??"")<= dateStr){
+        while(livIdx[l.key]<livByKey[l.key].length&&(livByKey[l.key][livIdx[l.key]].date??"").slice(0,7)<=monthStr){
           livVal[l.key]=livByKey[l.key][livIdx[l.key]++].montant;
           livActive[l.key]=true;
         }
-        // Advance new livret cumulative per type
-        while(newLivIdx[l.key]<newLivByType[l.key].length&&newLivByType[l.key][newLivIdx[l.key]].date<=dateStr){
+        // Advance new livrets cumulative
+        while(newLivIdx[l.key]<newLivByType[l.key].length&&newLivByType[l.key][newLivIdx[l.key]].date<=monthStr){
           newLivCum[l.key]+=newLivByType[l.key][newLivIdx[l.key]++].montant;
           newLivActive[l.key]=true;
         }
       });
 
-      const row:any={date:dateStr,month:dateStr.slice(0,7)};
-      // Livrets (bottom of stack) — combine legacy + new cumulative
+      const row:any={date:monthStr};
+      // Livrets (bottom of stack)
       LIVRETS_DEF.forEach(l=>{
         const legVal=livActive[l.key]?livVal[l.key]:0;
         const newVal=newLivActive[l.key]?newLivCum[l.key]:0;
         const active=livActive[l.key]||newLivActive[l.key];
         row[l.label]=active?(legVal+newVal)||null:null;
       });
-      // Poches (top of stack) — null before first activity
-      const monthStr=dateStr.slice(0,7);
+      // Poches (top of stack) — use month-level price
       poches.forEach(p=>{
         const map=byPocheG[p.key];
         const pocheInvest=Object.values(map).reduce((s,d)=>s+d.inv,0);
         const marketVal=Object.entries(map).reduce((s,[t,d])=>{
           if(d.q<=1e-9)return s;
           const pru=d.q>0?d.inv/d.q:0;
-        return s+d.q*getPriceForDateGlobal(t,dateStr,pru);
+          return s+d.q*getPriceGlobal(t,monthStr,pru);
         },0);
         const esp=Math.max(0,pCV[p.key]+pCP[p.key]+pCD[p.key]-pocheInvest);
         row[p.label]=pocheActiveG[p.key]?marketVal+esp:null;
       });
       return row;
     });
-    // Bell effect: add 0 adjacent to null↔value transitions for smooth cloche
-    const evoKeys=[...LIVRETS_DEF.map(l=>l.label),...poches.map(p=>p.label)];
-    return bellEffect(rawEvo, evoKeys);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[livrets,livretPoches,positions,ventes,dividendes,versements,getPriceForDateGlobal]);
+  },[livrets,livretPoches,positions,ventes,dividendes,versements,getPriceGlobal]);
 
   const pieNode=(h:number,_isExp?:boolean)=>inner.length===0?<div className="empty">Aucune donnée</div>:(
     <NestedPie inner={inner} outer={outer} total={grandTotal} fmt={fmt} h={h}
@@ -837,16 +827,14 @@ function GlobalRecap({livrets,livretPoches,positions,ventes,dividendes,versement
   [evoData,brushIdxG]);
 
   const xTicksG=useMemo(()=>{
-    const seen=new Set<string>();const firsts:string[]=[];
-    visibleEvoData.forEach((d:any)=>{const m=(d.date as string).slice(0,7);if(!seen.has(m)){seen.add(m);firsts.push(d.date as string);}});
-    const step=Math.max(1,Math.ceil(firsts.length/8));
-    return firsts.filter((_,i)=>i%step===0);
+    const step=Math.max(1,Math.ceil(visibleEvoData.length/8));
+    return visibleEvoData.filter((_:any,i:number)=>i%step===0).map((d:any)=>d.date as string);
   },[visibleEvoData]);
 
   const monthRangeG=useMemo(()=>{
-    const inM=visibleEvoData.filter((d:any)=>d.month===mois);
-    if(!inM.length)return null;
-    return{x1:(inM[0] as any).date as string,x2:(inM[inM.length-1] as any).date as string};
+    const inM=visibleEvoData.find((d:any)=>d.date===mois);
+    if(!inM)return null;
+    return{x1:mois,x2:mois};
   },[visibleEvoData,mois]);
 
   const MN_SHORT_G=["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
@@ -905,7 +893,7 @@ function GlobalRecap({livrets,livretPoches,positions,ventes,dividendes,versement
     </div>
     <ChartGrid charts={[
       {key:"global_pie",   title:`Répartition globale · ${mois}`,  node:pieNode},
-      {key:"global_stack", title:"Évolution globale / jour",          node:stackNode,
+      {key:"global_stack", title:"Évolution globale / mois",          node:stackNode,
         onResetZoom:()=>setBrushIdxG(null), brushActive:!!brushIdxG},
     ]}/>
   </div>);
