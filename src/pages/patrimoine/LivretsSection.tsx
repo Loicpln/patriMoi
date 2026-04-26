@@ -680,7 +680,7 @@ export function LivretsSection({
           {/* ── Graphiques view ── */}
           {viewMode === "graphiques" && (
             <ChartGrid charts={[
-              { key:"liv_pie",   title:`Répartition · ${mois}`,     node:pieNode   },
+              { key:"liv_pie",   title:`Répartition · ${displayDateL}`,     node:pieNode   },
               { key:"liv_stack", title:"Évolution globale par jour", node:stackNode,
                 brushActive:!!globalBrushIdx, onResetZoom:()=>setGlobalBrushIdx(null) },
             ]}/>

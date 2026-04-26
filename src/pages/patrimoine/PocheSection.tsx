@@ -835,7 +835,7 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
             )}
           </div>
           <ChartGrid charts={[
-            { key: `pie_${poche.key}`,    title: `Répartition · ${mois}`,          node: pieNode    },
+            { key: `pie_${poche.key}`,    title: `Répartition · ${displayDateP}`,          node: pieNode    },
             { key: `stack_${poche.key}`,  title: "Valeur portefeuille / jour",      node: stackNode,
               onResetZoom: () => setBrushIdx(null), brushActive: !!brushIdx },
             { key: `pnldiv_${poche.key}`, title: "PnL + Dividendes",                node: pnlDivNode,

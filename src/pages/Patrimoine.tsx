@@ -513,7 +513,7 @@ function RecapInvestissement({positions,ventes,dividendes,versements,mois,scpiVa
     </div>
     {/* ── Graphiques view ── */}
     {viewMode==="graphiques"&&<ChartGrid charts={[
-      {key:"recap_pie",   title:`Poche / Sous-catégorie · ${mois}`, node:pieNode},
+      {key:"recap_pie",   title:`Poche / Sous-catégorie · ${displayDateR}`, node:pieNode},
       {key:"recap_stack", title:"Valeur par poche / jour",           node:stackNode,
         onResetZoom:()=>setBrushIdxR(null), brushActive:!!brushIdxR},
     ]}/>}
@@ -709,7 +709,7 @@ function GlobalRecap({livrets,livretPoches,positions,ventes,dividendes,versement
     poches.forEach(p=>{byPocheG[p.key]={};pocheActiveG[p.key]=false;});
 
     let evIdx=0;
-    return monthDates.map(monthStr=>{
+    const raw=monthDates.map(monthStr=>{
       // Advance portfolio events up to this month
       while(evIdx<allEvs.length&&allEvs[evIdx].date<=monthStr){
         const ev=allEvs[evIdx++];
@@ -769,6 +769,7 @@ function GlobalRecap({livrets,livretPoches,positions,ventes,dividendes,versement
       });
       return row;
     });
+    return bellEffect(raw,[...LIVRETS_DEF.map(l=>l.label),...poches.map(p=>p.label)]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[livrets,livretPoches,positions,ventes,dividendes,versements,getPriceGlobal]);
 
@@ -902,7 +903,7 @@ function GlobalRecap({livrets,livretPoches,positions,ventes,dividendes,versement
       <div className="stat-card sc-lav"><div className="sc-label">Total patrimoine financier</div><div className="sc-value pos">{fmt(totalLivrets+totalPortfolioValue)}</div></div>
     </div>
     <ChartGrid charts={[
-      {key:"global_pie",   title:`Répartition globale · ${selectedDay?`${mois}-${String(selectedDay).padStart(2,'0')}`:mois}`,  node:pieNode},
+      {key:"global_pie",   title:`Répartition globale · ${displayDate}`,  node:pieNode},
       {key:"global_stack", title:"Évolution globale / mois",          node:stackNode,
         onResetZoom:()=>setBrushIdxG(null), brushActive:!!brushIdxG},
     ]}/>

@@ -649,7 +649,7 @@ export default function Depenses() {
       {/* Vue graphiques */}
       {viewMode === "graphiques" && (
         <ChartGrid charts={[
-          { key:"pie",     title:"Répartition par catégorie / sous-catégorie",  node: pieNode },
+          { key:"pie",     title:`Répartition par catégorie · ${displayDateDep}`,  node: pieNode },
           { key:"monthly", title:"Évolution des dépenses / mois",               node: monthlyNode,
             onResetZoom: () => setBrushIdxD(null), brushActive: !!brushIdxD },
         ]}/>

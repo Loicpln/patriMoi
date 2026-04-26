@@ -595,7 +595,7 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
         {/* Dépenses du mois — camembert 2 anneaux dynamique */}
         {(expChart === null || expPie) && <div className="chart-card" style={{marginBottom: 20, height:hPie+52, gridColumn: expPie?"1 / -1":""}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-            <div className="chart-title">Dépenses par catégorie · {mois}</div>
+            <div className="chart-title">Dépenses par catégorie · {displayDateDep}</div>
             <button className="btn btn-ghost btn-sm" style={{fontSize:10}}
               onClick={() => setExpChart(v => v === "pie" ? null : "pie")}>
               {expPie ? "-" : "+"}
@@ -616,7 +616,7 @@ export default function Dashboard({ onNavigate }: { onNavigate: (p: Page) => voi
         {(expChart === null || expPatPie) && (
           <div className="chart-card" style={{ marginBottom: 20, height: hPatPie + 52, gridColumn: expPatPie ? "1 / -1" : "" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-              <div className="chart-title" style={{ marginBottom: 0 }}>Flux patrimoine · {mois}</div>
+              <div className="chart-title" style={{ marginBottom: 0 }}>Flux patrimoine · {displayDatePatPie}</div>
               <button className="btn btn-ghost btn-sm" style={{ fontSize: 10 }}
                 onClick={() => setExpChart(v => v === "patPie" ? null : "patPie")}>
                 {expPatPie ? "-" : "+"}
