@@ -34,6 +34,8 @@ fn main() {
             commands::get_depenses_recurrentes, commands::add_depense_recurrente,
             commands::update_depense_recurrente, commands::delete_depense_recurrente,
             commands::process_depenses_recurrentes,
+            commands::get_paris_poches, commands::add_paris_poche, commands::update_paris_poche, commands::delete_paris_poche,
+            commands::get_paris, commands::add_pari, commands::update_pari, commands::delete_pari, commands::import_paris,
         ])
         .run(tauri::generate_context!())
         .expect("Tauri error");

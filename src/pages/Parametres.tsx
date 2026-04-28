@@ -7,10 +7,17 @@ import {
   exportScpiValuations, importScpi,
   exportPoche, importPoche,
   exportLivretPoche, importLivretOps,
+  exportParisPoche, importParisPoche,
 } from "./patrimoine/InvestSettings";
 import { usePoches } from "../context/PochesContext";
 import { LIVRETS_DEF } from "../constants";
 import type { LivretPoche } from "./patrimoine/types";
+
+interface ParisPoche {
+  id?: number;
+  nom: string;
+  couleur: string;
+}
 
 // ── Page ──────────────────────────────────────────────────────────────────
 export default function Parametres() {
@@ -19,11 +26,13 @@ export default function Parametres() {
   const [importPending, setImportPending] = useState<ImportPending | null>(null);
   const [exportAllState, setExportAllState] = useState<"idle"|"loading"|"done"|"error">("idle");
   const [livretPoches, setLivretPoches] = useState<LivretPoche[]>([]);
+  const [parisPoches, setParisPoches] = useState<ParisPoche[]>([]);
   const { poches } = usePoches();
 
   useEffect(() => {
     invoke<string>("get_parametre", { cle: "pdf_folder" }).then(setPdfFolder).catch(() => {});
     invoke<LivretPoche[]>("get_livret_poches").then(setLivretPoches).catch(() => {});
+    invoke<ParisPoche[]>("get_paris_poches").then(setParisPoches).catch(() => {});
   }, []);
 
   const chooseFolder = async () => {
@@ -80,6 +89,15 @@ export default function Parametres() {
       importFn: importPoche(p.key),
     })),
     { label: "Valorisations SCPI",      color: "var(--text-2)", exports: [{ name: "scpi_valorisations.csv", fn: exportScpiValuations }], importFn: importScpi      },
+    ...parisPoches.map(p => {
+      const safeName = p.nom.replace(/[^a-z0-9]/gi, "_");
+      return {
+        label: `Paris — ${p.nom}`,
+        color: p.couleur || "var(--lav)",
+        exports: [{ name: `paris_${safeName}.csv`, fn: () => exportParisPoche(p.nom) }],
+        importFn: importParisPoche(p.nom),
+      };
+    }),
   ];
 
   return (

@@ -430,7 +430,7 @@ export function PocheSection({ poche, allPositions, allVentes, allDividendes, al
     const pnlPct = t.investTotal > 0 ? (pnl / t.investTotal) * 100 : 0;
     return { ...t, currentPrice, currentValue, pnl, pnlPct, quote: q, color: tickerColor(t.ticker) };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [byTicker, quotes, getPrice, mois]);
+  }).sort((a, b) => subcatIdx(a.subcat) - subcatIdx(b.subcat)), [byTicker, quotes, getPrice, mois]);
 
   const totalInvest  = enriched.reduce((s, p) => s + p.investTotal, 0);
   const totalValue   = enriched.reduce((s, p) => s + p.currentValue, 0);

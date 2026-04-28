@@ -258,6 +258,59 @@ export async function exportLivretsBatch(livretPoches: { type_livret: string; no
   await invoke("export_livrets_batch", { livretPoches });
 }
 
+// ── Paris Sportifs export / import ────────────────────────────────────────────
+// CSV format: type,date,freebet,mise,cote,gain,statut,notes,categorie,resultat
+// "pari" rows: type=pari, date/freebet/mise/cote/gain/statut/notes filled, categorie/resultat empty
+// "selection" rows: type=selection, only categorie+resultat filled, belong to the last pari row
+
+export async function exportParisPoche(poche: string): Promise<void> {
+  const paris = await invoke<any[]>("get_paris", { poche, mois: null });
+  const headers = ["type", "date", "freebet", "mise", "cote", "gain", "statut", "notes", "categorie", "resultat"];
+  const rows: any[][] = [];
+  for (const p of paris) {
+    rows.push(["pari", p.date, p.freebet ? "1" : "0", p.mise ?? "", p.cote, p.gain ?? "", p.statut, p.notes ?? "", "", ""]);
+    for (const s of (p.selections ?? [])) {
+      rows.push(["selection", "", "", "", "", "", "", "", s.categorie, s.resultat]);
+    }
+  }
+  const safeName = poche.replace(/[^a-z0-9]/gi, "_");
+  downloadCsv(withDate(`paris_${safeName}.csv`), toCsv(headers, rows));
+}
+
+export function importParisPoche(poche: string) {
+  return async (rows: string[][], replace: boolean): Promise<number> => {
+    const paris: any[] = [];
+    let currentPari: any | null = null;
+    for (const row of rows.slice(1)) {
+      const type = row[0]?.trim().toLowerCase();
+      if (type === "pari") {
+        if (currentPari) paris.push(currentPari);
+        currentPari = {
+          id: null,
+          poche,
+          date: row[1]?.trim() ?? "",
+          freebet: row[2]?.trim() === "1",
+          mise: row[3]?.trim() ? parseFloat(row[3]) : null,
+          cote: parseFloat(row[4]) || 1.0,
+          gain: row[5]?.trim() ? parseFloat(row[5]) : null,
+          statut: row[6]?.trim() || "en_cours",
+          notes: row[7]?.trim() || null,
+          selections: [],
+        };
+      } else if (type === "selection" && currentPari) {
+        currentPari.selections.push({
+          id: null,
+          pari_id: null,
+          categorie: row[8]?.trim() ?? "",
+          resultat: row[9]?.trim() || "en_cours",
+        });
+      }
+    }
+    if (currentPari) paris.push(currentPari);
+    return invoke<number>("import_paris", { poche, paris, replace });
+  };
+}
+
 // ── Types ──────────────────────────────────────────────────────────────────
 export type ImportPending = {
   label: string;

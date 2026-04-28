@@ -2,19 +2,21 @@ import { useState } from "react";
 import "./App.css";
 import { DeviseProvider, useDevise, DEVISES } from "./context/DeviseContext";
 import { PochesProvider } from "./context/PochesContext";
-import Dashboard  from "./pages/Dashboard";
-import Depenses   from "./pages/Depenses";
-import Fiches     from "./pages/Fiches";
-import Patrimoine from "./pages/Patrimoine";
-import Parametres from "./pages/Parametres";
+import Dashboard     from "./pages/Dashboard";
+import Depenses      from "./pages/Depenses";
+import Fiches        from "./pages/Fiches";
+import Patrimoine    from "./pages/Patrimoine";
+import Parametres    from "./pages/Parametres";
+import ParisSportifs from "./pages/ParisSportifs";
 
-export type Page = "dashboard" | "depenses" | "fiches" | "patrimoine" | "parametres";
+export type Page = "dashboard" | "depenses" | "fiches" | "patrimoine" | "paris" | "parametres";
 
 const NAV = [
   { id: "dashboard"  as Page, icon: "◈", label: "Vue d'ensemble" },
   { id: "depenses"   as Page, icon: "◉", label: "Dépenses" },
   { id: "fiches"     as Page, icon: "◎", label: "Fiches de paie" },
   { id: "patrimoine" as Page, icon: "◆", label: "Patrimoine" },
+  { id: "paris"      as Page, icon: "◉", label: "Paris Sportifs" },
 ];
 
 function Shell() {
@@ -73,6 +75,7 @@ function Shell() {
         {page === "depenses"   && <Depenses />}
         {page === "fiches"     && <Fiches />}
         {page === "patrimoine" && <Patrimoine />}
+        {page === "paris"      && <ParisSportifs />}
         {page === "parametres" && <Parametres />}
       </main>
     </div>

@@ -974,6 +974,160 @@ pub fn process_depenses_recurrentes(state: State<DbState>) -> Result<usize, Stri
     Ok(total)
 }
 
+// ═══ PARIS SPORTIFS ══════════════════════════════════════════════════════════
+#[tauri::command]
+pub fn get_paris_poches(state: State<DbState>) -> Result<Vec<ParisPoche>, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let mut stmt = conn.prepare("SELECT id,nom,couleur FROM paris_poches ORDER BY nom").map_err(|e| e.to_string())?;
+    let items = stmt.query_map([], |r| Ok(ParisPoche{id:r.get(0)?,nom:r.get(1)?,couleur:r.get(2)?}))
+        .map_err(|e| e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e| e.to_string())?;
+    Ok(items)
+}
+#[tauri::command]
+pub fn add_paris_poche(poche: ParisPoche, state: State<DbState>) -> Result<i64, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    conn.execute("INSERT INTO paris_poches (nom,couleur) VALUES (?1,?2)",
+        params![poche.nom,poche.couleur]).map_err(|e| e.to_string())?;
+    Ok(conn.last_insert_rowid())
+}
+#[tauri::command]
+pub fn update_paris_poche(id: i64, nom: String, couleur: String, state: State<DbState>) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    conn.execute("UPDATE paris_poches SET nom=?1,couleur=?2 WHERE id=?3",
+        params![nom,couleur,id]).map_err(|e| e.to_string())?;
+    Ok(())
+}
+#[tauri::command]
+pub fn delete_paris_poche(id: i64, state: State<DbState>) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let nom: String = conn.query_row("SELECT nom FROM paris_poches WHERE id=?1", params![id], |r| r.get(0))
+        .map_err(|e| e.to_string())?;
+    // Delete selections via FK cascade, then paris, then poche
+    let paris_ids: Vec<i64> = {
+        let mut s = conn.prepare("SELECT id FROM paris WHERE poche=?1").map_err(|e| e.to_string())?;
+        let ids = s.query_map(params![nom], |r| r.get(0))
+            .map_err(|e| e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e| e.to_string())?;
+        ids
+    };
+    for pid in &paris_ids {
+        conn.execute("DELETE FROM paris_selections WHERE pari_id=?1", params![pid]).map_err(|e| e.to_string())?;
+    }
+    conn.execute("DELETE FROM paris WHERE poche=?1", params![nom]).map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM paris_poches WHERE id=?1", params![id]).map_err(|e| e.to_string())?;
+    Ok(())
+}
+#[tauri::command]
+pub fn get_paris(poche: Option<String>, mois: Option<String>, state: State<DbState>) -> Result<Vec<Pari>, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let sql = match (&poche, &mois) {
+        (Some(_), Some(_)) => "SELECT id,poche,date,freebet,mise,cote,gain,statut,notes FROM paris WHERE poche=?1 AND substr(date,1,7)=?2 ORDER BY date DESC",
+        (Some(_), None)    => "SELECT id,poche,date,freebet,mise,cote,gain,statut,notes FROM paris WHERE poche=?1 ORDER BY date DESC",
+        (None,    Some(_)) => "SELECT id,poche,date,freebet,mise,cote,gain,statut,notes FROM paris WHERE substr(date,1,7)=?1 ORDER BY date DESC",
+        (None,    None)    => "SELECT id,poche,date,freebet,mise,cote,gain,statut,notes FROM paris ORDER BY date DESC",
+    };
+    let map_row = |r: &rusqlite::Row| Ok(Pari{
+        id:r.get(0)?,poche:r.get(1)?,date:r.get(2)?,
+        freebet:r.get::<_,i64>(3)?!=0,
+        mise:r.get(4)?,cote:r.get(5)?,gain:r.get(6)?,
+        statut:r.get(7)?,notes:r.get(8)?,selections:None,
+    });
+    let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
+    let mut paris: Vec<Pari> = match (&poche, &mois) {
+        (Some(p), Some(m)) => stmt.query_map(params![p,m], map_row),
+        (Some(p), None)    => stmt.query_map(params![p],   map_row),
+        (None,    Some(m)) => stmt.query_map(params![m],   map_row),
+        (None,    None)    => stmt.query_map([],            map_row),
+    }.map_err(|e| e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e| e.to_string())?;
+
+    // Load selections for each pari
+    for p in &mut paris {
+        if let Some(pid) = p.id {
+            let mut ss = conn.prepare("SELECT id,pari_id,categorie,resultat FROM paris_selections WHERE pari_id=?1 ORDER BY id")
+                .map_err(|e| e.to_string())?;
+            let sels: Vec<ParisSelection> = ss.query_map(params![pid], |r| Ok(ParisSelection{id:r.get(0)?,pari_id:r.get(1)?,categorie:r.get(2)?,resultat:r.get(3)?}))
+                .map_err(|e| e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e| e.to_string())?;
+            p.selections = Some(sels);
+        }
+    }
+    Ok(paris)
+}
+#[tauri::command]
+pub fn add_pari(pari: Pari, state: State<DbState>) -> Result<i64, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let freebet_int: i64 = if pari.freebet { 1 } else { 0 };
+    conn.execute(
+        "INSERT INTO paris (poche,date,freebet,mise,cote,gain,statut,notes) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+        params![pari.poche,pari.date,freebet_int,pari.mise,pari.cote,pari.gain,pari.statut,pari.notes])
+        .map_err(|e| e.to_string())?;
+    let pari_id = conn.last_insert_rowid();
+    if let Some(sels) = &pari.selections {
+        for s in sels {
+            conn.execute("INSERT INTO paris_selections (pari_id,categorie,resultat) VALUES (?1,?2,?3)",
+                params![pari_id,s.categorie,s.resultat]).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(pari_id)
+}
+#[tauri::command]
+pub fn update_pari(pari: Pari, state: State<DbState>) -> Result<(), String> {
+    let id = pari.id.ok_or("Missing id")?;
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    let freebet_int: i64 = if pari.freebet { 1 } else { 0 };
+    conn.execute(
+        "UPDATE paris SET poche=?1,date=?2,freebet=?3,mise=?4,cote=?5,gain=?6,statut=?7,notes=?8 WHERE id=?9",
+        params![pari.poche,pari.date,freebet_int,pari.mise,pari.cote,pari.gain,pari.statut,pari.notes,id])
+        .map_err(|e| e.to_string())?;
+    // Replace selections
+    conn.execute("DELETE FROM paris_selections WHERE pari_id=?1", params![id]).map_err(|e| e.to_string())?;
+    if let Some(sels) = &pari.selections {
+        for s in sels {
+            conn.execute("INSERT INTO paris_selections (pari_id,categorie,resultat) VALUES (?1,?2,?3)",
+                params![id,s.categorie,s.resultat]).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+#[tauri::command]
+pub fn delete_pari(id: i64, state: State<DbState>) -> Result<(), String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM paris_selections WHERE pari_id=?1", params![id]).map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM paris WHERE id=?1", params![id]).map_err(|e| e.to_string())?;
+    Ok(())
+}
+#[tauri::command]
+pub fn import_paris(poche: String, paris: Vec<Pari>, replace: bool, state: State<DbState>) -> Result<usize, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+    if replace {
+        let ids: Vec<i64> = {
+            let mut s = conn.prepare("SELECT id FROM paris WHERE poche=?1").map_err(|e| e.to_string())?;
+            let ids = s.query_map(params![poche], |r| r.get(0))
+                .map_err(|e| e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e| e.to_string())?;
+            ids
+        };
+        for pid in &ids {
+            conn.execute("DELETE FROM paris_selections WHERE pari_id=?1", params![pid]).map_err(|e| e.to_string())?;
+        }
+        conn.execute("DELETE FROM paris WHERE poche=?1", params![poche]).map_err(|e| e.to_string())?;
+    }
+    let mut count = 0usize;
+    for p in &paris {
+        let freebet_int: i64 = if p.freebet { 1 } else { 0 };
+        conn.execute(
+            "INSERT INTO paris (poche,date,freebet,mise,cote,gain,statut,notes) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+            params![poche,p.date,freebet_int,p.mise,p.cote,p.gain,p.statut,p.notes])
+            .map_err(|e| e.to_string())?;
+        let pari_id = conn.last_insert_rowid();
+        if let Some(sels) = &p.selections {
+            for s in sels {
+                conn.execute("INSERT INTO paris_selections (pari_id,categorie,resultat) VALUES (?1,?2,?3)",
+                    params![pari_id,s.categorie,s.resultat]).map_err(|e| e.to_string())?;
+            }
+        }
+        count += 1;
+    }
+    Ok(count)
+}
+
 // ═══ FETCH URL (proxy pour contourner CORS) ═══════════════════════════════════
 #[tauri::command]
 pub async fn fetch_url(url: String) -> Result<serde_json::Value, String> {

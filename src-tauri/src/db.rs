@@ -69,6 +69,33 @@ pub struct ScpiValuation {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Parametre { pub cle: String, pub valeur: String }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ParisPoche {
+    pub id: Option<i64>,
+    pub nom: String,
+    pub couleur: String,
+}
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ParisSelection {
+    pub id: Option<i64>,
+    pub pari_id: Option<i64>,
+    pub categorie: String,
+    pub resultat: String,
+}
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Pari {
+    pub id: Option<i64>,
+    pub poche: String,
+    pub date: String,
+    pub freebet: bool,
+    pub mise: Option<f64>,
+    pub cote: f64,
+    pub gain: Option<f64>,
+    pub statut: String,
+    pub notes: Option<String>,
+    pub selections: Option<Vec<ParisSelection>>,
+}
+
 pub fn get_db_path(app_handle: &tauri::AppHandle) -> PathBuf {
     let config = app_handle.config();
     let mut path = app_data_dir(&config).unwrap_or_else(|| PathBuf::from("."));
@@ -244,6 +271,35 @@ pub fn init_db(conn: &Connection) -> Result<()> {
     if version < 12 {
         let _ = conn.execute_batch("ALTER TABLE livret_poches ADD COLUMN couleur TEXT NOT NULL DEFAULT '';");
         conn.execute_batch("PRAGMA user_version = 12;")?;
+    }
+    if version < 13 {
+        conn.execute_batch("
+            CREATE TABLE IF NOT EXISTS paris_poches (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nom TEXT NOT NULL UNIQUE,
+                couleur TEXT NOT NULL DEFAULT ''
+            );
+            CREATE TABLE IF NOT EXISTS paris (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                poche TEXT NOT NULL,
+                date TEXT NOT NULL,
+                freebet INTEGER NOT NULL DEFAULT 0,
+                mise REAL,
+                cote REAL NOT NULL DEFAULT 1.0,
+                gain REAL,
+                statut TEXT NOT NULL DEFAULT 'en_cours',
+                notes TEXT,
+                created_at TEXT DEFAULT (datetime('now'))
+            );
+            CREATE TABLE IF NOT EXISTS paris_selections (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                pari_id INTEGER NOT NULL,
+                categorie TEXT NOT NULL,
+                resultat TEXT NOT NULL DEFAULT 'en_cours',
+                FOREIGN KEY(pari_id) REFERENCES paris(id) ON DELETE CASCADE
+            );
+            PRAGMA user_version = 13;
+        ")?;
     }
     Ok(())
 }
