@@ -27,6 +27,7 @@ fn main() {
             commands::get_parametre, commands::set_parametre, commands::choose_folder, commands::choose_export_folder, commands::export_all_csv,
             commands::export_invest_csv, commands::export_livrets_batch,
             commands::fetch_url,
+            commands::export_to_icloud,
             commands::get_scpi_valuations, commands::add_scpi_valuation, commands::delete_scpi_valuation,
             commands::import_depenses, commands::import_depenses_recurrentes, commands::import_salaires, commands::import_livrets,
             commands::import_poche, commands::import_scpi_valuations,

@@ -69,6 +69,19 @@ export default function Parametres() {
     }
   };
 
+  const [icloudState, setIcloudState] = useState<"idle"|"loading"|"done"|"error">("idle");
+  const handleExportIcloud = async () => {
+    setIcloudState("loading");
+    try {
+      await invoke<string>("export_to_icloud");
+      setIcloudState("done");
+      setTimeout(() => setIcloudState("idle"), 3000);
+    } catch {
+      setIcloudState("error");
+      setTimeout(() => setIcloudState("idle"), 3000);
+    }
+  };
+
   const EXPORTS = [
     { label: "Dépenses",               color: "var(--rose)",    exports: [{ name: "depenses.csv",         fn: exportDepenses        }], importFn: importDepenses  },
     { label: "Fiches de paie & Primes", color: "var(--teal)",   exports: [{ name: "fiches_et_primes.csv", fn: exportSalaires        }], importFn: importSalaires  },
@@ -136,6 +149,28 @@ export default function Parametres() {
               {pdfFolder}
             </div>
           )}
+        </div>
+      </div>
+
+      {/* Export vers iPhone (iCloud Drive) */}
+      <div className="table-card" style={{ marginTop: 20 }}>
+        <div className="table-head">
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span className="table-head-title">📱 iPhone — PatriMe iOS</span>
+          </div>
+          <button
+            className={`btn btn-sm ${icloudState === "done" ? "btn-primary" : "btn-ghost"}`}
+            style={{ fontSize: 10, opacity: icloudState === "loading" ? 0.6 : 1 }}
+            disabled={icloudState === "loading"}
+            onClick={handleExportIcloud}>
+            {icloudState === "loading" ? "Export…" : icloudState === "done" ? "✓ Exporté vers iCloud" : icloudState === "error" ? "✗ Erreur" : "☁ Exporter vers iCloud Drive"}
+          </button>
+        </div>
+        <div style={{ padding: "10px 24px", fontSize: 11, color: "var(--text-2)", lineHeight: 1.6 }}>
+          Exporte <strong style={{ color: "var(--text-1)" }}>livrets.csv</strong> et toutes les poches d'investissement
+          dans <code style={{ color: "var(--gold)", fontSize: 10 }}>iCloud Drive / PatriMe /</code>.
+          Ouvrez ensuite l'app <strong style={{ color: "var(--text-1)" }}>PatriMe</strong> sur votre iPhone
+          → Importer → sélectionnez les fichiers.
         </div>
       </div>
 

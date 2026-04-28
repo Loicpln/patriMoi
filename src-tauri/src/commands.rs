@@ -1128,6 +1128,151 @@ pub fn import_paris(poche: String, paris: Vec<Pari>, replace: bool, state: State
     Ok(count)
 }
 
+// ═══ EXPORT ICLOUD ═══════════════════════════════════════════════════════════
+/// Exporte livrets.csv + une CSV par poche d'investissement
+/// dans ~/Library/Mobile Documents/com~apple~CloudDocs/PatriMe/
+/// pour synchronisation avec l'app iOS PatriMe.
+#[tauri::command]
+pub fn export_to_icloud(state: State<DbState>) -> Result<String, String> {
+    let conn = state.0.lock().map_err(|e| e.to_string())?;
+
+    // iCloud Drive path on macOS
+    let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
+    let icloud_dir = std::path::PathBuf::from(&home)
+        .join("Library/Mobile Documents/com~apple~CloudDocs/PatriMe");
+    std::fs::create_dir_all(&icloud_dir)
+        .map_err(|e| format!("Impossible de créer le dossier iCloud : {}", e))?;
+
+    fn esc(v: &str) -> String {
+        if v.contains(',') || v.contains('"') || v.contains('\n') {
+            format!("\"{}\"", v.replace('"', "\"\""))
+        } else { v.to_string() }
+    }
+    fn row(fields: &[String]) -> String { fields.iter().map(|f| esc(f)).collect::<Vec<_>>().join(",") }
+    fn write_csv(dir: &std::path::Path, name: &str, header: &str, lines: Vec<String>) -> Result<(), String> {
+        let mut content = "\u{FEFF}".to_string();
+        content.push_str(header); content.push('\n');
+        for l in lines { content.push_str(&l); content.push('\n'); }
+        std::fs::write(dir.join(name), content).map_err(|e| format!("{}: {}", name, e))
+    }
+
+    // ── Livrets — une CSV par compte (poche + nom) ───────────────────────────
+    {
+        // Récupère les couples distincts (poche, nom)
+        let comptes: Vec<(String, String)> = {
+            let mut stmt = conn.prepare(
+                "SELECT DISTINCT poche, COALESCE(nom,'') FROM livrets ORDER BY poche, nom"
+            ).map_err(|e| e.to_string())?;
+            let rows = stmt.query_map([], |r| Ok((r.get::<_,String>(0)?, r.get::<_,String>(1)?)))
+                .map_err(|e| e.to_string())?;
+            rows.filter_map(|r| r.ok()).collect()
+        };
+
+        for (poche, nom) in &comptes {
+            let mut stmt = conn.prepare(
+                "SELECT id,poche,nom,date,montant,taux,notes FROM livrets WHERE poche=?1 AND COALESCE(nom,'')=?2 ORDER BY date ASC"
+            ).map_err(|e| e.to_string())?;
+            let lines: Vec<String> = stmt.query_map(params![poche, nom], |r| {
+                let id: Option<i64> = r.get(0)?;
+                let montant: f64 = r.get(4)?;
+                let taux: f64 = r.get(5)?;
+                Ok(vec![
+                    id.map_or("".into(), |v| v.to_string()),
+                    r.get::<_, String>(1)?,
+                    r.get::<_, Option<String>>(2)?.unwrap_or_default(),
+                    r.get::<_, String>(3)?,
+                    format!("{:.2}", montant),
+                    format!("{:.4}", taux),
+                    r.get::<_, Option<String>>(6)?.unwrap_or_default(),
+                ])
+            }).map_err(|e| e.to_string())?
+            .filter_map(|r| r.ok())
+            .map(|f| row(&f))
+            .collect();
+
+            // Nom du fichier : "livret_{nom}.csv" ou "livret_{poche}.csv" si nom vide
+            let label = if nom.is_empty() { poche.clone() } else { nom.clone() };
+            let safe: String = label.chars().map(|c| if c.is_alphanumeric() || c == '-' { c } else { '_' }).collect();
+            let filename = format!("livret_{}.csv", safe);
+            write_csv(&icloud_dir, &filename, "id,poche,nom,date,montant,taux,notes", lines)?;
+        }
+    }
+
+    // ── Investissements — une CSV par poche ──────────────────────────────────
+    let poche_header = "type,id,date,ticker,nom,sous_categorie,quantite,prix_achat,prix_vente,pnl,montant,notes";
+    let poches: Vec<String> = {
+        let mut stmt = conn.prepare("SELECT DISTINCT poche FROM positions ORDER BY poche").map_err(|e| e.to_string())?;
+        let rows = stmt.query_map([], |r| r.get::<_, String>(0)).map_err(|e| e.to_string())?;
+        rows.filter_map(|r| r.ok()).collect()
+    };
+
+    for poche_key in &poches {
+        let safe: String = poche_key.chars().map(|c| if c.is_alphanumeric() || c == '-' { c } else { '_' }).collect();
+        let filename = format!("{}.csv", safe);
+        let mut lines: Vec<String> = Vec::new();
+
+        // Positions
+        let mut stmt = conn.prepare(
+            "SELECT id,date_achat,ticker,nom,sous_categorie,quantite,prix_achat,notes FROM positions WHERE poche=?1 ORDER BY date_achat"
+        ).map_err(|e| e.to_string())?;
+        let rows = stmt.query_map([poche_key], |r| {
+            let id: Option<i64> = r.get(0)?; let qty: f64 = r.get(5)?; let px: f64 = r.get(6)?;
+            Ok(vec!["Position".into(), id.map_or("".into(),|v|v.to_string()),
+                r.get::<_,String>(1)?, r.get::<_,String>(2)?, r.get::<_,String>(3)?,
+                r.get::<_,Option<String>>(4)?.unwrap_or_default(),
+                format!("{}", qty), format!("{}", px),
+                "".into(), "".into(), "".into(),
+                r.get::<_,Option<String>>(7)?.unwrap_or_default()])
+        }).map_err(|e| e.to_string())?;
+        for r in rows { lines.push(row(&r.map_err(|e| e.to_string())?)); }
+
+        // Ventes
+        let mut stmt = conn.prepare(
+            "SELECT id,date_vente,ticker,nom,quantite,prix_achat,prix_vente,pnl,notes FROM ventes WHERE poche=?1 ORDER BY date_vente"
+        ).map_err(|e| e.to_string())?;
+        let rows = stmt.query_map([poche_key], |r| {
+            let id: Option<i64> = r.get(0)?; let qty: f64 = r.get(4)?;
+            let pa: f64 = r.get(5)?; let pv: f64 = r.get(6)?; let pnl: f64 = r.get(7)?;
+            Ok(vec!["Vente".into(), id.map_or("".into(),|v|v.to_string()),
+                r.get::<_,String>(1)?, r.get::<_,String>(2)?, r.get::<_,String>(3)?,
+                "".into(), format!("{}", qty), format!("{}", pa),
+                format!("{}", pv), format!("{}", pnl), "".into(),
+                r.get::<_,Option<String>>(8)?.unwrap_or_default()])
+        }).map_err(|e| e.to_string())?;
+        for r in rows { lines.push(row(&r.map_err(|e| e.to_string())?)); }
+
+        // Dividendes
+        let mut stmt = conn.prepare(
+            "SELECT id,date,ticker,montant,notes FROM dividendes WHERE poche=?1 ORDER BY date"
+        ).map_err(|e| e.to_string())?;
+        let rows = stmt.query_map([poche_key], |r| {
+            let id: Option<i64> = r.get(0)?; let m: f64 = r.get(3)?;
+            Ok(vec!["Dividende".into(), id.map_or("".into(),|v|v.to_string()),
+                r.get::<_,String>(1)?, r.get::<_,String>(2)?,
+                "".into(), "".into(), "".into(), "".into(), "".into(), "".into(),
+                format!("{}", m), r.get::<_,Option<String>>(4)?.unwrap_or_default()])
+        }).map_err(|e| e.to_string())?;
+        for r in rows { lines.push(row(&r.map_err(|e| e.to_string())?)); }
+
+        // Versements
+        let mut stmt = conn.prepare(
+            "SELECT id,date,montant,notes FROM versements WHERE poche=?1 ORDER BY date"
+        ).map_err(|e| e.to_string())?;
+        let rows = stmt.query_map([poche_key], |r| {
+            let id: Option<i64> = r.get(0)?; let m: f64 = r.get(2)?;
+            Ok(vec!["Versement".into(), id.map_or("".into(),|v|v.to_string()),
+                r.get::<_,String>(1)?, "".into(), "".into(), "".into(),
+                "".into(), "".into(), "".into(), "".into(),
+                format!("{}", m), r.get::<_,Option<String>>(3)?.unwrap_or_default()])
+        }).map_err(|e| e.to_string())?;
+        for r in rows { lines.push(row(&r.map_err(|e| e.to_string())?)); }
+
+        write_csv(&icloud_dir, &filename, poche_header, lines)?;
+    }
+
+    Ok(icloud_dir.to_string_lossy().to_string())
+}
+
 // ═══ FETCH URL (proxy pour contourner CORS) ═══════════════════════════════════
 #[tauri::command]
 pub async fn fetch_url(url: String) -> Result<serde_json::Value, String> {
