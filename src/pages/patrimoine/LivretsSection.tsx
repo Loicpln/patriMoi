@@ -210,46 +210,49 @@ function LivretPocheSection({
   // ── Chart nodes ────────────────────────────────────────────────────────────
   const balanceNode = (h: number, isExp: boolean) => !dailyData.length
     ? <div className="empty">Aucune opération</div>
-    : (
-      <ResponsiveContainer width="100%" height={h}>
-        <ComposedChart data={dailyData} margin={{ left:0, right:5, top:5, bottom: isExp ? 28 : 0 }}>
-          <defs>
-            <linearGradient id={`gb_${kid}`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%"  stopColor={color} stopOpacity={0.55}/>
-              <stop offset="95%" stopColor={color} stopOpacity={0.04}/>
-            </linearGradient>
-          </defs>
-          <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
-          <XAxis dataKey="date" ticks={xTicks} tick={{ fontSize:8, fontFamily:"JetBrains Mono" }}
-            tickFormatter={d => MN_SHORT[parseInt(d.slice(5,7))-1]+" "+d.slice(2,4)}/>
-          <YAxis tick={{ fontSize:8, fontFamily:"JetBrains Mono" }} tickFormatter={fmtAxis} width={32}/>
-          <Tooltip contentStyle={TOOLTIP_STYLE} labelStyle={{ color:"var(--text-2)", fontSize:9 }}
-            formatter={(v:any) => [fmt(Number(v)), "Solde"]}/>
-          <Area type="stepAfter" dataKey={kid} name="Solde"
-            stroke={color} strokeWidth={1.5} fill={`url(#gb_${kid})`}
-            dot={false} activeDot={activeDotNoZero}/>
-          {monthRange && (
-            <Customized component={(p: any) => {
-              const bS = isExp ? (brushIdx?.start ?? 0) : 0;
-              const bE = isExp ? (brushIdx?.end ?? dailyData.length - 1) : dailyData.length - 1;
-              const r = idxPx(dailyData, monthRange.x1, monthRange.x2, p.offset, bS, bE);
-              if (!r) return null;
-              return <g><rect x={r.rx1} y={p.offset.top}
-                width={Math.max(1, r.rx2 - r.rx1 + r.step)} height={p.offset.height}
-                fill="var(--gold)" fillOpacity={0.15} stroke="var(--gold)" strokeOpacity={0.5}
-                strokeDasharray="4 2" strokeWidth={1} pointerEvents="none"/></g>;
-            }}/>
-          )}
-          {isExp && (
-            <Brush dataKey="date" height={22} travellerWidth={6}
+    : (() => {
+      // Compact: visibleData so zoom is preserved without the Brush component.
+      // Expanded: full dailyData + Brush slider for range selection.
+      const data = isExp ? dailyData : visibleData;
+      return (
+        <ResponsiveContainer width="100%" height={h}>
+          <ComposedChart data={data} margin={{ left:0, right:5, top:5, bottom: isExp ? 28 : 0 }}>
+            <defs>
+              <linearGradient id={`gb_${kid}`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%"  stopColor={color} stopOpacity={0.55}/>
+                <stop offset="95%" stopColor={color} stopOpacity={0.04}/>
+              </linearGradient>
+            </defs>
+            <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
+            <XAxis dataKey="date" ticks={xTicks} tick={{ fontSize:8, fontFamily:"JetBrains Mono" }}
+              tickFormatter={d => MN_SHORT[parseInt(d.slice(5,7))-1]+" "+d.slice(2,4)}/>
+            <YAxis tick={{ fontSize:8, fontFamily:"JetBrains Mono" }} tickFormatter={fmtAxis} width={32}/>
+            <Tooltip contentStyle={TOOLTIP_STYLE} labelStyle={{ color:"var(--text-2)", fontSize:9 }}
+              formatter={(v:any) => [fmt(Number(v)), "Solde"]}/>
+            <Area type="stepAfter" dataKey={kid} name="Solde"
+              stroke={color} strokeWidth={1.5} fill={`url(#gb_${kid})`}
+              dot={false} activeDot={activeDotNoZero}/>
+            {monthRange && (
+              <Customized component={(p: any) => {
+                const bS = isExp ? (brushIdx?.start ?? 0) : 0;
+                const bE = isExp ? (brushIdx?.end ?? dailyData.length - 1) : visibleData.length - 1;
+                const r = idxPx(data, monthRange.x1, monthRange.x2, p.offset, bS, bE);
+                if (!r) return null;
+                return <g><rect x={r.rx1} y={p.offset.top}
+                  width={Math.max(1, r.rx2 - r.rx1 + r.step)} height={p.offset.height}
+                  fill="var(--gold)" fillOpacity={0.15} stroke="var(--gold)" strokeOpacity={0.5}
+                  strokeDasharray="4 2" strokeWidth={1} pointerEvents="none"/></g>;
+              }}/>
+            )}
+            {isExp && <Brush dataKey="date" height={22} travellerWidth={6}
               stroke="var(--border)" fill="var(--bg-2)"
               startIndex={brushIdx?.start ?? 0}
               endIndex={brushIdx?.end ?? dailyData.length - 1}
-              onChange={onBrushChange} tickFormatter={() => ""}/>
-          )}
-        </ComposedChart>
-      </ResponsiveContainer>
-    );
+              onChange={onBrushChange} tickFormatter={() => ""}/>}
+          </ComposedChart>
+        </ResponsiveContainer>
+      );
+    })();
 
   const interestNode = (h: number) => !annualData.length
     ? <div className="empty">Aucun intérêt enregistré</div>
@@ -527,57 +530,60 @@ export function LivretsSection({
 
   const stackNode = (h: number, isExp: boolean) => !globalData.length
     ? <div className="empty">Aucune donnée</div>
-    : (
-      <ResponsiveContainer width="100%" height={h}>
-        <ComposedChart data={globalData} margin={{ left:0, right:5, top:5, bottom: isExp ? 28 : 0 }}>
-          <defs>
+    : (() => {
+      // Compact: globalVisibleData so zoom is preserved without the Brush component.
+      // Expanded: full globalData + Brush slider for range selection.
+      const data = isExp ? globalData : globalVisibleData;
+      return (
+        <ResponsiveContainer width="100%" height={h}>
+          <ComposedChart data={data} margin={{ left:0, right:5, top:5, bottom: isExp ? 28 : 0 }}>
+            <defs>
+              {sortedPoches.map(p => {
+                const k = keyId(p.type_livret, p.nom);
+                const c = p.couleur || LIVRETS_DEF.find(l => l.key === p.type_livret)?.color || "#F0BD40";
+                return (
+                  <linearGradient key={k} id={`gg_${k}`} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%"  stopColor={c} stopOpacity={0.55}/>
+                    <stop offset="95%" stopColor={c} stopOpacity={0.04}/>
+                  </linearGradient>
+                );
+              })}
+            </defs>
+            <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
+            <XAxis dataKey="date" ticks={globalXTicks} tick={{ fontSize:8, fontFamily:"JetBrains Mono" }}
+              tickFormatter={d => MN_SHORT[parseInt(d.slice(5,7))-1]+" "+d.slice(2,4)}/>
+            <YAxis tick={{ fontSize:8, fontFamily:"JetBrains Mono" }} tickFormatter={fmtAxis} width={32}/>
+            <Tooltip content={<GlobalTooltip/>}/>
             {sortedPoches.map(p => {
               const k = keyId(p.type_livret, p.nom);
               const c = p.couleur || LIVRETS_DEF.find(l => l.key === p.type_livret)?.color || "#F0BD40";
               return (
-                <linearGradient key={k} id={`gg_${k}`} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%"  stopColor={c} stopOpacity={0.55}/>
-                  <stop offset="95%" stopColor={c} stopOpacity={0.04}/>
-                </linearGradient>
+                <Area key={k} type="stepAfter" dataKey={k} stackId="a" name={p.nom}
+                  stroke={c} strokeWidth={1.5} fill={`url(#gg_${k})`}
+                  dot={false} activeDot={activeDotNoZero}/>
               );
             })}
-          </defs>
-          <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false}/>
-          <XAxis dataKey="date" ticks={globalXTicks} tick={{ fontSize:8, fontFamily:"JetBrains Mono" }}
-            tickFormatter={d => MN_SHORT[parseInt(d.slice(5,7))-1]+" "+d.slice(2,4)}/>
-          <YAxis tick={{ fontSize:8, fontFamily:"JetBrains Mono" }} tickFormatter={fmtAxis} width={32}/>
-          <Tooltip content={<GlobalTooltip/>}/>
-          {sortedPoches.map(p => {
-            const k = keyId(p.type_livret, p.nom);
-            const c = p.couleur || LIVRETS_DEF.find(l => l.key === p.type_livret)?.color || "#F0BD40";
-            return (
-              <Area key={k} type="stepAfter" dataKey={k} stackId="a" name={p.nom}
-                stroke={c} strokeWidth={1.5} fill={`url(#gg_${k})`}
-                dot={false} activeDot={activeDotNoZero}/>
-            );
-          })}
-          {globalMonthRange && (
-            <Customized component={(p: any) => {
-              const bS = isExp ? (globalBrushIdx?.start ?? 0) : 0;
-              const bE = isExp ? (globalBrushIdx?.end ?? globalData.length - 1) : globalData.length - 1;
-              const r = idxPx(globalData, globalMonthRange.x1, globalMonthRange.x2, p.offset, bS, bE);
-              if (!r) return null;
-              return <g><rect x={r.rx1} y={p.offset.top}
-                width={Math.max(1, r.rx2 - r.rx1 + r.step)} height={p.offset.height}
-                fill="var(--gold)" fillOpacity={0.15} stroke="var(--gold)" strokeOpacity={0.5}
-                strokeDasharray="4 2" strokeWidth={1} pointerEvents="none"/></g>;
-            }}/>
-          )}
-          {isExp && (
-            <Brush dataKey="date" height={22} travellerWidth={6}
+            {globalMonthRange && (
+              <Customized component={(p: any) => {
+                const bS = isExp ? (globalBrushIdx?.start ?? 0) : 0;
+                const bE = isExp ? (globalBrushIdx?.end ?? globalData.length - 1) : globalVisibleData.length - 1;
+                const r = idxPx(data, globalMonthRange.x1, globalMonthRange.x2, p.offset, bS, bE);
+                if (!r) return null;
+                return <g><rect x={r.rx1} y={p.offset.top}
+                  width={Math.max(1, r.rx2 - r.rx1 + r.step)} height={p.offset.height}
+                  fill="var(--gold)" fillOpacity={0.15} stroke="var(--gold)" strokeOpacity={0.5}
+                  strokeDasharray="4 2" strokeWidth={1} pointerEvents="none"/></g>;
+              }}/>
+            )}
+            {isExp && <Brush dataKey="date" height={22} travellerWidth={6}
               stroke="var(--border)" fill="var(--bg-2)"
               startIndex={globalBrushIdx?.start ?? 0}
               endIndex={globalBrushIdx?.end ?? globalData.length - 1}
-              onChange={onGlobalBrushChange} tickFormatter={() => ""}/>
-          )}
-        </ComposedChart>
-      </ResponsiveContainer>
-    );
+              onChange={onGlobalBrushChange} tickFormatter={() => ""}/>}
+          </ComposedChart>
+        </ResponsiveContainer>
+      );
+    })();
 
   // ── Handlers ──────────────────────────────────────────────────────────────
   const handleCreatePoche = async (p: LivretPoche) => {
